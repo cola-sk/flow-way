@@ -26,6 +26,16 @@ export interface Route {
   createdAt: string;
 }
 
+export interface CameraDetectionDetail {
+  cameraIndex: number;
+  cameraName: string;
+  cameraDirection: string;
+  routeBearing: number;      // 路线的方向角（0-360）
+  cameraBearing: number;     // 摄像头的方向角（0-360）
+  angleGap: number;          // 两个方向的夹角（0-180）
+  detected: boolean;         // 是否会被拍到
+}
+
 export interface CameraRiskInfo {
   cameraIndex: number;
   cameraName: string;
@@ -37,7 +47,8 @@ export interface CameraRiskInfo {
 
 export interface RouteResponse {
   route?: Route;
-  cameraRisks?: CameraRiskInfo[];  // 路线上所有相关摄像头的风险信息
+  cameraDetections?: CameraDetectionDetail[];  // 简化版：检测详情
+  cameraRisks?: CameraRiskInfo[];              // 复杂版：风险评估
   errorMessage?: string;
 }
 
