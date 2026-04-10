@@ -1,4 +1,7 @@
 import { Camera } from '@/types/camera';
+import { EnhancedCamera } from '@/types/camera-enhanced';
+import { createEnhancedCamera } from '@/lib/camera-parser';
+import { v4 as uuidv4 } from 'uuid';
 
 const SOURCE_URL = 'https://www.jinjing365.com/index.asp';
 
@@ -58,6 +61,32 @@ export async function scrapeCameras(): Promise<{
     const href = hrefMap.get(cam.name);
     if (href) cam.href = href;
   }
+
+  return { cameras, updatedAt };
+}
+
+/**
+ * 从 jinjing365.com 抓取增强的摄像头数据
+ * 包含方向、状态、位置描述等详细信息
+ */
+export async function scrapeCamerasEnhanced(): Promise<{
+  cameras: EnhancedCamera[];
+  updatedAt: string;
+}> {
+  const { cameras: basicCameras, updatedAt } = await scrapeCameras();
+
+  // 将基础摄像头数据转换为增强数据
+  const cameras: EnhancedCamera[] = basicCameras.map((cam, index) =>
+    createEnhancedCamera(
+      `camera_${index}_${uuidv4().substring(0, 8)}`,
+      cam.name,
+      cam.lng,
+      cam.lat,
+      cam.type,
+      cam.date,
+      cam.href
+    )
+  );
 
   return { cameras, updatedAt };
 }

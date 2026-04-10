@@ -26,8 +26,18 @@ export interface Route {
   createdAt: string;
 }
 
+export interface CameraRiskInfo {
+  cameraIndex: number;
+  cameraName: string;
+  cameraDirection: string;
+  distance: string;
+  riskLevel: 'high' | 'medium' | 'low';
+  reason: string;
+}
+
 export interface RouteResponse {
   route?: Route;
+  cameraRisks?: CameraRiskInfo[];  // 路线上所有相关摄像头的风险信息
   errorMessage?: string;
 }
 
