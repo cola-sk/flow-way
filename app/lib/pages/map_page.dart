@@ -347,33 +347,25 @@ class _MapPageState extends State<MapPage> {
       body: Stack(
         children: [
           // 地图层
-          GestureDetector(
-            onLongPress: (details) {
-              // 长按地图添加标记点
-              final tapPosition = _mapController.camera.project(
-                LatLng(
-                  details.localPosition.dy.toDouble(),
-                  details.localPosition.dx.toDouble(),
-                ),
-              );
-              // 简单实现，实际需要使用更精确的坐标转换
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('长按地图可添加标记点 (开发中)')),
-              );
-            },
-            child: FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                initialCenter: _beijingCenter,
-                initialZoom: 11,
-                minZoom: 5,
-                maxZoom: 18,
-                onTap: (tapPosition, point) {
-                  // 短按添加标记点
-                  _addWayPoint(point);
-                },
-              ),
-              children: [
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _beijingCenter,
+              initialZoom: 11,
+              minZoom: 5,
+              maxZoom: 18,
+              onTap: (tapPosition, point) {
+                // 短按添加标记点
+                _addWayPoint(point);
+              },
+              onLongPress: (tapPosition, point) {
+                // 长按添加标记点
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('长按地图可添加标记点 (开发中)')),
+                );
+              },
+            ),
+            children: [
                 // 高德瓦片图层 (GCJ-02 坐标系，与摄像头坐标一致)
                 TileLayer(
                   urlTemplate:
@@ -382,7 +374,6 @@ class _MapPageState extends State<MapPage> {
                   userAgentPackageName: 'com.flowway.app',
                   maxZoom: 18,
                 ),
-
                 // 路线图层
                 if (_currentRoute != null)
                   PolylineLayer(
@@ -391,11 +382,9 @@ class _MapPageState extends State<MapPage> {
                         points: _currentRoute!.polylinePoints,
                         color: Colors.blue,
                         strokeWidth: 4,
-                        isDashed: false,
                       ),
                     ],
                   ),
-
                 // 路线起点和终点标记
                 if (_currentRoute != null)
                   MarkerLayer(
@@ -422,7 +411,6 @@ class _MapPageState extends State<MapPage> {
                       ),
                     ],
                   ),
-
                 // 摄像头标记层
                 MarkerLayer(
                   markers: _cameras.map((cam) {
@@ -441,7 +429,6 @@ class _MapPageState extends State<MapPage> {
                     );
                   }).toList(),
                 ),
-
                 // 用户标记点层
                 MarkerLayer(
                   markers: _wayPoints.map((wayPoint) {
@@ -467,8 +454,7 @@ class _MapPageState extends State<MapPage> {
                     );
                   }).toList(),
                 ),
-              ],
-            ),
+            ],
           ),
 
           // 顶部安全区域 + 导航栏

@@ -6,7 +6,7 @@ import 'package:latlong2/latlong.dart';
 class ApiService {
   // 本地开发时使用局域网 IP，部署后改为 Vercel 域名
   // Android 模拟器用 10.0.2.2, iOS 模拟器用 localhost
-  static const String _baseUrl = 'http://localhost:3002';
+  static const String _baseUrl = 'http://localhost:3000';
 
   final Dio _dio;
 

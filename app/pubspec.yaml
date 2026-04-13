@@ -39,7 +39,6 @@ dependencies:
   http: ^1.6.0
   dio: ^5.9.2
   geolocator: ^14.0.2
-  polyline: ^1.0.3
   uuid: ^4.0.0
   fl_location: ^1.0.0
 
