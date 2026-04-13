@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     const { cameras } = await getCamerasEnhanced();
 
     let polylinePoints;
-    let cameraIndices = [];
+    let cameraIndices: number[] = [];
     let detectionDetails: any[] = [];
 
     if (avoidCameras) {
