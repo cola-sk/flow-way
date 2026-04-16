@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:uuid/uuid.dart';
 import '../models/camera.dart';
@@ -33,74 +32,11 @@ class _MapPageState extends State<MapPage> {
   // 北京中心坐标 (GCJ-02)
   static const _beijingCenter = LatLng(39.9042, 116.4074);
 
-  // 用户当前位置
-  LatLng? _userPosition;
-
-  // 搜索状态
-  bool _showSearch = false;
-  final TextEditingController _searchController = TextEditingController();
-  List<PlaceResult> _searchResults = [];
-  bool _searching = false;
-
   @override
   void initState() {
     super.initState();
     _loadCameras();
     _loadWayPoints();
-    _locateUser();
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _locateUser() async {
-    try {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) return;
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
-      if (mounted) {
-        final pos = LatLng(position.latitude, position.longitude);
-        setState(() => _userPosition = pos);
-        _mapController.move(pos, 14);
-      }
-    } catch (_) {
-      // 定位失败时保持默认北京中心
-    }
-  }
-
-  Future<void> _searchPlaces(String keyword) async {
-    if (keyword.trim().isEmpty) {
-      setState(() => _searchResults = []);
-      return;
-    }
-    setState(() => _searching = true);
-    final results = await _apiService.searchPlaces(
-      keyword,
-      nearBy: _userPosition ?? _mapController.camera.center,
-    );
-    if (mounted) setState(() { _searchResults = results; _searching = false; });
-  }
-
-  void _onSearchResultTap(PlaceResult place) {
-    _mapController.move(place.location, 15);
-    setState(() {
-      _showSearch = false;
-      _searchResults = [];
-      _searchController.clear();
-    });
   }
 
   Future<void> _loadCameras() async {
@@ -430,11 +366,13 @@ class _MapPageState extends State<MapPage> {
               },
             ),
             children: [
-                // 高德瓦片图层 (GCJ-02 坐标系，与摄像头坐标一致)
+                // 腾讯地图瓦片图层 (GCJ-02 坐标系，与摄像头坐标一致)
+                // tms: true 自动翻转 Y 轴
                 TileLayer(
                   urlTemplate:
-                      'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+                      'https://p{s}.map.gtimg.com/maptilesv2/{z}/{x}/{y}.png',
                   subdomains: const ['1', '2', '3', '4'],
+                  tms: true,
                   userAgentPackageName: 'com.flowway.app',
                   maxZoom: 18,
                 ),
@@ -521,99 +459,10 @@ class _MapPageState extends State<MapPage> {
             ],
           ),
 
-          // 顶部安全区域 + 搜索框 + 导航栏
+          // 顶部安全区域 + 导航栏
           SafeArea(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
               children: [
-                // 搜索框
-                Container(
-                  margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    onTap: () => setState(() => _showSearch = true),
-                    onChanged: (v) => _searchPlaces(v),
-                    decoration: InputDecoration(
-                      hintText: '搜索地点...',
-                      prefixIcon: const Icon(Icons.search, size: 20),
-                      suffixIcon: _showSearch
-                          ? IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() {
-                                  _showSearch = false;
-                                  _searchResults = [];
-                                });
-                                FocusScope.of(context).unfocus();
-                              },
-                            )
-                          : null,
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 12),
-                    ),
-                  ),
-                ),
-
-                // 搜索结果列表
-                if (_showSearch && (_searchResults.isNotEmpty || _searching))
-                  Container(
-                    margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.12),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: _searching
-                        ? const Padding(
-                            padding: EdgeInsets.all(12),
-                            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                          )
-                        : ListView.separated(
-                            shrinkWrap: true,
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            itemCount: _searchResults.length,
-                            separatorBuilder: (_, __) =>
-                                const Divider(height: 1, indent: 16),
-                            itemBuilder: (_, i) {
-                              final place = _searchResults[i];
-                              return ListTile(
-                                dense: true,
-                                leading: const Icon(Icons.place,
-                                    size: 18, color: Colors.blueAccent),
-                                title: Text(place.name,
-                                    style: const TextStyle(fontSize: 14)),
-                                subtitle: place.address.isNotEmpty
-                                    ? Text(place.address,
-                                        style: const TextStyle(fontSize: 12),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis)
-                                    : null,
-                                onTap: () => _onSearchResultTap(place),
-                              );
-                            },
-                          ),
-                  ),
-
                 nav.NavigationBar(
                   onSearch: _showNavigationDialog,
                 ),
@@ -710,11 +559,7 @@ class _MapPageState extends State<MapPage> {
       // 定位按钮
       floatingActionButton: FloatingActionButton.small(
         onPressed: () {
-          if (_userPosition != null) {
-            _mapController.move(_userPosition!, 14);
-          } else {
-            _locateUser();
-          }
+          _mapController.move(_beijingCenter, 11);
         },
         child: const Icon(Icons.my_location),
       ),

@@ -40,7 +40,6 @@ dependencies:
   dio: ^5.9.2
   geolocator: ^14.0.2
   uuid: ^4.0.0
-  fl_location: ^1.0.0
 
 dev_dependencies:
   flutter_test:

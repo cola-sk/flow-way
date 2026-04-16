@@ -110,24 +110,6 @@
       "languageVersion": "3.1"
     },
     {
-      "name": "fl_location",
-      "rootUri": "file:///Users/liuzhe.x/.pub-cache/hosted/pub.dev/fl_location-1.2.2",
-      "packageUri": "lib/",
-      "languageVersion": "2.12"
-    },
-    {
-      "name": "fl_location_platform_interface",
-      "rootUri": "file:///Users/liuzhe.x/.pub-cache/hosted/pub.dev/fl_location_platform_interface-1.1.1",
-      "packageUri": "lib/",
-      "languageVersion": "2.12"
-    },
-    {
-      "name": "fl_location_web",
-      "rootUri": "file:///Users/liuzhe.x/.pub-cache/hosted/pub.dev/fl_location_web-1.1.1",
-      "packageUri": "lib/",
-      "languageVersion": "2.12"
-    },
-    {
       "name": "flutter",
       "rootUri": "file:///opt/homebrew/share/flutter/packages/flutter",
       "packageUri": "lib/",
