@@ -1,7 +1,7 @@
 import { Coordinate, Route, RoutePoint } from '@/types/route';
 import { Camera } from '@/types/camera';
 import { v4 as uuidv4 } from 'uuid';
-import { signTencentUrl, TENCENT_MAP_KEY } from './tencent-sign';
+import { signTencentUrl, getTencentMapKey } from './tencent-sign';
 
 /**
  * 计算两点间距离（单位：米）
@@ -72,7 +72,7 @@ async function callTencentDrivingAPI(
   alternatives = false,
   waypoints?: Coordinate[]
 ): Promise<Array<{ points: RoutePoint[]; distance: number; duration: number }>> {
-  if (!TENCENT_MAP_KEY) {
+  if (!getTencentMapKey()) {
     throw new Error('未配置 TENCENT_MAP_KEY 环境变量');
   }
 

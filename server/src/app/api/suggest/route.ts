@@ -20,15 +20,23 @@ export async function GET(request: Request) {
   baseUrl.searchParams.set('page_size', '8');
 
   const signedUrl = signTencentUrl(baseUrl);
+  console.log('[suggest] signed URL:', signedUrl);
 
   const res = await fetch(signedUrl, {
     cache: 'no-store',
   });
 
-  if (!res.ok) return NextResponse.json({ suggestions: [] });
+  if (!res.ok) {
+    console.error('[suggest] upstream HTTP error:', res.status, res.statusText);
+    return NextResponse.json({ suggestions: [] });
+  }
 
   const json = await res.json();
-  if (json.status !== 0) return NextResponse.json({ suggestions: [] });
+  console.log('[suggest] tencent status:', json.status, json.message);
+  if (json.status !== 0) {
+    console.error('[suggest] tencent error response:', JSON.stringify(json));
+    return NextResponse.json({ suggestions: [] });
+  }
 
   const suggestions = (json.data ?? []).map((item: {
     title: string;
@@ -41,5 +49,6 @@ export async function GET(request: Request) {
     lng: item.location?.lng ?? 0,
   }));
 
+  console.log('[suggest] returning', suggestions.length, 'results');
   return NextResponse.json({ suggestions });
 }

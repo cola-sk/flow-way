@@ -1,7 +1,8 @@
 import { createHash } from 'crypto';
 
-const TENCENT_MAP_KEY = process.env.TENCENT_MAP_KEY ?? '';
-const TENCENT_MAP_SK = process.env.TENCENT_MAP_SK ?? '';
+// 每次调用时从 process.env 读取，避免模块初始化时 env 未就绪的问题
+function getKey() { return process.env.TENCENT_MAP_KEY ?? ''; }
+function getSk() { return process.env.TENCENT_MAP_SK ?? ''; }
 
 /**
  * 给腾讯地图 WebService API 的 URL 追加 key 和 sig 参数。
@@ -10,6 +11,11 @@ const TENCENT_MAP_SK = process.env.TENCENT_MAP_SK ?? '';
  * 参考：https://lbs.qq.com/service/webService/webServiceGuide/webServiceSignature
  */
 export function signTencentUrl(url: URL): string {
+  const TENCENT_MAP_KEY = getKey();
+  const TENCENT_MAP_SK = getSk();
+
+  console.log('[sign] key present:', !!TENCENT_MAP_KEY, 'sk present:', !!TENCENT_MAP_SK);
+
   // 确保 key 在参数中
   url.searchParams.set('key', TENCENT_MAP_KEY);
 
@@ -28,4 +34,4 @@ export function signTencentUrl(url: URL): string {
   return `${url.origin}${url.pathname}?${sortedParams.toString()}`;
 }
 
-export { TENCENT_MAP_KEY };
+export function getTencentMapKey() { return getKey(); }
