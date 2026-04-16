@@ -40,6 +40,8 @@ class _MapPageState extends State<MapPage> {
   // 当前导航路线
   NavigationRoute? _currentRoute;
   bool _isNavigating = false;
+  // 路线上无法绕开的摄像头索引（仅 avoidCameras=true 时有效）
+  Set<int> _unavoidableCameraIndices = {};
 
   // 北京中心坐标 (GCJ-02)
   static const _beijingCenter = LatLng(39.9042, 116.4074);
@@ -55,6 +57,9 @@ class _MapPageState extends State<MapPage> {
   bool _isSuggesting = false;
   bool _showSuggestions = false;
   PlaceResult? _selectedPlace;
+
+  // 定位状态：定位完成（成功或失败）后才显示摄像头
+  bool _locationResolved = false;
 
   // 导航模式状态
   // _navSearchTarget: null=普通搜索 / 'end'=搜索终点 / 'waypoint'=搜索途径点
@@ -85,28 +90,59 @@ class _MapPageState extends State<MapPage> {
 
   Future<void> _locateUser() async {
     try {
+      // 先检查设备级定位服务开关
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('请先开启设备定位服务（GPS）')),
+          );
+          setState(() => _locationResolved = true);
+        }
+        return;
+      }
+
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
+        if (mounted) setState(() => _locationResolved = true);
         return;
       }
 
+      // 优先用上次缓存位置快速定位，再用精确位置更新
+      final lastKnown = await Geolocator.getLastKnownPosition();
+      if (lastKnown != null && mounted) {
+        final pos = LatLng(lastKnown.latitude, lastKnown.longitude);
+        setState(() {
+          _userPosition = pos;
+          _locationResolved = true;
+        });
+        _mapController.move(pos, 17);
+      }
+
+      // 再异步获取精确位置（超时 40s，给 GPS 冷启动充足时间）
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
+        locationSettings: AndroidSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          timeLimit: const Duration(seconds: 40),
+          forceLocationManager: false,
         ),
       );
       if (mounted) {
         final pos = LatLng(position.latitude, position.longitude);
-        setState(() => _userPosition = pos);
-        _mapController.move(pos, 14);
+        setState(() {
+          _userPosition = pos;
+          _locationResolved = true;
+        });
+        _mapController.move(pos, 17);
       }
-    } catch (_) {
-      // 定位失败时保持默认北京中心
+    } catch (e) {
+      // 定位失败时保持默认北京中心，仍然解锁摄像头显示
+      print('定位失败: $e');
+      if (mounted) setState(() => _locationResolved = true);
     }
   }
 
@@ -274,6 +310,7 @@ class _MapPageState extends State<MapPage> {
       _navWaypoints.clear();
       _navSearchTarget = null;
       _currentRoute = null;
+      _unavoidableCameraIndices = {};
       _searchController.clear();
     });
   }
@@ -361,8 +398,11 @@ class _MapPageState extends State<MapPage> {
       );
 
       if (response.route != null) {
+        final route = response.route!;
+        final onRouteIndices = route.cameraIndicesOnRoute.toSet();
         setState(() {
-          _currentRoute = response.route;
+          _currentRoute = route;
+          _unavoidableCameraIndices = avoidCameras ? onRouteIndices : {};
         });
         // 缩放地图以显示整个路线
         _mapController.fitCamera(
@@ -371,15 +411,8 @@ class _MapPageState extends State<MapPage> {
             padding: const EdgeInsets.all(100),
           ),
         );
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '已规划路线\n距离: ${(_currentRoute!.distance / 1000).toStringAsFixed(1)}km\n'
-              '摄像头数: ${_currentRoute!.cameraIndicesOnRoute.length}',
-            ),
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        // 显示路线结果详情
+        if (mounted) _showRouteResult(route, avoidCameras);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(response.errorMessage ?? '路线规划失败')),
@@ -392,6 +425,188 @@ class _MapPageState extends State<MapPage> {
     } finally {
       setState(() => _isNavigating = false);
     }
+  }
+
+  /// 路线规划结果弹窗：告知用户绕开了几个摄像头、哪些无法绕开
+  void _showRouteResult(NavigationRoute route, bool avoidCameras) {
+    final onRouteCount = route.cameraIndicesOnRoute.length;
+    final totalDetected = _cameras.length;
+    // 本次规划绕开的摄像头数（与总数对比无意义，与路线直线对比也难算，
+    // 直接告诉用户"路线上仍有 N 个"以及"具体是哪些"）
+    final unavoidableCameras = route.cameraIndicesOnRoute
+        .where((i) => i < _cameras.length)
+        .map((i) => _cameras[i])
+        .toList();
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 标题行
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: onRouteCount == 0
+                        ? Colors.green.withValues(alpha: 0.12)
+                        : const Color(0xFFBA1A1A).withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    onRouteCount == 0
+                        ? Icons.verified_rounded
+                        : Icons.warning_amber_rounded,
+                    color: onRouteCount == 0
+                        ? Colors.green[700]
+                        : const Color(0xFFBA1A1A),
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        avoidCameras
+                            ? (onRouteCount == 0
+                                ? '已完全绕开所有摄像头！'
+                                : '路线规划完成')
+                            : '路线规划完成',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: _onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${(route.distance / 1000).toStringAsFixed(1)} km · '
+                        '约 ${(route.duration / 60).round()} 分钟',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: _onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // 摄像头绕行结果
+            if (avoidCameras) ...[
+              if (onRouteCount == 0)
+                _routeResultRow(
+                  icon: Icons.check_circle_outline_rounded,
+                  iconColor: Colors.green[700]!,
+                  text: '路线上 0 个摄像头，已完全绕开',
+                )
+              else ...[
+                _routeResultRow(
+                  icon: Icons.videocam_off_rounded,
+                  iconColor: const Color(0xFFBA1A1A),
+                  text: '路线上仍有 $onRouteCount 个摄像头无法绕开（已标红）',
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  '无法绕开的摄像头：',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                ...unavoidableCameras.map(
+                  (cam) => Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.videocam_rounded,
+                          size: 14,
+                          color: Color(0xFFBA1A1A),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            cam.name,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: _onSurface,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          cam.typeLabel,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: _onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ] else
+              _routeResultRow(
+                icon: Icons.videocam_rounded,
+                iconColor: _onSurfaceVariant,
+                text: '普通路线，途经 $onRouteCount 个摄像头',
+              ),
+
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _primary,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(42),
+                ),
+                child: const Text(
+                  '知道了',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _routeResultRow({
+    required IconData icon,
+    required Color iconColor,
+    required String text,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: iconColor),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14, color: _onSurface),
+          ),
+        ),
+      ],
+    );
   }
 
   void _addWayPoint(LatLng location) {
@@ -494,6 +709,29 @@ class _MapPageState extends State<MapPage> {
       default:
         return const Color(0xFFBA1A1A);
     }
+  }
+
+  /// 无法绕开的摄像头：红色加粗外环 + 警告图标，视觉突出
+  Widget _buildUnavoidableCameraMarker(Camera cam) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFBA1A1A),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2.5),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFBA1A1A).withValues(alpha: 0.55),
+            blurRadius: 10,
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.videocam_rounded,
+        color: Colors.white,
+        size: 18,
+      ),
+    );
   }
 
   void _showCameraInfo(Camera camera) {
@@ -1177,6 +1415,7 @@ _navSearchTarget == 'end'
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           // 地图层
@@ -1244,36 +1483,42 @@ _navSearchTarget == 'end'
                     ),
                   ],
                 ),
-              // 摄像头标记层
+              // 摄像头标记层（定位完成后才显示）
+              if (_locationResolved)
               MarkerLayer(
-                markers: _cameras.map((cam) {
+                markers: _cameras.asMap().entries.map((entry) {
+                  final idx = entry.key;
+                  final cam = entry.value;
+                  final isUnavoidable = _unavoidableCameraIndices.contains(idx);
                   return Marker(
                     point: LatLng(cam.lat, cam.lng),
-                    width: 30,
-                    height: 30,
+                    width: isUnavoidable ? 38 : 30,
+                    height: isUnavoidable ? 38 : 30,
                     child: GestureDetector(
                       onTap: () => _showCameraInfo(cam),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.92),
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _cameraColor(cam.type),
-                            width: 1.3,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.12),
-                              blurRadius: 8,
+                      child: isUnavoidable
+                          ? _buildUnavoidableCameraMarker(cam)
+                          : Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.92),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _cameraColor(cam.type),
+                                  width: 1.3,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.12),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: Icon(
+                                Icons.videocam_rounded,
+                                color: _cameraColor(cam.type),
+                                size: 16,
+                              ),
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          Icons.videocam_rounded,
-                          color: _cameraColor(cam.type),
-                          size: 16,
-                        ),
-                      ),
                     ),
                   );
                 }).toList(),

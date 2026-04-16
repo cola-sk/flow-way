@@ -65,11 +65,13 @@ function decodeTencentPolyline(polyline: number[]): RoutePoint[] {
  * 调用腾讯地图驾车路线规划 WebService API
  * 注意：腾讯 API 坐标格式为 lat,lng（纬度在前，经度在后）
  * @param alternatives 是否请求备选路线（alternatives=1 最多返回 3 条）
+ * @param waypoints 途径点，用于绕行绕开障碍点（最多 16 个）
  */
 async function callTencentDrivingAPI(
   start: Coordinate,
   end: Coordinate,
-  alternatives = false
+  alternatives = false,
+  waypoints?: Coordinate[]
 ): Promise<Array<{ points: RoutePoint[]; distance: number; duration: number }>> {
   if (!TENCENT_MAP_KEY) {
     throw new Error('未配置 TENCENT_MAP_KEY 环境变量');
@@ -81,6 +83,9 @@ async function callTencentDrivingAPI(
     key: TENCENT_MAP_KEY,
   });
   if (alternatives) params.set('alternatives', '1');
+  if (waypoints && waypoints.length > 0) {
+    params.set('waypoints', waypoints.map((w) => `${w.lat},${w.lng}`).join(';'));
+  }
 
   const url = `https://apis.map.qq.com/ws/direction/v1/driving/?${params}`;
   const res = await fetch(url, {
@@ -96,6 +101,66 @@ async function callTencentDrivingAPI(
     distance: route.distance as number,
     duration: route.duration as number,
   }));
+}
+
+/**
+ * 计算路线上某点的垂直偏移绕行点（左右各一个）
+ * 用于强制路线绕过摄像头
+ */
+function computePerpendicularOffsets(
+  routePoints: RoutePoint[],
+  cameraLat: number,
+  cameraLng: number,
+  offsetMeters: number = 350
+): { left: Coordinate; right: Coordinate } {
+  // 找到路线上距摄像头最近的点
+  let minDist = Infinity;
+  let nearestIdx = 0;
+  for (let i = 0; i < routePoints.length; i++) {
+    const d = calculateDistance(routePoints[i].lat, routePoints[i].lng, cameraLat, cameraLng);
+    if (d < minDist) {
+      minDist = d;
+      nearestIdx = i;
+    }
+  }
+
+  // 获取该点附近的路线方向向量
+  const prevIdx = Math.max(0, nearestIdx - 5);
+  const nextIdx = Math.min(routePoints.length - 1, nearestIdx + 5);
+  const p1 = routePoints[prevIdx];
+  const p2 = routePoints[nextIdx];
+
+  const dLat = p2.lat - p1.lat;
+  const dLng = p2.lng - p1.lng;
+  const len = Math.sqrt(dLat * dLat + dLng * dLng);
+
+  const cosLat = Math.cos((cameraLat * Math.PI) / 180);
+  const latPerDeg = 111000;
+  const lngPerDeg = 111000 * cosLat;
+
+  if (len < 1e-10) {
+    // 无法计算方向时，东西方向偏移
+    const latOff = offsetMeters / latPerDeg;
+    return {
+      left: { lat: cameraLat + latOff, lng: cameraLng },
+      right: { lat: cameraLat - latOff, lng: cameraLng },
+    };
+  }
+
+  // 垂直方向：(dLat, dLng) 旋转 90° -> (-dLng, dLat) 和 (dLng, -dLat)
+  const perpLat = -dLng / len;
+  const perpLng = dLat / len;
+
+  return {
+    left: {
+      lat: cameraLat + (perpLat * offsetMeters) / latPerDeg,
+      lng: cameraLng + (perpLng * offsetMeters) / lngPerDeg,
+    },
+    right: {
+      lat: cameraLat - (perpLat * offsetMeters) / latPerDeg,
+      lng: cameraLng - (perpLng * offsetMeters) / lngPerDeg,
+    },
+  };
 }
 
 /**
@@ -137,33 +202,76 @@ export async function planRoute(
 
 /**
  * 规划避开摄像头路线
- * 腾讯 API 返回最多 3 条备选路线，选择途经摄像头最少的一条
+ * 策略：
+ *   1. 腾讯 API 最多返回 3 条备选路线，选摄像头最少的；
+ *   2. 若仍有摄像头残留，对前 2 个摄像头计算垂直绕行点，
+ *      再用腾讯 API 规划带途径点的路线（左右两侧各一次），
+ *      取所有尝试中摄像头最少的结果。
  */
 export async function planAvoidCamerasRoute(
   start: Coordinate,
   end: Coordinate,
   cameras: Camera[]
 ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
-  let allRoutes: Array<{ points: RoutePoint[]; distance: number; duration: number }>;
+  type EvaluatedRoute = { points: RoutePoint[]; distance: number; duration: number; cameraIndices: number[] };
 
-  try {
-    allRoutes = await callTencentDrivingAPI(start, end, true);
-  } catch (err) {
-    console.warn('腾讯路线规划失败，回退到直线:', err);
-    const points = generateFallbackRoute(start, end);
-    const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
-    allRoutes = [{ points, distance, duration: Math.round(distance / 13.33) }];
+  async function fetchAndEvaluate(
+    wps?: Coordinate[],
+    alts = false
+  ): Promise<EvaluatedRoute[]> {
+    try {
+      const routes = await callTencentDrivingAPI(start, end, alts, wps);
+      return routes.map((r) => ({ ...r, cameraIndices: findCamerasNearRoute(r.points, cameras) }));
+    } catch (err) {
+      console.warn('腾讯路线规划失败:', err);
+      return [];
+    }
   }
 
-  // 对每条备选路线计算途经摄像头，选择摄像头最少的一条
-  const evaluated = allRoutes.map((route) => ({
-    ...route,
-    cameraIndices: findCamerasNearRoute(route.points, cameras),
-  }));
+  // Step 1：获取 3 条备选路线
+  let candidates: EvaluatedRoute[] = await fetchAndEvaluate(undefined, true);
 
-  return evaluated.reduce((best, cur) =>
-    cur.cameraIndices.length < best.cameraIndices.length ? cur : best
-  );
+  if (candidates.length === 0) {
+    // 回退直线
+    const points = generateFallbackRoute(start, end);
+    const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
+    candidates = [{ points, distance, duration: Math.round(distance / 13.33), cameraIndices: findCamerasNearRoute(points, cameras) }];
+  }
+
+  let best = candidates.reduce((a, b) => b.cameraIndices.length < a.cameraIndices.length ? b : a);
+
+  // Step 2：若还有摄像头，对前 2 个计算垂直绕行途径点后再次规划
+  if (best.cameraIndices.length > 0) {
+    const camerasOnRoute = best.cameraIndices.slice(0, 2).map((i) => cameras[i]);
+
+    // 分别收集左侧/右侧偏移途径点
+    const leftWaypoints: Coordinate[] = [];
+    const rightWaypoints: Coordinate[] = [];
+
+    for (const cam of camerasOnRoute) {
+      const offsets = computePerpendicularOffsets(best.points, cam.lat, cam.lng);
+      leftWaypoints.push(offsets.left);
+      rightWaypoints.push(offsets.right);
+    }
+
+    // 左侧绕行 + 右侧绕行各尝试一次（共 2 次额外 API 调用）
+    const detourResults = await Promise.allSettled([
+      fetchAndEvaluate(leftWaypoints),
+      fetchAndEvaluate(rightWaypoints),
+    ]);
+
+    for (const result of detourResults) {
+      if (result.status === 'fulfilled') {
+        for (const route of result.value) {
+          if (route.cameraIndices.length < best.cameraIndices.length) {
+            best = route;
+          }
+        }
+      }
+    }
+  }
+
+  return best;
 }
 
 /**
