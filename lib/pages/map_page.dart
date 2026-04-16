@@ -723,34 +723,36 @@ class _MapPageState extends State<MapPage> {
       case 4:
         return const Color(0xFF7C7766);
       case 6:
-        return const Color(0xFF605F53);
+        return const Color(0xFF9E9E9E);
       default:
         return const Color(0xFFBA1A1A);
     }
   }
 
-  /// 无法绕开的摄像头：红色加粗外环 + 警告图标，视觉突出
-  /// 最近 7 天新增的摄像头：黑色 marker，试用期加"试"角标
+  /// 最近 7 天新增的摄像头：白底+蓝色边框，同六环内风格但更显眼，试用期加"试"角标
   Widget _buildNewlyAddedMarker(Camera cam) {
+    const newColor = Color(0xFF0277BD);
     return Stack(
       clipBehavior: Clip.none,
+      fit: StackFit.expand,
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.black87,
+            color: Colors.white.withValues(alpha: 0.95),
             shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 1.5),
+            border: Border.all(color: newColor, width: 2.0),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 6,
+                color: newColor.withValues(alpha: 0.35),
+                blurRadius: 8,
+                spreadRadius: 1,
               ),
             ],
           ),
           child: const Icon(
             Icons.videocam_rounded,
-            color: Colors.white,
-            size: 16,
+            color: newColor,
+            size: 18,
           ),
         ),
         if (cam.isPilot)

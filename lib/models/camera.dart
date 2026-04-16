@@ -44,7 +44,7 @@ class Camera {
       case 1:
         return '只拍晚高峰';
       case 2:
-        return '六环内（全时段）';
+        return '六环内';
       case 4:
         return '待核实';
       case 5:
