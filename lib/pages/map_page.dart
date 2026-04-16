@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -112,24 +113,31 @@ class _MapPageState extends State<MapPage> {
         return;
       }
 
-      // 优先用上次缓存位置快速定位，再用精确位置更新
-      final lastKnown = await Geolocator.getLastKnownPosition();
-      if (lastKnown != null && mounted) {
-        final pos = LatLng(lastKnown.latitude, lastKnown.longitude);
-        setState(() {
-          _userPosition = pos;
-          _locationResolved = true;
-        });
-        _mapController.move(pos, 17);
+      // 优先用上次缓存位置快速定位（Web 不支持此 API）
+      if (!kIsWeb) {
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown != null && mounted) {
+          final pos = LatLng(lastKnown.latitude, lastKnown.longitude);
+          setState(() {
+            _userPosition = pos;
+            _locationResolved = true;
+          });
+          _mapController.move(pos, 17);
+        }
       }
 
-      // 再异步获取精确位置（超时 40s，给 GPS 冷启动充足时间）
+      // 再获取精确位置：Android 用 AndroidSettings，Web/iOS 用通用 LocationSettings
+      final LocationSettings locationSettings = kIsWeb
+          ? const LocationSettings(
+              accuracy: LocationAccuracy.high,
+            )
+          : AndroidSettings(
+              accuracy: LocationAccuracy.high,
+              timeLimit: const Duration(seconds: 40),
+              forceLocationManager: false,
+            );
       final position = await Geolocator.getCurrentPosition(
-        locationSettings: AndroidSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 40),
-          forceLocationManager: false,
-        ),
+        locationSettings: locationSettings,
       );
       if (mounted) {
         final pos = LatLng(position.latitude, position.longitude);

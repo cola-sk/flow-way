@@ -5,8 +5,8 @@ import 'package:latlong2/latlong.dart';
 
 class ApiService {
   // 本地开发时使用局域网 IP，部署后改为 Vercel 域名
-  static const String _baseUrl = 'https://flow-way.tz0618.uk';
-  // static const String _baseUrl = 'http://localhost:3000';
+  // static const String _baseUrl = 'https://flow-way.tz0618.uk';
+  static const String _baseUrl = 'http://localhost:3000';
 
   final Dio _dio;
 
