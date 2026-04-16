@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+
 const TENCENT_KEY = process.env.TENCENT_MAP_KEY!;
 
 export async function GET(request: Request) {
@@ -21,7 +23,7 @@ export async function GET(request: Request) {
 
   const res = await fetch(url.toString(), {
     headers: { Referer: 'https://flow-way.tz0618.uk' },
-    next: { revalidate: 0 },
+    cache: 'no-store',
   });
 
   if (!res.ok) return NextResponse.json({ suggestions: [] });
