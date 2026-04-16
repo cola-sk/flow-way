@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Flow-Way - Radiant Path</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary-container": "#776617",
+                      "tertiary-fixed-dim": "#cac7b8",
+                      "surface-tint": "#6e5e0d",
+                      "on-primary-fixed": "#221b00",
+                      "surface-container-high": "#e8e8e6",
+                      "on-error-container": "#93000a",
+                      "surface-container": "#eeeeec",
+                      "on-primary": "#ffffff",
+                      "inverse-primary": "#dcc66e",
+                      "primary-container": "#fde68a",
+                      "surface-variant": "#e2e3e1",
+                      "tertiary-container": "#ebe7d7",
+                      "on-secondary-container": "#684000",
+                      "secondary-container": "#fea619",
+                      "on-secondary": "#ffffff",
+                      "secondary-fixed-dim": "#ffb95f",
+                      "secondary-fixed": "#ffddb8",
+                      "on-secondary-fixed-variant": "#653e00",
+                      "surface-container-highest": "#e2e3e1",
+                      "outline": "#7c7766",
+                      "on-surface": "#1a1c1b",
+                      "on-tertiary-fixed": "#1c1c13",
+                      "inverse-surface": "#2f3130",
+                      "on-secondary-fixed": "#2a1700",
+                      "surface-container-lowest": "#ffffff",
+                      "outline-variant": "#cdc6b3",
+                      "on-tertiary": "#ffffff",
+                      "tertiary-fixed": "#e6e3d3",
+                      "surface-container-low": "#f3f4f2",
+                      "error-container": "#ffdad6",
+                      "secondary": "#855300",
+                      "primary": "#6e5e0d",
+                      "error": "#ba1a1a",
+                      "surface-dim": "#dadad8",
+                      "primary-fixed-dim": "#dcc66e",
+                      "primary-fixed": "#f9e287",
+                      "on-tertiary-fixed-variant": "#48473c",
+                      "on-primary-fixed-variant": "#534600",
+                      "on-surface-variant": "#4b4738",
+                      "tertiary": "#605f53",
+                      "surface-bright": "#f9f9f8",
+                      "on-error": "#ffffff",
+                      "surface": "#f9f9f8",
+                      "on-tertiary-container": "#69675b",
+                      "on-background": "#1a1c1b",
+                      "inverse-on-surface": "#f0f1ef",
+                      "background": "#f9f9f8"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "fontFamily": {
+                      "headline": ["Inter"],
+                      "body": ["Inter"],
+                      "label": ["Inter"]
+              }
+            },
+          },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .map-canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            background-color: #f9f9f8;
+        }
+    </style>
+<style>
+        body {
+            min-height: max(884px, 100dvh);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface overflow-hidden">
+<!-- Full Screen Map Background -->
+<div class="map-canvas" data-location="Santa Barbara, California">
+<img class="w-full h-full object-cover opacity-60" data-alt="minimalist aerial map view of a coastal city with soft golden hour lighting and clean architectural lines in muted tones" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBrlA9NgR-owvu1LvXcpBHO40Tgv9CQ6ESa1Rqez64YVonGARHjtFUeXaMtPi-R1TJ1cJTHsruYqiHrYlJYZjvYzg40gIDwxQl0rviEOMGMfpBJ0oIWwMjMMk5jfaioVzOto8_krc_KvB67KLseqwmNpfEtG2XrXq2kR0Qk0mTwWasG8lNCZg8X5QbQVo-JW6fRislDUhFGPjzbIkzFah2kXbf_N1v_--G1GgAWrKaMGgb2N8202IHgZZr6jMPOKxucq8b7COwRt-uZ"/>
+</div>
+<!-- Top Navigation Bar (Shown for Web) -->
+<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-16 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl no-border shadow-[0px_20px_40px_rgba(110,94,13,0.06)] md:flex hidden">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-yellow-900 dark:text-yellow-200">menu</span>
+<h1 class="font-['Inter'] font-extrabold tracking-tighter text-yellow-900 dark:text-yellow-100 text-lg">Radiant Path</h1>
+</div>
+<nav class="flex gap-8">
+<a class="text-yellow-900 dark:text-yellow-200 font-bold tracking-tight text-sm" href="#">Explore</a>
+<a class="text-zinc-400 dark:text-zinc-500 hover:bg-yellow-50/50 dark:hover:bg-zinc-800/50 transition-all text-sm font-bold tracking-tight" href="#">Plan</a>
+<a class="text-zinc-400 dark:text-zinc-500 hover:bg-yellow-50/50 dark:hover:bg-zinc-800/50 transition-all text-sm font-bold tracking-tight" href="#">Saved</a>
+</nav>
+<div class="h-8 w-8 rounded-full bg-primary-container overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="close-up portrait of a smiling user in warm natural sunlight with a soft blurred background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZx93UoQ9Qxr8BRe2Ph9hpRqnb8PbJvANs9gdA1MJoOuIhMIMwkkHjFC0qcLOmVxqiKMp4-WW0OTaZUPyosQ3aMqMyFY4oDO9VdS9RXwsMT2w_GbKqXjhzpERhx5nFY29rwk47z9gmvYwb6_KctThZ4oR5sHgp7i5YAHs-V6EJU19OUsViusyKOqMlYJT-3cV64FQZJx05oUaOfUJBMabqjCnJXF-gmT0b3AFh8riI_9eK_Kh_1gSN7rMaCmRInG36acQy7ouJO-Z9"/>
+</div>
+</header>
+<!-- Search Interface Layer -->
+<main class="relative z-10 flex flex-col items-center pt-8 px-6 md:pt-24">
+<!-- Floating Search Bar -->
+<div class="w-full max-w-lg bg-surface-container-lowest/90 backdrop-blur-md rounded-full px-6 py-4 flex items-center gap-4 shadow-[0px_20px_40px_rgba(110,94,13,0.06)] group transition-all duration-300 hover:shadow-[0px_25px_50px_rgba(110,94,13,0.1)]">
+<span class="material-symbols-outlined text-primary">search</span>
+<input class="bg-transparent border-none focus:ring-0 w-full text-on-surface placeholder:text-on-surface-variant font-medium tracking-tight" placeholder="Where are we flowing today?" type="text"/>
+<span class="material-symbols-outlined text-on-surface-variant/40 cursor-pointer hover:text-primary transition-colors">mic</span>
+</div>
+</main>
+<!-- Bottom Navigation Bar (Mobile Only) -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-3 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-t-[32px] md:hidden shadow-[0px_-10px_30px_rgba(110,94,13,0.04)]">
+<!-- Explore (Active) -->
+<a class="flex flex-col items-center justify-center bg-yellow-200 dark:bg-yellow-900/30 text-yellow-900 dark:text-yellow-100 rounded-full px-5 py-2 active:scale-90 duration-300 ease-out" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">explore</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider mt-1">Explore</span>
+</a>
+<!-- Plan -->
+<a class="flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-400 px-5 py-2 hover:text-yellow-700 dark:hover:text-yellow-300 transition-colors active:scale-90 duration-300 ease-out" href="#">
+<span class="material-symbols-outlined">route</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider mt-1">Plan</span>
+</a>
+<!-- Saved -->
+<a class="flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-400 px-5 py-2 hover:text-yellow-700 dark:hover:text-yellow-300 transition-colors active:scale-90 duration-300 ease-out" href="#">
+<span class="material-symbols-outlined">bookmark</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider mt-1">Saved</span>
+</a>
+<!-- Recent -->
+<a class="flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-400 px-5 py-2 hover:text-yellow-700 dark:hover:text-yellow-300 transition-colors active:scale-90 duration-300 ease-out" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-['Inter'] text-[11px] font-semibold uppercase tracking-wider mt-1">Recent</span>
+</a>
+</nav>
+</body></html>
