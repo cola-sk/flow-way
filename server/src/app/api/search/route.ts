@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
+import { signTencentUrl } from '@/lib/tencent-sign';
 
 export const dynamic = 'force-dynamic';
-
-const TENCENT_KEY = process.env.TENCENT_MAP_KEY!;
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -20,14 +19,14 @@ export async function GET(request: Request) {
       ? `nearby(${lat},${lng},5000)`
       : 'region(北京,0)';
 
-  const url = new URL('https://apis.map.qq.com/ws/place/v1/search/');
-  url.searchParams.set('keyword', keyword);
-  url.searchParams.set('boundary', boundary);
-  url.searchParams.set('page_size', '8');
-  url.searchParams.set('key', TENCENT_KEY);
+  const baseUrl = new URL('https://apis.map.qq.com/ws/place/v1/search/');
+  baseUrl.searchParams.set('keyword', keyword);
+  baseUrl.searchParams.set('boundary', boundary);
+  baseUrl.searchParams.set('page_size', '8');
 
-  const res = await fetch(url.toString(), {
-    headers: { Referer: 'https://flow-way.tz0618.uk' },
+  const signedUrl = signTencentUrl(baseUrl);
+
+  const res = await fetch(signedUrl, {
     cache: 'no-store',
   });
   if (!res.ok) {

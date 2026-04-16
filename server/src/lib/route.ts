@@ -1,8 +1,7 @@
 import { Coordinate, Route, RoutePoint } from '@/types/route';
 import { Camera } from '@/types/camera';
 import { v4 as uuidv4 } from 'uuid';
-
-const TENCENT_MAP_KEY = process.env.TENCENT_MAP_KEY ?? '';
+import { signTencentUrl, TENCENT_MAP_KEY } from './tencent-sign';
 
 /**
  * 计算两点间距离（单位：米）
@@ -77,20 +76,16 @@ async function callTencentDrivingAPI(
     throw new Error('未配置 TENCENT_MAP_KEY 环境变量');
   }
 
-  const params = new URLSearchParams({
-    from: `${start.lat},${start.lng}`,
-    to: `${end.lat},${end.lng}`,
-    key: TENCENT_MAP_KEY,
-  });
-  if (alternatives) params.set('alternatives', '1');
+  const baseUrl = new URL('https://apis.map.qq.com/ws/direction/v1/driving/');
+  baseUrl.searchParams.set('from', `${start.lat},${start.lng}`);
+  baseUrl.searchParams.set('to', `${end.lat},${end.lng}`);
+  if (alternatives) baseUrl.searchParams.set('alternatives', '1');
   if (waypoints && waypoints.length > 0) {
-    params.set('waypoints', waypoints.map((w) => `${w.lat},${w.lng}`).join(';'));
+    baseUrl.searchParams.set('waypoints', waypoints.map((w) => `${w.lat},${w.lng}`).join(';'));
   }
 
-  const url = `https://apis.map.qq.com/ws/direction/v1/driving/?${params}`;
-  const res = await fetch(url, {
-    headers: { Referer: 'https://flow-way.tz0618.uk' },
-  });
+  const url = signTencentUrl(baseUrl);
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`腾讯地图 HTTP 错误: ${res.status}`);
 
   const data = await res.json();
