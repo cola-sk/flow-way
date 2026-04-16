@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,8 +7,6 @@ import 'package:uuid/uuid.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
-import '../widgets/navigation_bar.dart' as nav;
-import '../widgets/navigation_dialog.dart';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -37,10 +36,13 @@ class _MapPageState extends State<MapPage> {
   LatLng? _userPosition;
 
   // 搜索状态
-  bool _showSearch = false;
   final TextEditingController _searchController = TextEditingController();
-  List<PlaceResult> _searchResults = [];
-  bool _searching = false;
+  final FocusNode _searchFocusNode = FocusNode();
+  Timer? _suggestDebounce;
+  List<PlaceResult> _suggestions = [];
+  bool _isSuggesting = false;
+  bool _showSuggestions = false;
+  PlaceResult? _selectedPlace;
 
   @override
   void initState() {
@@ -52,7 +54,9 @@ class _MapPageState extends State<MapPage> {
 
   @override
   void dispose() {
+    _suggestDebounce?.cancel();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -81,26 +85,116 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
-  Future<void> _searchPlaces(String keyword) async {
+  void _fetchSuggestions(String keyword) {
+    _suggestDebounce?.cancel();
     if (keyword.trim().isEmpty) {
-      setState(() => _searchResults = []);
+      setState(() {
+        _suggestions = [];
+        _showSuggestions = false;
+      });
       return;
     }
-    setState(() => _searching = true);
-    final results = await _apiService.searchPlaces(
-      keyword,
-      nearBy: _userPosition ?? _mapController.camera.center,
-    );
-    if (mounted) setState(() { _searchResults = results; _searching = false; });
+    _suggestDebounce = Timer(const Duration(milliseconds: 350), () async {
+      if (!mounted) return;
+      setState(() => _isSuggesting = true);
+      final results = await _apiService.suggestPlaces(
+        keyword,
+        nearBy: _userPosition,
+      );
+      if (mounted) {
+        setState(() {
+          _suggestions = results;
+          _isSuggesting = false;
+          _showSuggestions = true;
+        });
+      }
+    });
   }
 
-  void _onSearchResultTap(PlaceResult place) {
-    _mapController.move(place.location, 15);
+  Future<void> _selectSuggestion(PlaceResult suggestion) async {
+    _searchFocusNode.unfocus();
+    _searchController.text = suggestion.name;
     setState(() {
-      _showSearch = false;
-      _searchResults = [];
-      _searchController.clear();
+      _showSuggestions = false;
+      _suggestions = [];
     });
+    // 用 search 接口获取精确地点信息
+    final results = await _apiService.searchPlaces(
+      suggestion.name,
+      nearBy: _userPosition,
+    );
+    final place = results.isNotEmpty ? results.first : suggestion;
+    if (mounted) {
+      setState(() => _selectedPlace = place);
+      _mapController.move(place.location, 16);
+    }
+  }
+
+  void _showPlaceActions(PlaceResult place) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.location_on, color: Colors.blue),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    place.name,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            if (place.address.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                place.address,
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+              ),
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _planRoute(
+                          place.location, _userPosition ?? _beijingCenter, true);
+                    },
+                    icon: const Icon(Icons.navigation, size: 16),
+                    label: const Text('从这里出发'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _planRoute(
+                          _userPosition ?? _beijingCenter, place.location, true);
+                    },
+                    icon: const Icon(Icons.directions, size: 16),
+                    label: const Text('去这里'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _loadCameras() async {
@@ -138,11 +232,15 @@ class _MapPageState extends State<MapPage> {
   void _showNavigationDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => NavigationDialog(
-        onNavigate: (start, end, avoidCameras) async {
-          await _planRoute(start, end, avoidCameras);
-        },
-        recentLocations: const [],
+      builder: (ctx) => AlertDialog(
+        title: const Text('规划路线'),
+        content: const Text('请先在搜索框中搜索目的地，然后点击"去这里"'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('知道了'),
+          ),
+        ],
       ),
     );
   }
@@ -374,7 +472,7 @@ class _MapPageState extends State<MapPage> {
                 ElevatedButton(
                   onPressed: () {
                     // 导航到此标记点
-                    _planRoute(_beijingCenter, wayPoint.location, true);
+                    _planRoute(_userPosition ?? _beijingCenter, wayPoint.location, true);
                     Navigator.pop(ctx);
                   },
                   child: const Text('导航到这里'),
@@ -518,16 +616,34 @@ class _MapPageState extends State<MapPage> {
                     );
                   }).toList(),
                 ),
+                // 搜索选中地点标记
+                if (_selectedPlace != null)
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _selectedPlace!.location,
+                        width: 44,
+                        height: 44,
+                        child: GestureDetector(
+                          onTap: () => _showPlaceActions(_selectedPlace!),
+                          child: const Icon(
+                            Icons.location_on,
+                            color: Colors.blue,
+                            size: 40,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
             ],
           ),
 
-          // 顶部安全区域 + 搜索框 + 导航栏
+          // 顶部搜索框
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 搜索框
                 Container(
                   margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                   decoration: BoxDecoration(
@@ -543,21 +659,22 @@ class _MapPageState extends State<MapPage> {
                   ),
                   child: TextField(
                     controller: _searchController,
-                    onTap: () => setState(() => _showSearch = true),
-                    onChanged: (v) => _searchPlaces(v),
+                    focusNode: _searchFocusNode,
+                    onChanged: _fetchSuggestions,
                     decoration: InputDecoration(
                       hintText: '搜索地点...',
                       prefixIcon: const Icon(Icons.search, size: 20),
-                      suffixIcon: _showSearch
+                      suffixIcon: _showSuggestions || _selectedPlace != null
                           ? IconButton(
                               icon: const Icon(Icons.close, size: 18),
                               onPressed: () {
                                 _searchController.clear();
                                 setState(() {
-                                  _showSearch = false;
-                                  _searchResults = [];
+                                  _showSuggestions = false;
+                                  _suggestions = [];
+                                  _selectedPlace = null;
                                 });
-                                FocusScope.of(context).unfocus();
+                                _searchFocusNode.unfocus();
                               },
                             )
                           : null,
@@ -568,8 +685,8 @@ class _MapPageState extends State<MapPage> {
                   ),
                 ),
 
-                // 搜索结果列表
-                if (_showSearch && (_searchResults.isNotEmpty || _searching))
+                // 建议词列表
+                if (_showSuggestions && (_suggestions.isNotEmpty || _isSuggesting))
                   Container(
                     margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
                     decoration: BoxDecoration(
@@ -583,40 +700,41 @@ class _MapPageState extends State<MapPage> {
                         ),
                       ],
                     ),
-                    child: _searching
+                    child: _isSuggesting
                         ? const Padding(
                             padding: EdgeInsets.all(12),
-                            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                            child: Center(
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2)),
                           )
                         : ListView.separated(
                             shrinkWrap: true,
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                            itemCount: _searchResults.length,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 4),
+                            itemCount: _suggestions.length,
                             separatorBuilder: (_, __) =>
                                 const Divider(height: 1, indent: 16),
                             itemBuilder: (_, i) {
-                              final place = _searchResults[i];
+                              final s = _suggestions[i];
                               return ListTile(
                                 dense: true,
                                 leading: const Icon(Icons.place,
                                     size: 18, color: Colors.blueAccent),
-                                title: Text(place.name,
-                                    style: const TextStyle(fontSize: 14)),
-                                subtitle: place.address.isNotEmpty
-                                    ? Text(place.address,
-                                        style: const TextStyle(fontSize: 12),
+                                title: Text(s.name,
+                                    style:
+                                        const TextStyle(fontSize: 14)),
+                                subtitle: s.address.isNotEmpty
+                                    ? Text(s.address,
+                                        style: const TextStyle(
+                                            fontSize: 12),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis)
                                     : null,
-                                onTap: () => _onSearchResultTap(place),
+                                onTap: () => _selectSuggestion(s),
                               );
                             },
                           ),
                   ),
-
-                nav.NavigationBar(
-                  onSearch: _showNavigationDialog,
-                ),
               ],
             ),
           ),

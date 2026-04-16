@@ -5,7 +5,8 @@ import 'package:latlong2/latlong.dart';
 
 class ApiService {
   // 本地开发时使用局域网 IP，部署后改为 Vercel 域名
-  static const String _baseUrl = 'https://flow-way.tz0618.uk';
+  // static const String _baseUrl = 'https://flow-way.tz0618.uk';
+  static const String _baseUrl = 'http://localhost:3000';
 
   final Dio _dio;
 
@@ -87,6 +88,28 @@ class ApiService {
     } catch (e) {
       print('删除标记点失败: $e');
       return false;
+    }
+  }
+
+  /// 搜索建议词（输入时自动补全）
+  Future<List<PlaceResult>> suggestPlaces(
+    String keyword, {
+    LatLng? nearBy,
+  }) async {
+    try {
+      final params = <String, dynamic>{'keyword': keyword};
+      if (nearBy != null) {
+        params['lat'] = nearBy.latitude;
+        params['lng'] = nearBy.longitude;
+      }
+      final response = await _dio.get('/api/suggest', queryParameters: params);
+      final List<dynamic> data = response.data['suggestions'] ?? [];
+      return data
+          .map((e) => PlaceResult.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('搜索建议失败: $e');
+      return [];
     }
   }
 

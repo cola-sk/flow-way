@@ -77,7 +77,9 @@ async function callTencentDrivingAPI(
   if (alternatives) params.set('alternatives', '1');
 
   const url = `https://apis.map.qq.com/ws/direction/v1/driving/?${params}`;
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: { Referer: 'https://flow-way.tz0618.uk' },
+  });
   if (!res.ok) throw new Error(`腾讯地图 HTTP 错误: ${res.status}`);
 
   const data = await res.json();
