@@ -970,6 +970,10 @@ class _MapPageState extends State<MapPage> {
                         color: _onSurfaceVariant.withValues(alpha: 0.5),
                       ),
                 border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 filled: false,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 2,
@@ -1220,6 +1224,10 @@ _navSearchTarget == 'end'
                   fontWeight: FontWeight.normal,
                 ),
                 border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 10),
               ),
@@ -1443,6 +1451,9 @@ _navSearchTarget == 'end'
 
   @override
   Widget build(BuildContext context) {
+    // 底部安全区高度 + 导航栏估算高度（icon+label+padding ≈ 72，外层 Padding bottom:8）
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final navBarHeight = 72.0 + bottomInset + 8;
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Stack(
@@ -1704,7 +1715,7 @@ _navSearchTarget == 'end'
           // 底部信息栏
           if (!_loading && _error == null)
             Positioned(
-              bottom: 102,
+              bottom: navBarHeight + 8,
               left: 16,
               right: 84,
               child: _buildGlassPanel(
@@ -1748,7 +1759,7 @@ _navSearchTarget == 'end'
 
           Positioned(
             right: 16,
-            bottom: 104,
+            bottom: navBarHeight + 8,
             child: FloatingActionButton.small(
               heroTag: 'locate-btn',
               backgroundColor: _primaryContainer,
