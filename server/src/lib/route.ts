@@ -44,7 +44,7 @@ export function findCamerasNearRoute(
 
 /**
  * 将腾讯路线规划 API 返回的 polyline 解码为坐标点
- * 腾讯格式：第一对为绝对坐标（十进制度），后续每对为增量（单位 1e-5 度）
+ * 腾讯格式：第一对为绝对坐标（十进制度），后续每对为增量（单位 1e-6 度）
  */
 function decodeTencentPolyline(polyline: number[]): RoutePoint[] {
   if (polyline.length < 2) return [];
@@ -53,8 +53,8 @@ function decodeTencentPolyline(polyline: number[]): RoutePoint[] {
   let lng = polyline[1];
   points.push({ lat, lng });
   for (let i = 2; i + 1 < polyline.length; i += 2) {
-    lat += polyline[i] / 1e5;
-    lng += polyline[i + 1] / 1e5;
+    lat += polyline[i] / 1e6;
+    lng += polyline[i + 1] / 1e6;
     points.push({ lat, lng });
   }
   return points;
