@@ -14,16 +14,17 @@ export function signTencentUrl(url: URL): string {
   url.searchParams.set('key', TENCENT_MAP_KEY);
 
   // 按 key 字典序排列参数
-  const sortedParams = new URLSearchParams(
-    [...url.searchParams.entries()].sort(([a], [b]) => a.localeCompare(b))
-  );
+  const sortedEntries = [...url.searchParams.entries()].sort(([a], [b]) => a.localeCompare(b));
 
   if (TENCENT_MAP_SK) {
-    const pathAndQuery = `${url.pathname}?${sortedParams.toString()}${TENCENT_MAP_SK}`;
+    // 签名字符串必须使用原始未编码的参数值（腾讯签名规范要求）
+    const rawQuery = sortedEntries.map(([k, v]) => `${k}=${v}`).join('&');
+    const pathAndQuery = `${url.pathname}?${rawQuery}${TENCENT_MAP_SK}`;
     const sig = createHash('md5').update(pathAndQuery).digest('hex');
-    sortedParams.set('sig', sig);
+    sortedEntries.push(['sig', sig]);
   }
 
+  const sortedParams = new URLSearchParams(sortedEntries);
   return `${url.origin}${url.pathname}?${sortedParams.toString()}`;
 }
 

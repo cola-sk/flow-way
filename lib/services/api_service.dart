@@ -1,18 +1,39 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import '../models/camera.dart';
 import '../models/route.dart';
 import 'package:latlong2/latlong.dart';
 
-class ApiService {
-  // 本地开发时使用局域网 IP，部署后改为 Vercel 域名
-  static const String _baseUrl = 'https://flow-way.tz0618.uk';
-  // static const String _baseUrl = 'http://localhost:3000';
+String _resolveBaseUrl() {
+  if (kIsWeb) {
+    // Web 端：Chrome 本地开发用 localhost:3000，部署到生产域名时用当前 origin 的 server
+    final origin = Uri.base.origin;
+    if (origin.contains('localhost') || origin.contains('127.0.0.1')) {
+      return 'http://localhost:3000';
+    }
+    return 'https://flow-way.tz0618.uk';
+  }
+  // 原生端（Android / iOS）直接打生产接口
+  return 'https://flow-way.tz0618.uk';
+}
 
+String _formatError(Object e) {
+  if (e is DioException) {
+    final resp = e.response;
+    if (resp != null) {
+      return '[${resp.statusCode}] ${resp.statusMessage} — ${resp.data}';
+    }
+    return '${e.type.name}: ${e.message}';
+  }
+  return e.toString();
+}
+
+class ApiService {
   final Dio _dio;
 
   ApiService()
       : _dio = Dio(BaseOptions(
-          baseUrl: _baseUrl,
+          baseUrl: _resolveBaseUrl(),
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 60),
         ));
@@ -46,7 +67,9 @@ class ApiService {
       });
       return RouteResponse.fromJson(response.data);
     } catch (e) {
-      return RouteResponse(errorMessage: '路线规划失败: $e');
+      final msg = '路线规划失败: ${_formatError(e)}';
+      print(msg);
+      return RouteResponse(errorMessage: msg);
     }
   }
 
@@ -63,7 +86,7 @@ class ApiService {
       });
       return true;
     } catch (e) {
-      print('保存标记点失败: $e');
+      print('保存标记点失败: ${_formatError(e)}');
       return false;
     }
   }
@@ -75,7 +98,7 @@ class ApiService {
       final List<dynamic> data = response.data['waypoints'] ?? [];
       return data.map((item) => WayPoint.fromJson(item as Map<String, dynamic>)).toList();
     } catch (e) {
-      print('获取标记点失败: $e');
+      print('获取标记点失败: ${_formatError(e)}');
       return [];
     }
   }
@@ -86,7 +109,7 @@ class ApiService {
       await _dio.delete('/api/waypoints/$id');
       return true;
     } catch (e) {
-      print('删除标记点失败: $e');
+      print('删除标记点失败: ${_formatError(e)}');
       return false;
     }
   }
@@ -108,7 +131,7 @@ class ApiService {
           .map((e) => PlaceResult.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print('搜索建议失败: $e');
+      print('搜索建议失败: ${_formatError(e)}');
       return [];
     }
   }
@@ -130,7 +153,7 @@ class ApiService {
           .map((e) => PlaceResult.fromJson(e as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      print('搜索地点失败: $e');
+      print('搜索地点失败: ${_formatError(e)}');
       return [];
     }
   }

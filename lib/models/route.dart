@@ -85,7 +85,7 @@ class NavigationRoute {
         .cast<Map<String, dynamic>>()
         .map((p) => LatLng(p['lat'] as double, p['lng'] as double))
         .toList(),
-    distance: json['distance'] as double,
+    distance: (json['distance'] as num).toDouble(),
     duration: json['duration'] as int,
     routeType: json['routeType'] as String,
     cameraIndicesOnRoute: List<int>.from(json['cameraIndicesOnRoute'] as List),

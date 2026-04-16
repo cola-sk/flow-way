@@ -194,7 +194,17 @@ class _MapPageState extends State<MapPage> {
     final place = results.isNotEmpty ? results.first : suggestion;
     if (!mounted) return;
 
-    if (_navSearchTarget == 'end') {
+    if (_navSearchTarget == 'start') {
+      // 导航模式下选中起点
+      setState(() {
+        _navStartIsMyLocation = false;
+        _navStartPlace = place;
+        _navSearchTarget = null;
+        _selectedPlace = null;
+        _searchController.clear();
+      });
+      _mapController.move(place.location, 15);
+    } else if (_navSearchTarget == 'end') {
       // 导航模式下选中终点
       setState(() {
         _navEndPlace = place;
@@ -1031,12 +1041,23 @@ class _MapPageState extends State<MapPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _buildNavRow(
-                  icon: Icons.my_location_rounded,
-                  iconColor: Colors.green[700]!,
-                  label: startLabel,
-                  isPlaceholder: false,
-                ),
+_navSearchTarget == 'start'
+                    ? _buildNavInputRow(
+                        icon: Icons.my_location_rounded,
+                        iconColor: Colors.green[700]!,
+                        hintText: '搜索起点...',
+                      )
+                    : _buildNavRow(
+                        icon: Icons.my_location_rounded,
+                        iconColor: Colors.green[700]!,
+                        label: startLabel,
+                        isPlaceholder: false,
+                        onTap: () {
+                          setState(() => _navSearchTarget = 'start');
+                          _searchController.clear();
+                          _searchFocusNode.requestFocus();
+                        },
+                      ),
                 ..._navWaypoints.asMap().entries.map(
                   (entry) => Padding(
                     padding: const EdgeInsets.only(top: 8),
