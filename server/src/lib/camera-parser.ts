@@ -32,14 +32,31 @@ export function extractDirection(name: string): CameraDirection {
 }
 
 /**
- * 从摄像头名称中提取状态标识
+ * 从摄像头名称和 aa 类型值中提取状态标识
+ * aa=1: 只拍晚高峰; aa=2: 六环内; aa=4: 待核实; aa=5: 晚高峰+六环内; aa=6: 六环外
  */
-export function extractStatus(name: string): CameraStatus {
+export function extractStatus(name: string, type: number, date: string): CameraStatus {
+  const isPeakHourOnly = type === 1 || type === 5 || name.includes('高峰期');
+  const isOutsideSixthRing = type === 6 || name.includes('六环外');
+  const isUnverified = type === 4;
+
+  // 判断是否为最近 7 天新增
+  let isNewlyAdded = false;
+  if (date) {
+    const dateStr = date.replace(/-/g, '/'); // Safari 兼容
+    const addedTime = new Date(dateStr).getTime();
+    if (!isNaN(addedTime)) {
+      isNewlyAdded = Date.now() - addedTime < 7 * 24 * 60 * 60 * 1000;
+    }
+  }
+
   return {
     isPilot: name.includes('试用期'),
     isLocationUnconfirmed: name.includes('位置待确认'),
-    isPeakHourOnly: name.includes('高峰期'),
-    isOutsideSixthRing: name.includes('六环外'),
+    isPeakHourOnly,
+    isOutsideSixthRing,
+    isUnverified,
+    isNewlyAdded,
     otherFlags: extractOtherFlags(name),
   };
 }
@@ -129,7 +146,7 @@ export function createEnhancedCamera(
     date,
     editTime,
     href,
-    status: extractStatus(name),
+    status: extractStatus(name, type, date),
     ...locationInfo,
   };
 }

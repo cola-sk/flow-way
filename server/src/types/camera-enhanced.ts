@@ -15,15 +15,19 @@ export enum CameraDirection {
 }
 
 /**
- * 摄像头类型
+ * 摄像头类型 (aa 字段) — 来自 jinjing365.com LabelsData
+ * 1 = 只拍晚高峰（301 条）
+ * 2 = 六环内全时段（4615 条，最多）
+ * 4 = 待核实/特殊情况（60 条，含辅路/需进一步确认等）
+ * 5 = 晚高峰 + 六环内（67 条）
+ * 6 = 六环外（782 条）
  */
 export enum CameraType {
-  CONFIRMED = 1,        // 确认摄像头
-  NEW_UNCONFIRMED = 2,  // 新增/待确认
-  TEMPORARY = 3,        // 临时摄像头
-  UNKNOWN_4 = 4,        // 其他类型4
-  UNKNOWN_5 = 5,        // 其他类型5
-  OUTSIDE_SIXTH_RING = 6, // 六环外
+  PEAK_HOUR_ONLY = 1,           // 只拍晚高峰
+  INSIDE_SIXTH_RING = 2,        // 六环内（全时段）
+  UNVERIFIED = 4,               // 待核实/特殊情况
+  PEAK_HOUR_INSIDE_RING = 5,    // 晚高峰 + 六环内
+  OUTSIDE_SIXTH_RING = 6,       // 六环外
 }
 
 /**
@@ -37,8 +41,12 @@ export interface CameraStatus {
   isLocationUnconfirmed: boolean;
   /** 是否仅在高峰期拍摄 */
   isPeakHourOnly: boolean;
-  /** 是否在六环外 */
+  /** 是否在六环外 (aa=6) */
   isOutsideSixthRing: boolean;
+  /** 是否为待核实/特殊情况 (aa=4) */
+  isUnverified: boolean;
+  /** 是否为最近7天新增 (time 字段距今 < 7天) */
+  isNewlyAdded: boolean;
   /** 其他特殊标识 */
   otherFlags: string[];
 }
@@ -56,7 +64,7 @@ export interface EnhancedCamera {
   lat: number;
 
   // 详细信息
-  /** 摄像头类型 1=确认, 2=新增/待确认, 6=六环外 */
+  /** 摄像头类型 (aa): 1=只拍晚高峰, 2=六环内, 5=晚高峰+六环内, 6=六环外 */
   type: CameraType;
   /** 摄像头拍摄方向 */
   direction: CameraDirection;

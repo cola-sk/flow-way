@@ -5,10 +5,12 @@ export interface Camera {
   lng: number;
   /** 纬度 (GCJ-02) */
   lat: number;
-  /** 类型: 1=确认, 2=新增/待确认, 6=六环外 等 */
+  /** 类型 (aa): 1=只拍晚高峰, 2=六环内, 5=晚高峰+六环内, 6=六环外 */
   type: number;
-  /** 更新日期 */
+  /** 更新日期 (time 字段) */
   date: string;
+  /** 编辑时间 (edittime 字段) */
+  edittime?: string;
   /** 详情页路径 */
   href: string;
 }

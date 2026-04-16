@@ -27,15 +27,28 @@ class Camera {
     );
   }
 
+  /// 是否为最近 7 天新增（date 字段距今 < 7 天）
+  bool get isNewlyAdded {
+    if (date.isEmpty) return false;
+    final parsed = DateTime.tryParse(date);
+    if (parsed == null) return false;
+    return DateTime.now().difference(parsed).inDays < 7;
+  }
+
+  /// 是否处于试用期（name 包含"试用期"字眼）
+  bool get isPilot => name.contains('试用期');
+
   /// 类型描述
   String get typeLabel {
     switch (type) {
       case 1:
-        return '已确认';
+        return '只拍晚高峰';
       case 2:
-        return '新增/待确认';
+        return '六环内（全时段）';
       case 4:
-        return '已撤除';
+        return '待核实';
+      case 5:
+        return '晚高峰+六环内';
       case 6:
         return '六环外';
       default:

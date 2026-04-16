@@ -35,7 +35,7 @@ export async function scrapeCameras(): Promise<{
   const cameras: Camera[] = [];
 
   const entryRegex =
-    /name:\s*'([^']*)',\s*position:\s*\[([0-9.]+),([0-9.]+)\],\s*aa:\s*'(\d+)',\s*time:\s*'([^']*)'/g;
+    /name:\s*'([^']*)',\s*position:\s*\[([0-9.]+),([0-9.]+)\],\s*aa:\s*'(\d+)',\s*time:\s*'([^']*)',\s*edittime:\s*'([^']*)'/g;
 
   let match: RegExpExecArray | null;
   while ((match = entryRegex.exec(html)) !== null) {
@@ -45,6 +45,7 @@ export async function scrapeCameras(): Promise<{
       lat: parseFloat(match[3]),
       type: parseInt(match[4], 10),
       date: match[5],
+      edittime: match[6] || undefined,
       href: '', // href 由单独的正则获取，简化处理
     });
   }
@@ -84,7 +85,8 @@ export async function scrapeCamerasEnhanced(): Promise<{
       cam.lat,
       cam.type,
       cam.date,
-      cam.href
+      cam.href,
+      cam.edittime
     )
   );
 

@@ -730,8 +730,55 @@ class _MapPageState extends State<MapPage> {
   }
 
   /// 无法绕开的摄像头：红色加粗外环 + 警告图标，视觉突出
-  Widget _buildUnavoidableCameraMarker(Camera cam) {
-    return Container(
+  /// 最近 7 天新增的摄像头：黑色 marker，试用期加"试"角标
+  Widget _buildNewlyAddedMarker(Camera cam) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.black87,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 6,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.videocam_rounded,
+            color: Colors.white,
+            size: 16,
+          ),
+        ),
+        if (cam.isPilot)
+          Positioned(
+            top: -4,
+            right: -4,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                '试',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 8,
+                  fontWeight: FontWeight.bold,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildUnavoidableCameraMarker(Camera cam) {    return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFBA1A1A),
         shape: BoxShape.circle,
@@ -1538,27 +1585,29 @@ _navSearchTarget == 'end'
                       onTap: () => _showCameraInfo(cam),
                       child: isUnavoidable
                           ? _buildUnavoidableCameraMarker(cam)
-                          : Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.92),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: _cameraColor(cam.type),
-                                  width: 1.3,
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.12),
-                                    blurRadius: 8,
+                          : cam.isNewlyAdded
+                              ? _buildNewlyAddedMarker(cam)
+                              : Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.92),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: _cameraColor(cam.type),
+                                      width: 1.3,
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.12),
+                                        blurRadius: 8,
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              child: Icon(
-                                Icons.videocam_rounded,
-                                color: _cameraColor(cam.type),
-                                size: 16,
-                              ),
-                            ),
+                                  child: Icon(
+                                    Icons.videocam_rounded,
+                                    color: _cameraColor(cam.type),
+                                    size: 16,
+                                  ),
+                                ),
                     ),
                   );
                 }).toList(),
