@@ -3,8 +3,8 @@ import { RouteRequest, RouteResponse } from '@/types/route';
 import { getCamerasEnhanced } from '@/lib/cache';
 import { isRouteDetected, calculateBearing } from '@/lib/camera-detection-simple';
 import {
+  planRoute,
   planAvoidCamerasRoute,
-  generateLinearRoute,
   createRoute,
 } from '@/lib/route';
 
@@ -39,14 +39,21 @@ export async function POST(request: NextRequest) {
     let polylinePoints;
     let cameraIndices: number[] = [];
     let detectionDetails: any[] = [];
+    let routeDistance: number | undefined;
+    let routeDuration: number | undefined;
 
     if (avoidCameras) {
-      // 规划避开摄像头的路线
-      const result = planAvoidCamerasRoute(start, end, cameras as any);
+      // 规划避开摄像头的路线（腾讯地图备选路线）
+      const result = await planAvoidCamerasRoute(start, end, cameras as any);
       polylinePoints = result.points;
+      routeDistance = result.distance;
+      routeDuration = result.duration;
     } else {
-      // 规划普通路线
-      polylinePoints = generateLinearRoute(start, end);
+      // 规划普通路线（腾讯地图真实路网）
+      const result = await planRoute(start, end);
+      polylinePoints = result.points;
+      routeDistance = result.distance;
+      routeDuration = result.duration;
     }
 
     // 计算整个路线的方向
@@ -105,7 +112,9 @@ export async function POST(request: NextRequest) {
       end,
       polylinePoints,
       cameraIndices,
-      avoidCameras
+      avoidCameras,
+      routeDistance,
+      routeDuration
     );
 
     const response: RouteResponse = {

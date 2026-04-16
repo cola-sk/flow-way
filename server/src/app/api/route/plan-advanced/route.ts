@@ -7,8 +7,8 @@ import {
   calculateBearing,
 } from '@/lib/camera-parser';
 import {
+  planRoute,
   planAvoidCamerasRoute,
-  generateLinearRoute,
   createRoute,
 } from '@/lib/route';
 import { CameraDirection } from '@/types/camera-enhanced';
@@ -41,10 +41,15 @@ export async function POST(request: NextRequest) {
     let cameraIndices;
     let cameraRisks: any[] = [];
 
+    let routeDistance: number | undefined;
+    let routeDuration: number | undefined;
+
     if (avoidCameras) {
-      // 规划避开摄像头的路线
-      const result = planAvoidCamerasRoute(start, end, cameras as any);
+      // 规划避开摄像头的路线（腾讯地图备选路线）
+      const result = await planAvoidCamerasRoute(start, end, cameras as any);
       polylinePoints = result.points;
+      routeDistance = result.distance;
+      routeDuration = result.duration;
 
       // 使用增强的风险评估
       const routePoints = result.points.map(p => ({ lat: p.lat, lng: p.lng }));
@@ -55,8 +60,12 @@ export async function POST(request: NextRequest) {
         .filter(r => r.risk === 'high')
         .map(r => r.cameraIndex);
     } else {
-      // 规划普通路线
-      polylinePoints = generateLinearRoute(start, end);
+      // 规划普通路线（腾讯地图真实路网）
+      const result = await planRoute(start, end);
+      polylinePoints = result.points;
+      routeDistance = result.distance;
+      routeDuration = result.duration;
+
       const routePoints = polylinePoints.map(p => ({ lat: p.lat, lng: p.lng }));
       cameraRisks = assessCameraRisks(routePoints, cameras);
       cameraIndices = cameraRisks.map(r => r.cameraIndex);
@@ -68,7 +77,9 @@ export async function POST(request: NextRequest) {
       end,
       polylinePoints,
       cameraIndices,
-      avoidCameras
+      avoidCameras,
+      routeDistance,
+      routeDuration
     );
 
     // 添加详细的风险分析信息
