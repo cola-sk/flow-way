@@ -1,12 +1,9 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { WayPoint, WayPointsResponse } from '@/types/route';
 import { v4 as uuidv4 } from 'uuid';
+import { wayPointsStorage } from '@/lib/waypoints-storage';
 
 export const dynamic = 'force-dynamic';
-
-// 简化实现：使用内存存储（实际应该用数据库）
-// 在生产环境中，应该使用 Vercel KV、Supabase 或其他数据库
-const wayPointsStorage = new Map<string, WayPoint>();
 
 export async function GET() {
   try {

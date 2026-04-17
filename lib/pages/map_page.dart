@@ -308,15 +308,30 @@ class _MapPageState extends State<MapPage> {
     _showPlaceActions(_buildMapPointPlace(point));
   }
 
-  void _setEndPlaceFromAction(PlaceResult place) {
+  Future<PlaceResult> _resolveMapPointPlaceName(PlaceResult place) async {
+    if (place.name != '地图选点') {
+      return place;
+    }
+
+    final resolved = await _apiService.reverseGeocode(point: place.location);
+    if (resolved == null || resolved.name.trim().isEmpty) {
+      return place;
+    }
+    return resolved;
+  }
+
+  Future<void> _setEndPlaceFromAction(PlaceResult place) async {
+    final resolvedPlace = await _resolveMapPointPlaceName(place);
+    if (!mounted) return;
+
     final wasNavMode = _navMode;
-    _searchController.clear();
+    _searchController.text = resolvedPlace.name;
     _searchFocusNode.unfocus();
 
     setState(() {
       _navMode = true;
       _activeTab = _BottomTab.plan;
-      _navEndPlace = place;
+      _navEndPlace = resolvedPlace;
       _navSearchTarget = null;
 
       if (!wasNavMode) {
@@ -331,16 +346,19 @@ class _MapPageState extends State<MapPage> {
     });
   }
 
-  void _setStartPlaceFromAction(PlaceResult place) {
+  Future<void> _setStartPlaceFromAction(PlaceResult place) async {
+    final resolvedPlace = await _resolveMapPointPlaceName(place);
+    if (!mounted) return;
+
     final wasNavMode = _navMode;
-    _searchController.clear();
+    _searchController.text = resolvedPlace.name;
     _searchFocusNode.unfocus();
 
     setState(() {
       _navMode = true;
       _activeTab = _BottomTab.plan;
       _navStartIsMyLocation = false;
-      _navStartPlace = place;
+      _navStartPlace = resolvedPlace;
       _navSearchTarget = null;
 
       if (!wasNavMode) {
@@ -396,9 +414,9 @@ class _MapPageState extends State<MapPage> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(ctx);
-                        _setEndPlaceFromAction(place);
+                        await _setEndPlaceFromAction(place);
                       },
                       style: OutlinedButton.styleFrom(
                         side: BorderSide(
@@ -413,9 +431,9 @@ class _MapPageState extends State<MapPage> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () {
+                      onPressed: () async {
                         Navigator.pop(ctx);
-                        _setStartPlaceFromAction(place);
+                        await _setStartPlaceFromAction(place);
                       },
                       icon: const Icon(Icons.navigation, size: 16),
                       label: const Text('从这里出发'),
@@ -575,6 +593,56 @@ class _MapPageState extends State<MapPage> {
     return '${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
   }
 
+  Future<String?> _promptSaveName({
+    required String title,
+    required String initialValue,
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '请输入名称',
+            border: OutlineInputBorder(),
+          ),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (value) => Navigator.of(ctx).pop(value.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            style: FilledButton.styleFrom(backgroundColor: _primary),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  String _savedWaypointSummary({
+    required String startName,
+    required String endName,
+    required List<String> waypointNames,
+  }) {
+    if (waypointNames.isEmpty) {
+      return '$startName -> $endName';
+    }
+    if (waypointNames.length == 1) {
+      return '$startName -> ${waypointNames.first} -> $endName';
+    }
+    return '$startName -> ${waypointNames.first} -> .... -> $endName';
+  }
+
   Future<void> _saveCurrentRoute() async {
     final route = _currentRoute;
     if (route == null) {
@@ -587,7 +655,13 @@ class _MapPageState extends State<MapPage> {
     final stops = _buildNavStopItems().map((item) => item.place).toList();
     final startName = stops.isNotEmpty ? stops.first.name : '起点';
     final endName = stops.length >= 2 ? stops.last.name : '终点';
-    final routeName = '$startName -> $endName ${_saveNameTimestamp()}';
+    final defaultName = '$startName -> $endName ${_saveNameTimestamp()}';
+    final inputName = await _promptSaveName(
+      title: '保存线路名称',
+      initialValue: defaultName,
+    );
+    if (!mounted || inputName == null) return;
+    final routeName = inputName.trim().isEmpty ? defaultName : inputName.trim();
 
     final ok = await _apiService.saveNavigationRoute(
       route: route,
@@ -611,7 +685,13 @@ class _MapPageState extends State<MapPage> {
 
     final start = _resolvedNavStartPlace();
     final waypoints = List<PlaceResult>.from(_navWaypoints);
-    final planName = '${start.name} -> ${end.name} ${_saveNameTimestamp()}';
+    final defaultName = '${start.name} -> ${end.name} ${_saveNameTimestamp()}';
+    final inputName = await _promptSaveName(
+      title: '保存点位方案名称',
+      initialValue: defaultName,
+    );
+    if (!mounted || inputName == null) return;
+    final planName = inputName.trim().isEmpty ? defaultName : inputName.trim();
 
     final ok = await _apiService.saveRoutePlanPoints(
       name: planName,
@@ -2043,42 +2123,62 @@ class _MapPageState extends State<MapPage> {
                                     ),
                                     const SizedBox(height: 6),
                                     ..._savedRoutes.map(
-                                      (item) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 6),
-                                        child: _buildNavRow(
-                                          icon: Icons.alt_route_rounded,
-                                          iconColor: _primary,
-                                          label: item.name,
-                                          isPlaceholder: false,
-                                          onTap: () => _applySavedRouteToNavigation(item),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(),
-                                                icon: const Icon(
-                                                  Icons.visibility_outlined,
-                                                  size: 16,
-                                                  color: _onSurfaceVariant,
+                                      (item) {
+                                        final stops = _stopsFromSavedRoute(item);
+                                        final start = stops.first;
+                                        final end = stops.length >= 2 ? stops.last : start;
+                                        final waypoints = stops.length > 2
+                                            ? stops
+                                                .sublist(1, stops.length - 1)
+                                                .map((e) => e.name)
+                                                .toList()
+                                            : <String>[];
+                                        final summary = _savedWaypointSummary(
+                                          startName: start.name,
+                                          endName: end.name,
+                                          waypointNames: waypoints,
+                                        );
+
+                                        return Padding(
+                                          padding: const EdgeInsets.only(bottom: 6),
+                                          child: _buildNavRow(
+                                            icon: Icons.alt_route_rounded,
+                                            iconColor: _primary,
+                                            label: item.name,
+                                            subtitle: summary,
+                                            isPlaceholder: false,
+                                            onTap: () => _applySavedRouteToNavigation(item),
+                                            trailing: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  padding: EdgeInsets.zero,
+                                                  constraints: const BoxConstraints(),
+                                                  icon: const Icon(
+                                                    Icons.visibility_outlined,
+                                                    size: 16,
+                                                    color: _onSurfaceVariant,
+                                                  ),
+                                                  onPressed: () =>
+                                                      _showSavedRouteDetail(item),
                                                 ),
-                                                onPressed: () => _showSavedRouteDetail(item),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              IconButton(
-                                                padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(),
-                                                icon: const Icon(
-                                                  Icons.delete_outline_rounded,
-                                                  size: 16,
-                                                  color: Color(0xFFBA1A1A),
+                                                const SizedBox(width: 8),
+                                                IconButton(
+                                                  padding: EdgeInsets.zero,
+                                                  constraints: const BoxConstraints(),
+                                                  icon: const Icon(
+                                                    Icons.delete_outline_rounded,
+                                                    size: 16,
+                                                    color: Color(0xFFBA1A1A),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _deleteSavedRoute(item),
                                                 ),
-                                                onPressed: () => _deleteSavedRoute(item),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                      ),
+                                        );
+                                      },
                                     ),
                                   ],
                                   if (_savedRoutePlans.isNotEmpty) ...[
@@ -2093,43 +2193,56 @@ class _MapPageState extends State<MapPage> {
                                     ),
                                     const SizedBox(height: 6),
                                     ..._savedRoutePlans.map(
-                                      (item) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 6),
-                                        child: _buildNavRow(
-                                          icon: Icons.playlist_add_check_circle_outlined,
-                                          iconColor: _secondary,
-                                          label: item.name,
-                                          isPlaceholder: false,
-                                          onTap: () => _applySavedRoutePlanToNavigation(item),
-                                          trailing: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              IconButton(
-                                                padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(),
-                                                icon: const Icon(
-                                                  Icons.visibility_outlined,
-                                                  size: 16,
-                                                  color: _onSurfaceVariant,
+                                      (item) {
+                                        final waypointNames =
+                                            item.waypoints.map((e) => e.name).toList();
+                                        final summary = _savedWaypointSummary(
+                                          startName: item.start.name,
+                                          endName: item.end.name,
+                                          waypointNames: waypointNames,
+                                        );
+
+                                        return Padding(
+                                          padding: const EdgeInsets.only(bottom: 6),
+                                          child: _buildNavRow(
+                                            icon: Icons.playlist_add_check_circle_outlined,
+                                            iconColor: _secondary,
+                                            label: item.name,
+                                            subtitle: summary,
+                                            isPlaceholder: false,
+                                            onTap: () =>
+                                                _applySavedRoutePlanToNavigation(item),
+                                            trailing: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                IconButton(
+                                                  padding: EdgeInsets.zero,
+                                                  constraints: const BoxConstraints(),
+                                                  icon: const Icon(
+                                                    Icons.visibility_outlined,
+                                                    size: 16,
+                                                    color: _onSurfaceVariant,
+                                                  ),
+                                                  onPressed: () =>
+                                                      _showSavedRoutePlanDetail(item),
                                                 ),
-                                                onPressed: () =>
-                                                    _showSavedRoutePlanDetail(item),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              IconButton(
-                                                padding: EdgeInsets.zero,
-                                                constraints: const BoxConstraints(),
-                                                icon: const Icon(
-                                                  Icons.delete_outline_rounded,
-                                                  size: 16,
-                                                  color: Color(0xFFBA1A1A),
+                                                const SizedBox(width: 8),
+                                                IconButton(
+                                                  padding: EdgeInsets.zero,
+                                                  constraints: const BoxConstraints(),
+                                                  icon: const Icon(
+                                                    Icons.delete_outline_rounded,
+                                                    size: 16,
+                                                    color: Color(0xFFBA1A1A),
+                                                  ),
+                                                  onPressed: () =>
+                                                      _deleteSavedRoutePlan(item),
                                                 ),
-                                                onPressed: () => _deleteSavedRoutePlan(item),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           ),
-                                        ),
-                                      ),
+                                        );
+                                      },
                                     ),
                                   ],
                                 ],
@@ -2365,6 +2478,9 @@ class _MapPageState extends State<MapPage> {
                               icon: _stopIcon(index, total),
                               iconColor: _stopColor(index, total),
                               label: '${_stopLabel(index, total)} · ${item.place.name}',
+                              subtitle: item.place.address.isNotEmpty
+                                  ? item.place.address
+                                  : _formatLatLng(item.place.location),
                               isPlaceholder: false,
                               onTap: isStart
                                   ? () {
@@ -2427,6 +2543,7 @@ class _MapPageState extends State<MapPage> {
                         icon: Icons.location_on_rounded,
                         iconColor: const Color(0xFFBA1A1A),
                         label: '选择终点',
+                        subtitle: '可搜索地点或地图点选',
                         isPlaceholder: true,
                         onTap: () {
                           setState(() => _navSearchTarget = 'end');
@@ -2511,9 +2628,10 @@ class _MapPageState extends State<MapPage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
                 if (_isNavigating && _planningStatus != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 2, bottom: 8),
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -2624,9 +2742,11 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
-  Widget _buildNavRow({    required IconData icon,
+  Widget _buildNavRow({
+    required IconData icon,
     required Color iconColor,
     required String label,
+    String? subtitle,
     required bool isPlaceholder,
     VoidCallback? onTap,
     Widget? trailing,
@@ -2645,17 +2765,39 @@ class _MapPageState extends State<MapPage> {
             Icon(icon, size: 16, color: iconColor),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: isPlaceholder
-                      ? _onSurfaceVariant.withValues(alpha: 0.55)
-                      : _onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isPlaceholder
+                          ? _onSurfaceVariant.withValues(alpha: 0.55)
+                          : _onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (subtitle != null && subtitle.trim().isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isPlaceholder
+                              ? _onSurfaceVariant.withValues(alpha: 0.52)
+                              : _onSurfaceVariant.withValues(alpha: 0.82),
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
               ),
             ),
             if (trailing case final action?) action,

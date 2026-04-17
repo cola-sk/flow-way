@@ -1,9 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { wayPointsStorage } from '@/lib/waypoints-storage';
 
 export const dynamic = 'force-dynamic';
-
-// 引用存储（简化实现）
-const wayPointsStorage = new Map<string, any>();
 
 export async function DELETE(
   request: NextRequest,
