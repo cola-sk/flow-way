@@ -32,6 +32,8 @@ export function findCamerasNearRoute(
   const cameraIndices: number[] = [];
 
   cameras.forEach((camera, index) => {
+    // aa=4（待核实）摄像头不计入路线风险，无需躲避
+    if (camera.type === 4) return;
     const nearRoute = polylinePoints.some((point) => {
       const distance = calculateDistance(point.lat, point.lng, camera.lat, camera.lng);
       return distance < threshold;
@@ -199,9 +201,13 @@ export async function planRoute(
  * 规划避开摄像头路线
  * 策略：
  *   1. 腾讯 API 最多返回 3 条备选路线，选摄像头最少的；
- *   2. 若仍有摄像头残留，对前 2 个摄像头计算垂直绕行点，
- *      再用腾讯 API 规划带途径点的路线（左右两侧各一次），
- *      取所有尝试中摄像头最少的结果。
+ *   2. 若仍有摄像头残留，对路线上所有摄像头（最多 16 个，API 限制）分别以
+ *      300m / 500m 偏移距离，按左侧全绕、右侧全绕、左右交替三种方向
+ *      各生成一组途径点，并行发起 6 次 API 请求，取摄像头最少的结果；
+ *   3. 若第二步后仍有摄像头，以新的最优路线为基准再执行一轮（共最多 2 轮）。
+ *
+ * 总 API 调用次数：1（备选）+ 最多 6×2（2 轮策略）= 13 次，并行执行，
+ * 实际耗时约 1-2 秒。
  */
 export async function planAvoidCamerasRoute(
   start: Coordinate,
@@ -235,27 +241,43 @@ export async function planAvoidCamerasRoute(
 
   let best = candidates.reduce((a, b) => b.cameraIndices.length < a.cameraIndices.length ? b : a);
 
-  // Step 2：若还有摄像头，对前 2 个计算垂直绕行途径点后再次规划
-  if (best.cameraIndices.length > 0) {
-    const camerasOnRoute = best.cameraIndices.slice(0, 2).map((i) => cameras[i]);
+  // Step 2 & 3：多策略、多轮迭代绕行（最多 2 轮）
+  const MAX_WAYPOINTS = 16; // 腾讯地图途径点上限
+  const OFFSET_DISTANCES = [300, 500]; // 偏移距离（米）
 
-    // 分别收集左侧/右侧偏移途径点
-    const leftWaypoints: Coordinate[] = [];
-    const rightWaypoints: Coordinate[] = [];
+  for (let round = 0; round < 2 && best.cameraIndices.length > 0; round++) {
+    const camerasOnRoute = best.cameraIndices.slice(0, MAX_WAYPOINTS).map((i) => cameras[i]);
 
-    for (const cam of camerasOnRoute) {
-      const offsets = computePerpendicularOffsets(best.points, cam.lat, cam.lng);
-      leftWaypoints.push(offsets.left);
-      rightWaypoints.push(offsets.right);
+    // 为每种偏移距离生成三组途径点：左侧全绕 / 右侧全绕 / 左右交替
+    const strategyWaypoints: Coordinate[][] = [];
+
+    for (const offsetMeters of OFFSET_DISTANCES) {
+      const leftWps: Coordinate[] = [];
+      const rightWps: Coordinate[] = [];
+      const altWps: Coordinate[] = [];
+
+      for (let i = 0; i < camerasOnRoute.length; i++) {
+        const { left, right } = computePerpendicularOffsets(
+          best.points,
+          camerasOnRoute[i].lat,
+          camerasOnRoute[i].lng,
+          offsetMeters
+        );
+        leftWps.push(left);
+        rightWps.push(right);
+        altWps.push(i % 2 === 0 ? left : right);
+      }
+
+      strategyWaypoints.push(leftWps, rightWps);
+      if (camerasOnRoute.length > 1) strategyWaypoints.push(altWps);
     }
 
-    // 左侧绕行 + 右侧绕行各尝试一次（共 2 次额外 API 调用）
-    const detourResults = await Promise.allSettled([
-      fetchAndEvaluate(leftWaypoints),
-      fetchAndEvaluate(rightWaypoints),
-    ]);
+    // 并行发起所有策略请求
+    const results = await Promise.allSettled(
+      strategyWaypoints.map((wps) => fetchAndEvaluate(wps))
+    );
 
-    for (const result of detourResults) {
+    for (const result of results) {
       if (result.status === 'fulfilled') {
         for (const route of result.value) {
           if (route.cameraIndices.length < best.cameraIndices.length) {

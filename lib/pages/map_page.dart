@@ -44,6 +44,9 @@ class _MapPageState extends State<MapPage> {
   // 路线上无法绕开的摄像头索引（仅 avoidCameras=true 时有效）
   Set<int> _unavoidableCameraIndices = {};
 
+  // 从服务端加载的废弃摄像头坐标集合（格式 "lat.toFixed6,lng.toFixed6"）
+  final Set<String> _dismissedCoords = {};
+
   // 北京中心坐标 (GCJ-02)
   static const _beijingCenter = LatLng(39.9042, 116.4074);
 
@@ -78,6 +81,7 @@ class _MapPageState extends State<MapPage> {
     super.initState();
     _loadCameras();
     _loadWayPoints();
+    _loadDismissedCameras();
     _locateUser();
   }
 
@@ -403,6 +407,28 @@ class _MapPageState extends State<MapPage> {
     } catch (e) {
       print('加载标记点失败: $e');
     }
+  }
+
+  Future<void> _loadDismissedCameras() async {
+    try {
+      final list = await _apiService.getDismissedCameras();
+      setState(() {
+        _dismissedCoords.clear();
+        for (final c in list) {
+          _dismissedCoords.add(
+            '${c.lat.toStringAsFixed(6)},${c.lng.toStringAsFixed(6)}',
+          );
+        }
+      });
+    } catch (e) {
+      print('加载废弃摄像头失败: $e');
+    }
+  }
+
+  bool _isCameraDismissed(Camera camera) {
+    final key =
+        '${camera.lat.toStringAsFixed(6)},${camera.lng.toStringAsFixed(6)}';
+    return _dismissedCoords.contains(key);
   }
 
   Future<void> _planRoute(LatLng start, LatLng end, bool avoidCameras) async {
@@ -807,35 +833,107 @@ class _MapPageState extends State<MapPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.videocam, color: _cameraColor(camera.type)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    camera.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+      builder: (ctx) {
+        final isDismissed = _isCameraDismissed(camera);
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.videocam,
+                    color: isDismissed
+                        ? Colors.grey
+                        : _cameraColor(camera.type),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      camera.name,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: isDismissed ? Colors.grey : null,
+                        decoration: isDismissed
+                            ? TextDecoration.lineThrough
+                            : null,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _infoRow('类型', camera.typeLabel),
-            _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
-            _infoRow('更新日期', camera.date),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+                  if (isDismissed)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: const Text(
+                        '已废弃',
+                        style: TextStyle(color: Colors.grey, fontSize: 11),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _infoRow('类型', camera.typeLabel),
+              _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
+              _infoRow('更新日期', camera.date),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: isDismissed
+                    ? OutlinedButton.icon(
+                        icon: const Icon(Icons.restore),
+                        label: const Text('取消废弃'),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          final ok =
+                              await _apiService.unmarkCameraDismissed(
+                            lat: camera.lat,
+                            lng: camera.lng,
+                          );
+                          if (ok && mounted) {
+                            await _loadDismissedCameras();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已取消废弃标记')),
+                            );
+                          }
+                        },
+                      )
+                    : FilledButton.icon(
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('标记为废弃'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.grey.shade600,
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          final ok =
+                              await _apiService.markCameraDismissed(
+                            lat: camera.lat,
+                            lng: camera.lng,
+                            name: camera.name,
+                          );
+                          if (ok && mounted) {
+                            await _loadDismissedCameras();
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('已标记为废弃，路线规划将自动排除此摄像头'),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1579,37 +1677,63 @@ _navSearchTarget == 'end'
                   final idx = entry.key;
                   final cam = entry.value;
                   final isUnavoidable = _unavoidableCameraIndices.contains(idx);
+                  final isDismissed = _isCameraDismissed(cam);
                   return Marker(
                     point: LatLng(cam.lat, cam.lng),
-                    width: isUnavoidable ? 38 : 30,
-                    height: isUnavoidable ? 38 : 30,
+                    width: isUnavoidable ? 38 : (cam.isNewlyAdded ? 36 : 30),
+                    height: isUnavoidable ? 38 : (cam.isNewlyAdded ? 36 : 30),
                     child: GestureDetector(
                       onTap: () => _showCameraInfo(cam),
-                      child: isUnavoidable
-                          ? _buildUnavoidableCameraMarker(cam)
-                          : cam.isNewlyAdded
-                              ? _buildNewlyAddedMarker(cam)
-                              : Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.92),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: _cameraColor(cam.type),
-                                      width: 1.3,
+                      child: isDismissed
+                          ? Opacity(
+                              opacity: 0.55,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.92),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: const Color(0xFF7C7766),
+                                    width: 1.3,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.08),
+                                      blurRadius: 4,
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.12),
-                                        blurRadius: 8,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Icon(
-                                    Icons.videocam_rounded,
-                                    color: _cameraColor(cam.type),
-                                    size: 16,
-                                  ),
+                                  ],
                                 ),
+                                child: const Icon(
+                                  Icons.videocam_off_rounded,
+                                  color: Color(0xFF7C7766),
+                                  size: 16,
+                                ),
+                              ),
+                            )
+                          : isUnavoidable
+                              ? _buildUnavoidableCameraMarker(cam)
+                              : cam.isNewlyAdded
+                                  ? _buildNewlyAddedMarker(cam)
+                                  : Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.92),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: _cameraColor(cam.type),
+                                          width: 1.3,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withValues(alpha: 0.12),
+                                            blurRadius: 8,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Icon(
+                                        Icons.videocam_rounded,
+                                        color: _cameraColor(cam.type),
+                                        size: 16,
+                                      ),
+                                    ),
                     ),
                   );
                 }).toList(),

@@ -15,6 +15,7 @@
   "dependencies": {
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
+    "@upstash/redis": "^1.37.0",
     "cheerio": "^1.2.0",
     "next": "^16.2.3",
     "react": "^19.2.5",

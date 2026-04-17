@@ -47,7 +47,7 @@ class ApiService {
   /// 规划路线（支持避开摄像头的智能路由）
   /// [start] 起点坐标
   /// [end] 终点坐标
-  /// [avoidCameras] 是否尽量避开摄像头
+  /// [avoidCameras] 是否尽量避开摄像头（废弃摄像头由服务端自动排除）
   Future<RouteResponse> planRoute({
     required LatLng start,
     required LatLng end,
@@ -157,6 +157,51 @@ class ApiService {
       return [];
     }
   }
+
+  /// 获取废弃摄像头列表
+  Future<List<DismissedCamera>> getDismissedCameras() async {
+    try {
+      final response = await _dio.get('/api/dismissed-cameras');
+      final List<dynamic> data = response.data['dismissed'] ?? [];
+      return data
+          .map((e) => DismissedCamera.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('获取废弃摄像头失败: ${_formatError(e)}');
+      return [];
+    }
+  }
+
+  /// 标记摄像头为废弃（保存到服务端 Redis）
+  Future<bool> markCameraDismissed({
+    required double lat,
+    required double lng,
+    required String name,
+  }) async {
+    try {
+      await _dio.post('/api/dismissed-cameras',
+          data: {'lat': lat, 'lng': lng, 'name': name});
+      return true;
+    } catch (e) {
+      print('标记废弃失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 取消废弃标记
+  Future<bool> unmarkCameraDismissed({
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      await _dio.delete('/api/dismissed-cameras',
+          data: {'lat': lat, 'lng': lng});
+      return true;
+    } catch (e) {
+      print('取消废弃失败: ${_formatError(e)}');
+      return false;
+    }
+  }
 }
 
 class PlaceResult {
@@ -178,6 +223,29 @@ class PlaceResult {
         (json['lat'] as num).toDouble(),
         (json['lng'] as num).toDouble(),
       ),
+    );
+  }
+}
+
+class DismissedCamera {
+  final double lat;
+  final double lng;
+  final String name;
+  final String markedAt;
+
+  DismissedCamera({
+    required this.lat,
+    required this.lng,
+    required this.name,
+    required this.markedAt,
+  });
+
+  factory DismissedCamera.fromJson(Map<String, dynamic> json) {
+    return DismissedCamera(
+      lat: (json['lat'] as num).toDouble(),
+      lng: (json['lng'] as num).toDouble(),
+      name: json['name'] as String,
+      markedAt: json['markedAt'] as String? ?? '',
     );
   }
 }

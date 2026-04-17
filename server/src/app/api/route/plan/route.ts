@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { RouteRequest, RouteResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
 import { planRoute, planAvoidCamerasRoute, findCamerasNearRoute, createRoute } from '@/lib/route';
+import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +25,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 获取摄像头数据
-    const { cameras } = await getCameras();
+    // 获取摄像头数据，过滤掉用户标记废弃的（Redis 持久化，60s 内存缓存）
+    let { cameras } = await getCameras();
+    const dismissedSet = await getDismissedSet();
+    if (dismissedSet.size > 0) {
+      cameras = cameras.filter((cam) => !dismissedSet.has(coordKey(cam.lat, cam.lng)));
+    }
 
     let polylinePoints;
     let cameraIndices;
