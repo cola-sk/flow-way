@@ -1547,12 +1547,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // 标题行
             Row(
               children: [
@@ -1729,6 +1731,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -2302,6 +2305,32 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
+                                                  IconButton(
+                                                    padding: EdgeInsets.zero,
+                                                    constraints:
+                                                        const BoxConstraints(),
+                                                    icon: const Icon(
+                                                      Icons.navigation,
+                                                      size: 16,
+                                                      color: _primary,
+                                                    ),
+                                                    onPressed: () {
+                                                      Navigator.push(
+                                                        context,
+                                                        MaterialPageRoute(
+                                                          builder: (ctx) => ActiveNavigationPage(
+                                                            route: item.route,
+                                                            apiService: _apiService,
+                                                            camerasOnRoute: item.route.cameraIndicesOnRoute
+                                                                .where((i) => i < _cameras.length)
+                                                                .map((i) => _cameras[i])
+                                                                .toList(),
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                  ),
+                                                  const SizedBox(width: 8),
                                                   IconButton(
                                                     padding: EdgeInsets.zero,
                                                     constraints:

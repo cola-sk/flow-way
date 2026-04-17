@@ -189,9 +189,13 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               },
             ),
             children: [
+              // 高德瓦片图层 (GCJ-02 坐标系)
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.flow_way',
+                urlTemplate:
+                    'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
+                subdomains: const ['1', '2', '3', '4'],
+                userAgentPackageName: 'com.flowway.app',
+                maxZoom: 18,
               ),
               PolylineLayer(
                 polylines: [
