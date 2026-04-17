@@ -238,6 +238,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       // 导航模式下选中起点
       setState(() {
         _loadedSavedRouteId = null;
+        _currentRoute = null;
         _loadedSavedPlanId = null;
         _navStartIsMyLocation = false;
         _navStartPlace = place;
@@ -250,6 +251,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       // 导航模式下选中终点
       setState(() {
         _loadedSavedRouteId = null;
+        _currentRoute = null;
         _loadedSavedPlanId = null;
         _navEndPlace = place;
         _navSearchTarget = null;
@@ -261,6 +263,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       // 导航模式下选中途径点
       setState(() {
         _loadedSavedRouteId = null;
+        _currentRoute = null;
         _loadedSavedPlanId = null;
         _navWaypoints.add(place);
         _navSearchTarget = null;
@@ -305,6 +308,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     } else {
       setState(() {
         _loadedSavedRouteId = null;
+        _currentRoute = null;
         _loadedSavedPlanId = null;
         _navWaypoints.add(waypoint);
         _navSearchTarget = null;
@@ -343,6 +347,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
+        _currentRoute = null;
       _loadedSavedPlanId = null;
       _navMode = true;
       _activeTab = _BottomTab.plan;
@@ -371,6 +376,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
+        _currentRoute = null;
       _loadedSavedPlanId = null;
       _navMode = true;
       _activeTab = _BottomTab.plan;
@@ -459,16 +465,30 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ],
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _addNavWaypointFromPlace(place);
-                  },
-                  icon: const Icon(Icons.add_road_rounded, size: 16),
-                  label: const Text('作为途径点'),
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _addNavWaypointFromPlace(place);
+                      },
+                      icon: const Icon(Icons.add_road_rounded, size: 16),
+                      label: const Text('作为途径点'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _promptSaveWayPoint(place);
+                      },
+                      icon: const Icon(Icons.bookmark_add, size: 16),
+                      label: const Text('收藏该点'),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
             ],
@@ -488,6 +508,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _searchFocusNode.unfocus();
     setState(() {
       _loadedSavedRouteId = null;
+        _currentRoute = null;
       _loadedSavedPlanId = null;
       _navMode = true;
       _activeTab = _BottomTab.plan;
@@ -804,6 +825,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         _loadingSaved = false;
         _savedError = null;
       });
+      await _loadWayPoints();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -916,6 +938,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _searchController.clear();
       _loadedSavedPlanId = plan.id;
       _loadedSavedRouteId = null;
+        _currentRoute = null;
     });
     _fitPlacesToMap([start, ...waypoints, end]);
     unawaited(
@@ -1160,6 +1183,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
+        _currentRoute = null;
       _loadedSavedPlanId = null;
       final items = originalItems.reversed.toList();
       final hasEnd = _navEndPlace != null && items.length >= 2;
@@ -1187,6 +1211,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
+        _currentRoute = null;
       _loadedSavedPlanId = null;
       if (newIndex > oldIndex) newIndex -= 1;
       final moved = items.removeAt(oldIndex);
@@ -2001,6 +2026,51 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  Future<void> _promptSaveWayPoint(PlaceResult place) async {
+    final nameCtrl = TextEditingController(text: place.name);
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('收藏该点'),
+        content: TextField(
+          controller: nameCtrl,
+          decoration: const InputDecoration(labelText: '点位名称'),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final ok = await _apiService.saveWayPoint(
+                name: nameCtrl.text.trim().isEmpty ? place.name : nameCtrl.text.trim(),
+                location: place.location,
+              );
+              if (ok) {
+                _loadWayPoints();
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('点位已收藏')));
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(const SnackBar(content: Text('收藏失败')));
+                }
+              }
+            },
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showWayPointInfo(WayPoint wayPoint) {
     showModalBottomSheet(
       context: context,
@@ -2048,15 +2118,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: () {
-                    // 导航到此标记点
-                    _planRoute(
-                      _userPosition ?? _beijingCenter,
-                      wayPoint.location,
-                      true,
-                    );
                     Navigator.pop(ctx);
+                    _showPlaceActions(
+                      PlaceResult(
+                        name: wayPoint.name,
+                        location: wayPoint.location,
+                        address: '收藏点',
+                      ),
+                    );
                   },
-                  child: const Text('导航到这里'),
+                  child: const Text('路点操作...'),
                 ),
               ],
             ),
@@ -2240,7 +2311,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                               ),
                             ],
                           )
-                        : (_savedRoutes.isEmpty && _savedRoutePlans.isEmpty
+                        : (_savedRoutes.isEmpty && _savedRoutePlans.isEmpty && _wayPoints.isEmpty
                               ? const Center(
                                   child: Padding(
                                     padding: EdgeInsets.all(18),
@@ -2457,6 +2528,50 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                         _deleteSavedRoutePlan(
                                                           item,
                                                         ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          );
+                                        }),
+                                      ],
+                                      if (_wayPoints.isNotEmpty) ...[
+                                        const SizedBox(height: 8),
+                                        const Text(
+                                          '点位',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: _onSurfaceVariant,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        ..._wayPoints.map((item) {
+                                          return Padding(
+                                            padding: const EdgeInsets.only(bottom: 6),
+                                            child: _buildNavRow(
+                                              icon: Icons.bookmark,
+                                              iconColor: Colors.amber,
+                                              label: item.name,
+                                              subtitle: '${item.location.latitude.toStringAsFixed(6)}, ${item.location.longitude.toStringAsFixed(6)}',
+                                              isPlaceholder: false,
+                                              onTap: () {
+                                                setState(() => _activeTab = _BottomTab.explore);
+                                                _mapController.move(item.location, 16);
+                                                _showPlaceActions(PlaceResult(name: item.name, location: item.location, address: '收藏点'));
+                                              },
+                                              trailing: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  IconButton(
+                                                    padding: EdgeInsets.zero,
+                                                    constraints: const BoxConstraints(),
+                                                    icon: const Icon(
+                                                      Icons.delete_outline_rounded,
+                                                      size: 16,
+                                                      color: Color(0xFFBA1A1A),
+                                                    ),
+                                                    onPressed: () => _deleteWayPoint(item),
                                                   ),
                                                 ],
                                               ),
@@ -2788,6 +2903,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                           setState(
                                             () {
                                               _loadedSavedRouteId = null;
+        _currentRoute = null;
                                               _loadedSavedPlanId = null;
                                               _navWaypoints.removeAt(waypointIndex);
                                             },
@@ -2900,6 +3016,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         onChanged: (value) =>
                             setState(() {
                               _loadedSavedRouteId = null;
+        _currentRoute = null;
                               _loadedSavedPlanId = null;
                               _avoidCameras = value;
                             }),
@@ -2967,7 +3084,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     onPressed: _isNavigating
                         ? _requestStopPlanning
                         : (_navEndPlace != null
-                            ? ((_loadedSavedRouteId != null && _currentRoute != null)
+                            ? (_currentRoute != null
                                 ? () {
                                     Navigator.push(
                                       context,
@@ -2988,7 +3105,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     style: FilledButton.styleFrom(
                       backgroundColor: _isNavigating
                           ? const Color(0xFFBA1A1A)
-                          : _primary,
+                          : (_currentRoute != null ? const Color(0xFF34C759) : _primary),
                       disabledBackgroundColor: _surfaceVariant,
                       foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(42),
@@ -2996,7 +3113,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     child: Text(
                       _isNavigating
                           ? (_stopPlanningRequested ? '正在停止...' : '暂停/停止')
-                          : ((_loadedSavedRouteId != null && _currentRoute != null) ? '开始导航' : '开始规划'),
+                          : (_currentRoute != null ? '开始导航' : '开始规划'),
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),

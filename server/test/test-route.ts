@@ -1,11 +1,11 @@
 import { loadEnvConfig } from '@next/env';
 import { resolve } from 'path';
 
-loadEnvConfig(resolve(__dirname, './'));
+loadEnvConfig(resolve(__dirname, '../'));
 
-import { listRouteRecords } from './src/lib/saved-navigation';
-import { planAvoidCamerasRoute } from './src/lib/route';
-import { Camera } from './src/types/camera';
+import { listRouteRecords } from '../src/lib/saved-navigation';
+import { planAvoidCamerasRoute } from '../src/lib/route';
+import { Camera } from '../src/types/camera';
 
 // simple fetch wrapper because we don't have camera DB hook directly here
 async function getCamerasForBboxViaApi(bbox: any): Promise<Camera[]> {
