@@ -64,6 +64,9 @@ class NavigationRoute {
       'lat': endPoint.latitude,
       'lng': endPoint.longitude,
     },
+    'polylinePoints': polylinePoints
+        .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+        .toList(),
     'distance': distance,
     'duration': duration,
     'routeType': routeType,
@@ -74,19 +77,19 @@ class NavigationRoute {
   factory NavigationRoute.fromJson(Map<String, dynamic> json) => NavigationRoute(
     id: json['id'] as String,
     startPoint: LatLng(
-      json['startPoint']['lat'] as double,
-      json['startPoint']['lng'] as double,
+      (json['startPoint']['lat'] as num).toDouble(),
+      (json['startPoint']['lng'] as num).toDouble(),
     ),
     endPoint: LatLng(
-      json['endPoint']['lat'] as double,
-      json['endPoint']['lng'] as double,
+      (json['endPoint']['lat'] as num).toDouble(),
+      (json['endPoint']['lng'] as num).toDouble(),
     ),
     polylinePoints: (json['polylinePoints'] as List)
         .cast<Map<String, dynamic>>()
-        .map((p) => LatLng(p['lat'] as double, p['lng'] as double))
+        .map((p) => LatLng((p['lat'] as num).toDouble(), (p['lng'] as num).toDouble()))
         .toList(),
     distance: (json['distance'] as num).toDouble(),
-    duration: json['duration'] as int,
+    duration: (json['duration'] as num).toInt(),
     routeType: json['routeType'] as String,
     cameraIndicesOnRoute: List<int>.from(json['cameraIndicesOnRoute'] as List),
     createdAt: DateTime.parse(json['createdAt'] as String),
@@ -106,6 +109,43 @@ class RouteResponse {
   factory RouteResponse.fromJson(Map<String, dynamic> json) {
     return RouteResponse(
       route: json['route'] != null ? NavigationRoute.fromJson(json['route']) : null,
+      errorMessage: json['errorMessage'] as String?,
+    );
+  }
+}
+
+/// 路线单步规划 API 响应（每次只规划一轮，用于前端逐轮绘制）
+class RouteStepResponse {
+  final NavigationRoute? currentRoute;
+  final NavigationRoute? bestRoute;
+  final int iteration;
+  final int maxIterations;
+  final bool done;
+  final double? anchorDistance;
+  final String? errorMessage;
+
+  RouteStepResponse({
+    this.currentRoute,
+    this.bestRoute,
+    required this.iteration,
+    required this.maxIterations,
+    required this.done,
+    this.anchorDistance,
+    this.errorMessage,
+  });
+
+  factory RouteStepResponse.fromJson(Map<String, dynamic> json) {
+    return RouteStepResponse(
+      currentRoute: json['currentRoute'] != null
+          ? NavigationRoute.fromJson(json['currentRoute'] as Map<String, dynamic>)
+          : null,
+      bestRoute: json['bestRoute'] != null
+          ? NavigationRoute.fromJson(json['bestRoute'] as Map<String, dynamic>)
+          : null,
+      iteration: (json['iteration'] as num?)?.toInt() ?? 0,
+      maxIterations: (json['maxIterations'] as num?)?.toInt() ?? 15,
+      done: json['done'] as bool? ?? false,
+      anchorDistance: (json['anchorDistance'] as num?)?.toDouble(),
       errorMessage: json['errorMessage'] as String?,
     );
   }

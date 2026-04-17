@@ -41,6 +41,9 @@ class _MapPageState extends State<MapPage> {
   // 当前导航路线
   NavigationRoute? _currentRoute;
   bool _isNavigating = false;
+  int _planningIteration = 0;
+  final int _planningMaxIterations = 15;
+  String? _planningStatus;
   // 路线上无法绕开的摄像头索引（仅 avoidCameras=true 时有效）
   Set<int> _unavoidableCameraIndices = {};
 
@@ -333,6 +336,8 @@ class _MapPageState extends State<MapPage> {
       _navSearchTarget = null;
       _currentRoute = null;
       _unavoidableCameraIndices = {};
+      _planningIteration = 0;
+      _planningStatus = null;
       _searchController.clear();
     });
   }
@@ -431,50 +436,160 @@ class _MapPageState extends State<MapPage> {
     return _dismissedCoords.contains(key);
   }
 
-  Future<void> _planRoute(LatLng start, LatLng end, bool avoidCameras) async {
-    setState(() => _isNavigating = true);
+  void _fitRouteToMap(NavigationRoute route) {
+    final points = route.polylinePoints;
+    if (points.isEmpty) return;
 
-    try {
-      final response = await _apiService.planRoute(
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints(points.length > 1
+            ? points
+            : [route.startPoint, route.endPoint]),
+        padding: const EdgeInsets.all(100),
+      ),
+    );
+  }
+
+  Future<NavigationRoute?> _planRouteIteratively(
+    LatLng start,
+    LatLng end,
+  ) async {
+    NavigationRoute? bestRoute;
+    NavigationRoute? currentRoute;
+    double? anchorDistance;
+
+    for (var i = 0; i < _planningMaxIterations; i++) {
+      if (!mounted) return bestRoute ?? currentRoute;
+
+      setState(() {
+        _planningIteration = i + 1;
+        _planningStatus = '第${i + 1}轮规划中...';
+      });
+
+      final step = await _apiService.planRouteStep(
         start: start,
         end: end,
-        avoidCameras: avoidCameras,
+        iteration: i,
+        maxIterations: _planningMaxIterations,
+        bestRoute: bestRoute,
+        anchorDistance: anchorDistance,
       );
 
-      if (response.route != null) {
-        final route = response.route!;
-        final onRouteIndices = route.cameraIndicesOnRoute.toSet();
-        setState(() {
-          _currentRoute = route;
-          _unavoidableCameraIndices = avoidCameras ? onRouteIndices : {};
-        });
-        // 缩放地图以显示整个路线
-        _mapController.fitCamera(
-          CameraFit.bounds(
-            bounds: LatLngBounds.fromPoints([start, end]),
-            padding: const EdgeInsets.all(100),
-          ),
-        );
-        // 显示路线结果详情
-        if (mounted) _showRouteResult(route, avoidCameras);
+      if (step.errorMessage != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(step.errorMessage!)),
+          );
+        }
+        break;
+      }
+
+      if (step.currentRoute == null || step.bestRoute == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('单步路线规划返回数据不完整')),
+          );
+        }
+        break;
+      }
+
+      currentRoute = step.currentRoute!;
+      bestRoute = step.bestRoute!;
+        anchorDistance = step.anchorDistance ?? anchorDistance;
+      final currentRouteValue = currentRoute;
+      final bestRouteValue = bestRoute;
+        final anchor = anchorDistance ?? bestRouteValue.distance;
+      final bool shouldDrawCurrent =
+          currentRouteValue.distance <= anchor * 1.20 ||
+          currentRouteValue.cameraIndicesOnRoute.length <
+              bestRouteValue.cameraIndicesOnRoute.length;
+      final NavigationRoute displayRoute =
+          shouldDrawCurrent ? currentRouteValue : bestRouteValue;
+
+      if (!mounted) return bestRoute;
+
+      // 每轮先绘制当前轮次路线，让用户看到迭代进度
+      setState(() {
+        _currentRoute = displayRoute;
+        _unavoidableCameraIndices = displayRoute.cameraIndicesOnRoute.toSet();
+        _planningStatus =
+            '第${i + 1}轮：当前${currentRouteValue.cameraIndicesOnRoute.length}个，最优${bestRouteValue.cameraIndicesOnRoute.length}个';
+      });
+      _fitRouteToMap(displayRoute);
+
+      if (step.done) {
+        break;
+      }
+    }
+
+    if (bestRoute != null && mounted) {
+      final bestRouteValue = bestRoute;
+      setState(() {
+        _currentRoute = bestRouteValue;
+        _unavoidableCameraIndices = bestRouteValue.cameraIndicesOnRoute.toSet();
+        _planningStatus = '规划完成：剩余${bestRouteValue.cameraIndicesOnRoute.length}个摄像头';
+      });
+      _fitRouteToMap(bestRouteValue);
+    }
+
+    return bestRoute ?? currentRoute;
+  }
+
+  Future<void> _planRoute(LatLng start, LatLng end, bool avoidCameras) async {
+    setState(() {
+      _isNavigating = true;
+      _planningIteration = 0;
+      _planningStatus = avoidCameras ? '准备路线规划...' : null;
+    });
+
+    try {
+      if (avoidCameras) {
+        final finalRoute = await _planRouteIteratively(start, end);
+        if (finalRoute != null && mounted) {
+          _showRouteResult(finalRoute, true);
+        }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(response.errorMessage ?? '路线规划失败')),
+        final response = await _apiService.planRoute(
+          start: start,
+          end: end,
+          avoidCameras: false,
         );
+        if (!mounted) return;
+
+        if (response.route != null) {
+          final route = response.route!;
+          setState(() {
+            _currentRoute = route;
+            _unavoidableCameraIndices = {};
+          });
+          _fitRouteToMap(route);
+          if (mounted) _showRouteResult(route, false);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(response.errorMessage ?? '路线规划失败')),
+          );
+        }
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('路线规划异常: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('路线规划异常: $e')));
+      }
     } finally {
-      setState(() => _isNavigating = false);
+      if (mounted) {
+        setState(() {
+          _isNavigating = false;
+          _planningIteration = 0;
+          _planningStatus = null;
+        });
+      }
     }
   }
 
   /// 路线规划结果弹窗：告知用户绕开了几个摄像头、哪些无法绕开
   void _showRouteResult(NavigationRoute route, bool avoidCameras) {
     final onRouteCount = route.cameraIndicesOnRoute.length;
-    final totalDetected = _cameras.length;
     // 本次规划绕开的摄像头数（与总数对比无意义，与路线直线对比也难算，
     // 直接告诉用户"路线上仍有 N 个"以及"具体是哪些"）
     final unavoidableCameras = route.cameraIndicesOnRoute
@@ -1312,13 +1427,27 @@ _navSearchTarget == 'end'
                       minimumSize: const Size.fromHeight(42),
                     ),
                     child: _isNavigating
-                        ? const SizedBox(
-                            height: 16,
-                            width: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const SizedBox(
+                                height: 16,
+                                width: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                _planningIteration > 0
+                                    ? '规划中 ${_planningIteration}/$_planningMaxIterations'
+                                    : '规划中...',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
                           )
                         : const Text(
                             '开始导航',
@@ -1921,12 +2050,12 @@ _navSearchTarget == 'end'
                   horizontal: 24,
                   vertical: 18,
                 ),
-                child: const Column(
+                child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(color: _primary),
-                    SizedBox(height: 10),
-                    Text('正在规划路线...'),
+                    const CircularProgressIndicator(color: _primary),
+                    const SizedBox(height: 10),
+                    Text(_planningStatus ?? '正在规划路线...'),
                   ],
                 ),
               ),

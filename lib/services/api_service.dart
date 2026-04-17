@@ -73,6 +73,50 @@ class ApiService {
     }
   }
 
+  /// 单步路线规划（每次只请求一轮，便于前端逐轮绘制）
+  Future<RouteStepResponse> planRouteStep({
+    required LatLng start,
+    required LatLng end,
+    required int iteration,
+    required int maxIterations,
+    NavigationRoute? bestRoute,
+    double? anchorDistance,
+  }) async {
+    try {
+      final response = await _dio.post('/api/route/plan-step', data: {
+        'start': {
+          'lat': start.latitude,
+          'lng': start.longitude,
+        },
+        'end': {
+          'lat': end.latitude,
+          'lng': end.longitude,
+        },
+        'iteration': iteration,
+        'maxIterations': maxIterations,
+        if (anchorDistance != null) 'anchorDistance': anchorDistance,
+        if (bestRoute != null) 'bestRoute': {
+          'polylinePoints': bestRoute.polylinePoints
+              .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+              .toList(),
+          'distance': bestRoute.distance,
+          'duration': bestRoute.duration,
+          'cameraIndicesOnRoute': bestRoute.cameraIndicesOnRoute,
+        },
+      });
+      return RouteStepResponse.fromJson(response.data as Map<String, dynamic>);
+    } catch (e) {
+      final msg = '路线单步规划失败: ${_formatError(e)}';
+      print(msg);
+      return RouteStepResponse(
+        iteration: iteration,
+        maxIterations: maxIterations,
+        done: true,
+        errorMessage: msg,
+      );
+    }
+  }
+
   /// 保存标记点
   Future<bool> saveWayPoint({
     required String name,

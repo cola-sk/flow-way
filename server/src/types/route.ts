@@ -9,6 +9,22 @@ export interface RouteRequest {
   avoidCameras: boolean;
 }
 
+export interface RouteStepState {
+  polylinePoints: RoutePoint[];
+  distance: number;
+  duration: number;
+  cameraIndicesOnRoute: number[];
+}
+
+export interface RoutePlanStepRequest {
+  start: Coordinate;
+  end: Coordinate;
+  iteration: number;
+  maxIterations?: number;
+  bestRoute?: RouteStepState;
+  anchorDistance?: number;
+}
+
 export interface RoutePoint {
   lat: number;
   lng: number;
@@ -49,6 +65,16 @@ export interface RouteResponse {
   route?: Route;
   cameraDetections?: CameraDetectionDetail[];  // 简化版：检测详情
   cameraRisks?: CameraRiskInfo[];              // 复杂版：风险评估
+  errorMessage?: string;
+}
+
+export interface RoutePlanStepResponse {
+  currentRoute?: Route;
+  bestRoute?: Route;
+  iteration: number;
+  maxIterations: number;
+  done: boolean;
+  anchorDistance?: number;
   errorMessage?: string;
 }
 
