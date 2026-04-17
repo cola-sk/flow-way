@@ -861,13 +861,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       setState(() {
         _savedRoutes.removeWhere((item) => item.id == record.id);
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已删除保存线路')));
+      _showToast('已删除保存线路');
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('删除保存线路失败')));
+      _showToast('删除保存线路失败');
     }
   }
 
@@ -878,13 +874,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       setState(() {
         _savedRoutePlans.removeWhere((item) => item.id == plan.id);
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已删除点位方案')));
+      _showToast('已删除点位方案');
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('删除点位方案失败')));
+      _showToast('删除点位方案失败');
     }
   }
 
@@ -1079,13 +1071,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       setState(() {
         _recentNavigations.removeWhere((item) => item.id == record.id);
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('已删除最近记录')));
+      _showToast('已删除最近记录');
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('删除最近记录失败')));
+      _showToast('删除最近记录失败');
     }
   }
 
@@ -1308,6 +1296,23 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       cameraIndicesOnRoute: mergedCameraIndices.toList()..sort(),
       createdAt: DateTime.now(),
     );
+  }
+
+  void _showToast(String message) {
+    if (!mounted) return;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final navBarHeight = 72.0 + bottomInset + 8.0;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.only(bottom: navBarHeight + 8.0, left: 16.0, right: 16.0),
+          duration: const Duration(seconds: 2),
+        ),
+      );
   }
 
   Future<void> _loadCameras() async {
@@ -1847,9 +1852,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       if (success) {
         await _loadWayPoints();
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('标记点已删除')));
+          _showToast('标记点已删除');
         }
       }
     }
