@@ -93,6 +93,7 @@ class _MapPageState extends State<MapPage> {
   final List<PlaceResult> _navWaypoints = [];
   bool _avoidCameras = true;
   String? _navSearchTarget;
+  bool _navPanelCollapsed = false;
   _BottomTab _activeTab = _BottomTab.explore;
 
   List<SavedNavigationRouteRecord> _savedRoutes = [];
@@ -472,6 +473,7 @@ class _MapPageState extends State<MapPage> {
     setState(() {
       _navMode = true;
       _activeTab = _BottomTab.plan;
+      _navPanelCollapsed = false;
       _navStartIsMyLocation = startIsMyLocation;
       _navStartPlace = startPlace;
       _navEndPlace = endPlace;
@@ -488,6 +490,7 @@ class _MapPageState extends State<MapPage> {
     setState(() {
       _navMode = false;
       _activeTab = nextTab;
+      _navPanelCollapsed = false;
       _navStartPlace = null;
       _navEndPlace = null;
       _navWaypoints.clear();
@@ -570,8 +573,39 @@ class _MapPageState extends State<MapPage> {
       ),
     );
 
+    _searchFocusNode.unfocus();
+    setState(() {
+      _navPanelCollapsed = true;
+      _navSearchTarget = null;
+      _showSuggestions = false;
+      _suggestions = [];
+    });
+
     _stopPlanningRequested = false;
     await _planRouteWithStops(orderedPoints, _avoidCameras);
+  }
+
+  void _toggleNavPanelCollapsed() {
+    final next = !_navPanelCollapsed;
+    if (next) {
+      _searchFocusNode.unfocus();
+    }
+    setState(() {
+      _navPanelCollapsed = next;
+      if (next) {
+        _navSearchTarget = null;
+        _showSuggestions = false;
+        _suggestions = [];
+      }
+    });
+  }
+
+  String _navCompactSummary() {
+    final startName = _resolvedNavStartPlace().name;
+    final endName = _navEndPlace?.name ?? '未设置终点';
+    final wpCount = _navWaypoints.length;
+    final wpText = wpCount == 0 ? '' : ' · $wpCount个途径点';
+    return '$startName -> $endName$wpText';
   }
 
   void _requestStopPlanning() {
@@ -806,6 +840,7 @@ class _MapPageState extends State<MapPage> {
     setState(() {
       _navMode = true;
       _activeTab = _BottomTab.plan;
+      _navPanelCollapsed = false;
       _navStartIsMyLocation = false;
       _navStartPlace = start;
       _navEndPlace = end;
@@ -844,6 +879,7 @@ class _MapPageState extends State<MapPage> {
     setState(() {
       _navMode = true;
       _activeTab = _BottomTab.plan;
+      _navPanelCollapsed = false;
       _navStartIsMyLocation = false;
       _navStartPlace = start;
       _navEndPlace = end;
@@ -859,6 +895,7 @@ class _MapPageState extends State<MapPage> {
       _suggestions = [];
       _searchController.clear();
     });
+    _fitPlacesToMap([start, ...waypoints, end]);
     unawaited(
       _recordRecentNavigation(
         start: start,
@@ -997,6 +1034,7 @@ class _MapPageState extends State<MapPage> {
     setState(() {
       _navMode = true;
       _activeTab = _BottomTab.plan;
+      _navPanelCollapsed = false;
       _navStartIsMyLocation = false;
       _navStartPlace = _placeFromSavedCoordinate(record.start);
       _navEndPlace = _placeFromSavedCoordinate(record.end);
@@ -1224,6 +1262,22 @@ class _MapPageState extends State<MapPage> {
         bounds: LatLngBounds.fromPoints(points.length > 1
             ? points
             : [route.startPoint, route.endPoint]),
+        padding: const EdgeInsets.all(100),
+      ),
+    );
+  }
+
+  void _fitPlacesToMap(List<PlaceResult> places) {
+    final points = places.map((e) => e.location).toList();
+    if (points.isEmpty) return;
+    if (points.length == 1) {
+      _mapController.move(points.first, 15);
+      return;
+    }
+
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds.fromPoints(points),
         padding: const EdgeInsets.all(100),
       ),
     );
@@ -2418,6 +2472,21 @@ class _MapPageState extends State<MapPage> {
                     const Spacer(),
                     InkWell(
                       borderRadius: BorderRadius.circular(999),
+                      onTap: _toggleNavPanelCollapsed,
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          _navPanelCollapsed
+                              ? Icons.keyboard_arrow_down_rounded
+                              : Icons.keyboard_arrow_up_rounded,
+                          size: 20,
+                          color: _onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(999),
                       onTap: _exitNavMode,
                       child: const Padding(
                         padding: EdgeInsets.all(4),
@@ -2431,204 +2500,218 @@ class _MapPageState extends State<MapPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                if (_navSearchTarget == 'start')
-                  _buildNavInputRow(
-                    icon: Icons.my_location_rounded,
-                    iconColor: Colors.green[700]!,
-                    hintText: '搜索起点...',
-                  )
-                else if (_navSearchTarget == 'end')
-                  _buildNavInputRow(
-                    icon: Icons.location_on_rounded,
-                    iconColor: const Color(0xFFBA1A1A),
-                    hintText: '搜索终点...',
-                  )
-                else if (_navSearchTarget == 'waypoint')
-                  _buildNavInputRow(
-                    icon: Icons.more_horiz_rounded,
-                    iconColor: _secondary,
-                    hintText: '搜索途径点...',
-                  )
-                else ...[
-                  Builder(
-                    builder: (context) {
-                      final stops = _buildNavStopItems();
-                      return ReorderableListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        buildDefaultDragHandles: false,
-                        itemCount: stops.length,
-                        onReorder: _reorderNavStops,
-                        itemBuilder: (context, index) {
-                          final item = stops[index];
-                          final total = stops.length;
-                          final hasEnd = _navEndPlace != null;
-                          final isStart = index == 0;
-                          final isEnd = hasEnd && index == total - 1;
-                          final isWaypoint = !isStart && !isEnd;
+                if (_navPanelCollapsed) ...[
+                  _buildNavRow(
+                    icon: Icons.route_rounded,
+                    iconColor: _primary,
+                    label: '导航已折叠',
+                    subtitle: _navCompactSummary(),
+                    isPlaceholder: false,
+                    onTap: _toggleNavPanelCollapsed,
+                  ),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  if (_navSearchTarget == 'start')
+                    _buildNavInputRow(
+                      icon: Icons.my_location_rounded,
+                      iconColor: Colors.green[700]!,
+                      hintText: '搜索起点...',
+                    )
+                  else if (_navSearchTarget == 'end')
+                    _buildNavInputRow(
+                      icon: Icons.location_on_rounded,
+                      iconColor: const Color(0xFFBA1A1A),
+                      hintText: '搜索终点...',
+                    )
+                  else if (_navSearchTarget == 'waypoint')
+                    _buildNavInputRow(
+                      icon: Icons.more_horiz_rounded,
+                      iconColor: _secondary,
+                      hintText: '搜索途径点...',
+                    )
+                  else ...[
+                    Builder(
+                      builder: (context) {
+                        final stops = _buildNavStopItems();
+                        return ReorderableListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          buildDefaultDragHandles: false,
+                          itemCount: stops.length,
+                          onReorder: _reorderNavStops,
+                          itemBuilder: (context, index) {
+                            final item = stops[index];
+                            final total = stops.length;
+                            final hasEnd = _navEndPlace != null;
+                            final isStart = index == 0;
+                            final isEnd = hasEnd && index == total - 1;
+                            final isWaypoint = !isStart && !isEnd;
 
-                          final waypointIndex = index - 1;
+                            final waypointIndex = index - 1;
 
-                          return Padding(
-                            key: ValueKey(item.id),
-                            padding: EdgeInsets.only(
-                              bottom: index == total - 1 ? 0 : 8,
-                            ),
-                            child: _buildNavRow(
-                              icon: _stopIcon(index, total),
-                              iconColor: _stopColor(index, total),
-                              label: '${_stopLabel(index, total)} · ${item.place.name}',
-                              subtitle: item.place.address.isNotEmpty
-                                  ? item.place.address
-                                  : _formatLatLng(item.place.location),
-                              isPlaceholder: false,
-                              onTap: isStart
-                                  ? () {
-                                      setState(() => _navSearchTarget = 'start');
-                                      _searchController.clear();
-                                      _searchFocusNode.requestFocus();
-                                    }
-                                  : (isEnd
-                                      ? () {
-                                          setState(() => _navSearchTarget = 'end');
-                                          _searchController.clear();
-                                          _searchFocusNode.requestFocus();
-                                        }
-                                      : null),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (isWaypoint)
-                                    IconButton(
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                      icon: const Icon(
-                                        Icons.close_rounded,
-                                        size: 16,
-                                        color: _onSurfaceVariant,
-                                      ),
-                                      onPressed: () {
-                                        if (waypointIndex < 0 ||
-                                            waypointIndex >= _navWaypoints.length) {
-                                          return;
-                                        }
-                                        setState(() =>
-                                            _navWaypoints.removeAt(waypointIndex));
-                                      },
-                                    ),
-                                  const SizedBox(width: 4),
-                                  ReorderableDragStartListener(
-                                    index: index,
-                                    child: const Padding(
-                                      padding: EdgeInsets.symmetric(horizontal: 2),
-                                      child: Icon(
-                                        Icons.drag_indicator_rounded,
-                                        size: 18,
-                                        color: _onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                            return Padding(
+                              key: ValueKey(item.id),
+                              padding: EdgeInsets.only(
+                                bottom: index == total - 1 ? 0 : 8,
                               ),
-                            ),
-                          );
-                        },
-                      );
-                    },
-                  ),
-                  if (_navEndPlace == null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _buildNavRow(
-                        icon: Icons.location_on_rounded,
-                        iconColor: const Color(0xFFBA1A1A),
-                        label: '选择终点',
-                        subtitle: '可搜索地点或地图点选',
-                        isPlaceholder: true,
-                        onTap: () {
-                          setState(() => _navSearchTarget = 'end');
-                          _searchController.clear();
-                          _searchFocusNode.requestFocus();
-                        },
+                              child: _buildNavRow(
+                                icon: _stopIcon(index, total),
+                                iconColor: _stopColor(index, total),
+                                label: '${_stopLabel(index, total)} · ${item.place.name}',
+                                subtitle: item.place.address.isNotEmpty
+                                    ? item.place.address
+                                    : _formatLatLng(item.place.location),
+                                isPlaceholder: false,
+                                onTap: isStart
+                                    ? () {
+                                        setState(() => _navSearchTarget = 'start');
+                                        _searchController.clear();
+                                        _searchFocusNode.requestFocus();
+                                      }
+                                    : (isEnd
+                                        ? () {
+                                            setState(() => _navSearchTarget = 'end');
+                                            _searchController.clear();
+                                            _searchFocusNode.requestFocus();
+                                          }
+                                        : null),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (isWaypoint)
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        icon: const Icon(
+                                          Icons.close_rounded,
+                                          size: 16,
+                                          color: _onSurfaceVariant,
+                                        ),
+                                        onPressed: () {
+                                          if (waypointIndex < 0 ||
+                                              waypointIndex >= _navWaypoints.length) {
+                                            return;
+                                          }
+                                          setState(() =>
+                                              _navWaypoints.removeAt(waypointIndex));
+                                        },
+                                      ),
+                                    const SizedBox(width: 4),
+                                    ReorderableDragStartListener(
+                                      index: index,
+                                      child: const Padding(
+                                        padding: EdgeInsets.symmetric(horizontal: 2),
+                                        child: Icon(
+                                          Icons.drag_indicator_rounded,
+                                          size: 18,
+                                          color: _onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    if (_navEndPlace == null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _buildNavRow(
+                          icon: Icons.location_on_rounded,
+                          iconColor: const Color(0xFFBA1A1A),
+                          label: '选择终点',
+                          subtitle: '可搜索地点或地图点选',
+                          isPlaceholder: true,
+                          onTap: () {
+                            setState(() => _navSearchTarget = 'end');
+                            _searchController.clear();
+                            _searchFocusNode.requestFocus();
+                          },
+                        ),
+                      ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '拖拽右侧手柄可调整起点 / 途径点 / 终点顺序',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _onSurfaceVariant.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      '拖拽右侧手柄可调整起点 / 途径点 / 终点顺序',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: _onSurfaceVariant.withValues(alpha: 0.8),
-                        fontWeight: FontWeight.w500,
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: _navSearchTarget == null
+                            ? () {
+                                setState(() => _navSearchTarget = 'waypoint');
+                                _searchController.clear();
+                                _searchFocusNode.requestFocus();
+                              }
+                            : null,
+                        icon: const Icon(
+                          Icons.add_rounded,
+                          size: 16,
+                          color: _secondary,
+                        ),
+                        label: const Text(
+                          '添加途径点',
+                          style: TextStyle(fontSize: 13, color: _secondary),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: const Size(0, 34),
+                        ),
                       ),
-                    ),
+                      const Spacer(),
+                      const Text(
+                        '避开摄像头',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Switch(
+                        value: _avoidCameras,
+                        activeThumbColor: _primary,
+                        onChanged: (value) =>
+                            setState(() => _avoidCameras = value),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _currentRoute != null ? _saveCurrentRoute : null,
+                          icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                          label: const Text('保存线路'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _navEndPlace != null
+                              ? _saveCurrentRoutePlanPoints
+                              : null,
+                          icon: const Icon(Icons.playlist_add_rounded, size: 16),
+                          label: const Text('保存点位'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                 ],
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: _navSearchTarget == null
-                          ? () {
-                              setState(() => _navSearchTarget = 'waypoint');
-                              _searchController.clear();
-                              _searchFocusNode.requestFocus();
-                            }
-                          : null,
-                      icon: const Icon(
-                        Icons.add_rounded,
-                        size: 16,
-                        color: _secondary,
-                      ),
-                      label: const Text(
-                        '添加途径点',
-                        style: TextStyle(fontSize: 13, color: _secondary),
-                      ),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        minimumSize: const Size(0, 34),
-                      ),
-                    ),
-                    const Spacer(),
-                    const Text(
-                      '避开摄像头',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: _onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Switch(
-                      value: _avoidCameras,
-                      activeThumbColor: _primary,
-                      onChanged: (value) =>
-                          setState(() => _avoidCameras = value),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _currentRoute != null ? _saveCurrentRoute : null,
-                        icon: const Icon(Icons.bookmark_add_outlined, size: 16),
-                        label: const Text('保存线路'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _navEndPlace != null ? _saveCurrentRoutePlanPoints : null,
-                        icon: const Icon(Icons.playlist_add_rounded, size: 16),
-                        label: const Text('保存点位'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
                 if (_isNavigating && _planningStatus != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
