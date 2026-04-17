@@ -27,6 +27,17 @@ class Camera {
     );
   }
 
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'lng': lng,
+      'lat': lat,
+      'type': type,
+      'date': date,
+      'href': href,
+    };
+  }
+
   /// 是否为最近 7 天新增（date 字段距今 < 7 天）
   bool get isNewlyAdded {
     if (date.isEmpty) return false;
@@ -74,7 +85,15 @@ class CamerasResponse {
           .map((e) => Camera.fromJson(e as Map<String, dynamic>))
           .toList(),
       updatedAt: json['updatedAt'] as String,
-      total: json['total'] as int,
+      total: (json['total'] as num).toInt(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'cameras': cameras.map((e) => e.toJson()).toList(),
+      'updatedAt': updatedAt,
+      'total': total,
+    };
   }
 }

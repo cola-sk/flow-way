@@ -32,7 +32,7 @@ class MapPage extends StatefulWidget {
   State<MapPage> createState() => _MapPageState();
 }
 
-class _MapPageState extends State<MapPage> {
+class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   static const Color _surface = Color(0xFFF9F9F8);
   static const Color _surfaceCard = Color(0xFFFAFAF7);
   static const Color _surfaceVariant = Color(0xFFE2E3E1);
@@ -108,6 +108,7 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadCameras();
     _loadWayPoints();
     _loadDismissedCameras();
@@ -115,7 +116,14 @@ class _MapPageState extends State<MapPage> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) return;
+    _requestStopPlanning('应用切到后台，正在停止...');
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _suggestDebounce?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
@@ -608,11 +616,11 @@ class _MapPageState extends State<MapPage> {
     return '$startName -> $endName$wpText';
   }
 
-  void _requestStopPlanning() {
+  void _requestStopPlanning([String status = '正在停止...']) {
     if (!_isNavigating || _stopPlanningRequested) return;
     setState(() {
       _stopPlanningRequested = true;
-      _planningStatus = '正在停止...';
+      _planningStatus = status;
     });
   }
 
@@ -1349,6 +1357,7 @@ class _MapPageState extends State<MapPage> {
       anchorDistance = step.anchorDistance ?? anchorDistance;
       final currentRouteValue = currentRoute;
       final bestRouteValue = bestRoute;
+
       final anchor = anchorDistance ?? bestRouteValue.distance;
       final bool shouldDrawCurrent =
           currentRouteValue.distance <= anchor * 1.20 ||

@@ -18,7 +18,11 @@ export async function POST(request: NextRequest) {
     }
 
     const { start, end, iteration } = reqBody;
-    const maxIterations = reqBody.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+    const requestedMaxIterations =
+      typeof reqBody.maxIterations === 'number' && Number.isFinite(reqBody.maxIterations)
+        ? Math.floor(reqBody.maxIterations)
+        : DEFAULT_MAX_ITERATIONS;
+    const maxIterations = Math.max(requestedMaxIterations, 1);
 
     if (!start || !end || typeof start.lat !== 'number' || typeof start.lng !== 'number') {
       return NextResponse.json({ errorMessage: '起点坐标无效' }, { status: 400 });
@@ -26,7 +30,7 @@ export async function POST(request: NextRequest) {
     if (typeof end.lat !== 'number' || typeof end.lng !== 'number') {
       return NextResponse.json({ errorMessage: '终点坐标无效' }, { status: 400 });
     }
-    if (typeof iteration !== 'number' || iteration < 0 || iteration >= maxIterations) {
+    if (typeof iteration !== 'number' || !Number.isFinite(iteration) || iteration < 0) {
       return NextResponse.json({ errorMessage: '迭代次数无效' }, { status: 400 });
     }
 
@@ -80,7 +84,7 @@ export async function POST(request: NextRequest) {
       bestRoute,
       iteration,
       maxIterations,
-      done: step.done || iteration >= maxIterations - 1,
+      done: step.done,
       anchorDistance: step.anchorDistance,
     };
 

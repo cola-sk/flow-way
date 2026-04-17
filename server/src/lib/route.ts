@@ -362,7 +362,8 @@ function buildAvoidWaypoints(
     .map((item) => item.cam);
 
   const offset = AVOID_ROUTE_OFFSETS[iteration % AVOID_ROUTE_OFFSETS.length];
-  const side = AVOID_ROUTE_SIDES[iteration % AVOID_ROUTE_SIDES.length];
+  const sideRound = Math.floor(iteration / AVOID_ROUTE_OFFSETS.length);
+  const side = AVOID_ROUTE_SIDES[sideRound % AVOID_ROUTE_SIDES.length];
 
   return camerasOnRoute.map((cam) => {
     const { left, right } = computePerpendicularOffsets(best.points, cam.lat, cam.lng, offset);

@@ -1,8 +1,14 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import 'package:latlong2/latlong.dart';
+
+const String _cameraCacheKey = 'camera_response_v1';
+const int _cameraCacheTtlMs = 24 * 60 * 60 * 1000;
 
 String _resolveBaseUrl() {
   if (kIsWeb) {
@@ -38,10 +44,68 @@ class ApiService {
           receiveTimeout: const Duration(seconds: 60),
         ));
 
+  Future<CamerasResponse?> _readCachedCameras({
+    required bool allowExpired,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cameraCacheKey);
+      if (raw == null || raw.isEmpty) return null;
+
+      final parsed = jsonDecode(raw);
+      if (parsed is! Map<String, dynamic>) return null;
+
+      final savedAtUtcMs = parsed['savedAtUtcMs'];
+      final expiresAtUtcMs = parsed['expiresAtUtcMs'];
+      final data = parsed['data'];
+      if (data is! Map<String, dynamic>) return null;
+
+      final nowUtcMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+      bool isExpired;
+      if (savedAtUtcMs is int) {
+        isExpired = nowUtcMs - savedAtUtcMs >= _cameraCacheTtlMs;
+      } else if (expiresAtUtcMs is int) {
+        // 兼容历史缓存结构
+        isExpired = nowUtcMs >= expiresAtUtcMs;
+      } else {
+        isExpired = true;
+      }
+
+      if (isExpired && !allowExpired) return null;
+
+      return CamerasResponse.fromJson(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeCachedCameras(CamerasResponse response) async {
+    final prefs = await SharedPreferences.getInstance();
+    final nowUtc = DateTime.now().toUtc();
+    final payload = <String, dynamic>{
+      'savedAtUtcMs': nowUtc.millisecondsSinceEpoch,
+      'data': response.toJson(),
+    };
+    await prefs.setString(_cameraCacheKey, jsonEncode(payload));
+  }
+
   /// 获取所有摄像头数据
+  /// 策略：每次启动时检查缓存是否超过 24 小时；
+  /// 未过期直接返回，过期则请求接口并更新缓存。
   Future<CamerasResponse> getCameras() async {
-    final response = await _dio.get('/api/cameras');
-    return CamerasResponse.fromJson(response.data);
+    final cachedFresh = await _readCachedCameras(allowExpired: false);
+    if (cachedFresh != null) return cachedFresh;
+
+    try {
+      final response = await _dio.get('/api/cameras');
+      final parsed = CamerasResponse.fromJson(response.data as Map<String, dynamic>);
+      await _writeCachedCameras(parsed);
+      return parsed;
+    } catch (e) {
+      final cachedExpired = await _readCachedCameras(allowExpired: true);
+      if (cachedExpired != null) return cachedExpired;
+      throw Exception('加载摄像头数据失败: ${_formatError(e)}');
+    }
   }
 
   /// 规划路线（支持避开摄像头的智能路由）
