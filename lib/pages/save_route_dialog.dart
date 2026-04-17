@@ -40,9 +40,17 @@ class _SaveRouteDialogState extends State<SaveRouteDialog> {
   void _save() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入路线名称')),
-      );
+ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('请输入路线名称'),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(bottom: 24.0, left: 16.0, right: 16.0),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       return;
     }
 
@@ -58,14 +66,30 @@ class _SaveRouteDialogState extends State<SaveRouteDialog> {
     setState(() => _saving = false);
 
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存成功')),
-      );
+ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('保存成功'),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(bottom: 24.0, left: 16.0, right: 16.0),
+            duration: const Duration(seconds: 2),
+          ),
+        );
       Navigator.pop(context, true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('保存失败，请重试')),
-      );
+ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: const Text('保存失败，请重试'),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            behavior: SnackBarBehavior.floating,
+            margin: const EdgeInsets.only(bottom: 24.0, left: 16.0, right: 16.0),
+            duration: const Duration(seconds: 2),
+          ),
+        );
     }
   }
 

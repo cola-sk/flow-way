@@ -137,9 +137,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('请先开启设备定位服务（GPS）')));
+          _showToast('请先开启设备定位服务（GPS）');
           setState(() => _locationResolved = true);
         }
         return;
@@ -316,9 +314,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       });
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('已添加途径点: ${waypoint.name}')));
+    _showToast('已添加途径点: ${waypoint.name}');
   }
 
   void _showMapPointActions(LatLng point) {
@@ -601,18 +597,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (_isNavigating) return;
 
     if (_navEndPlace == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先设置终点')));
+      _showToast('请先设置终点');
       return;
     }
 
     final stopItems = _buildNavStopItems();
     final orderedPoints = stopItems.map((item) => item.place.location).toList();
     if (orderedPoints.length < 2) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请至少设置起点和终点')));
+      _showToast('请至少设置起点和终点');
       return;
     }
 
@@ -741,9 +733,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   Future<void> _saveCurrentRoute() async {
     final route = _currentRoute;
     if (route == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('暂无可保存的导航线路，请先完成一次导航规划')));
+      _showToast('暂无可保存的导航线路，请先完成一次导航规划');
       return;
     }
 
@@ -764,17 +754,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       stops: stops,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(ok ? '线路已保存' : '保存线路失败')));
+    _showToast(ok ? '线路已保存' : '保存线路失败');
   }
 
   Future<void> _saveCurrentRoutePlanPoints() async {
     final end = _navEndPlace;
     if (end == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请先设置终点后再保存点位方案')));
+      _showToast('请先设置终点后再保存点位方案');
       return;
     }
 
@@ -796,9 +782,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       avoidCameras: _avoidCameras,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(ok ? '点位方案已保存' : '保存点位方案失败')));
+    _showToast(ok ? '点位方案已保存' : '保存点位方案失败');
   }
 
   PlaceResult _placeFromSavedCoordinate(SavedCoordinate c) {
@@ -919,9 +903,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       ),
     );
     _fitRouteToMap(record.route);
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已将保存线路应用到导航模式')));
+    _showToast('已将保存线路应用到导航模式');
   }
 
   void _applySavedRoutePlanToNavigation(SavedRoutePlanRecord plan) {
@@ -961,9 +943,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         source: 'apply_saved_plan',
       ),
     );
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已将点位方案应用到导航模式')));
+    _showToast('已将点位方案应用到导航模式');
   }
 
   void _showSavedRouteDetail(SavedNavigationRouteRecord record) {
@@ -1116,9 +1096,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _searchController.clear();
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('已将最近记录应用到导航模式')));
+    _showToast('已将最近记录应用到导航模式');
   }
 
   void _showRecentNavigationDetail(RecentNavigationRecord record) {
@@ -1300,8 +1278,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   void _showToast(String message) {
     if (!mounted) return;
-    final bottomInset = MediaQuery.of(context).padding.bottom;
-    final navBarHeight = 72.0 + bottomInset + 8.0;
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
@@ -1309,7 +1285,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           content: Text(message),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.only(bottom: navBarHeight + 8.0, left: 16.0, right: 16.0),
+          margin: const EdgeInsets.only(bottom: 24.0, left: 16.0, right: 16.0),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -1444,18 +1420,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
       if (step.errorMessage != null) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(step.errorMessage!)));
+          _showToast(step.errorMessage!);
         }
         break;
       }
 
       if (step.currentRoute == null || step.bestRoute == null) {
         if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('单步路线规划返回数据不完整')));
+          _showToast('单步路线规划返回数据不完整');
         }
         break;
       }
@@ -1580,18 +1552,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         });
         _fitRouteToMap(merged);
         if (_stopPlanningRequested) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('已暂停/停止重试')));
+          _showToast('已暂停/停止重试');
         } else {
           _showRouteResult(merged, avoidCameras);
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('路线规划异常: $e')));
+        _showToast('路线规划异常: $e');
       }
     } finally {
       if (mounted) {
@@ -2010,9 +1978,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           );
                           if (ok && mounted) {
                             await _loadDismissedCameras();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('已取消废弃标记')),
-                            );
+                            _showToast('已取消废弃标记');
                           }
                         },
                       )
@@ -2031,11 +1997,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           );
                           if (ok && mounted) {
                             await _loadDismissedCameras();
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('已标记为废弃，路线规划将自动排除此摄像头'),
-                              ),
-                            );
+                            _showToast('已标记为废弃，路线规划将自动排除此摄像头');
                           }
                         },
                       ),
@@ -2074,15 +2036,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               if (ok) {
                 _loadWayPoints();
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('点位已收藏')));
+                  _showToast('点位已收藏');
                 }
               } else {
                 if (mounted) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('收藏失败')));
+                  _showToast('收藏失败');
                 }
               }
             },
