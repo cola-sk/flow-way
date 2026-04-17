@@ -21,6 +21,9 @@ export interface RoutePlanStepRequest {
   end: Coordinate;
   iteration: number;
   maxIterations?: number;
+  waypoints?: Coordinate[];
+  legIndex?: number;
+  totalLegs?: number;
   bestRoute?: RouteStepState;
   anchorDistance?: number;
 }

@@ -81,6 +81,9 @@ class ApiService {
     required int maxIterations,
     NavigationRoute? bestRoute,
     double? anchorDistance,
+    List<LatLng>? waypoints,
+    int? legIndex,
+    int? totalLegs,
   }) async {
     try {
       final response = await _dio.post('/api/route/plan-step', data: {
@@ -94,6 +97,12 @@ class ApiService {
         },
         'iteration': iteration,
         'maxIterations': maxIterations,
+        if (waypoints != null)
+          'waypoints': waypoints
+              .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+              .toList(),
+        if (legIndex != null) 'legIndex': legIndex,
+        if (totalLegs != null) 'totalLegs': totalLegs,
         if (anchorDistance != null) 'anchorDistance': anchorDistance,
         if (bestRoute != null) 'bestRoute': {
           'polylinePoints': bestRoute.polylinePoints
@@ -199,6 +208,27 @@ class ApiService {
     } catch (e) {
       print('搜索地点失败: ${_formatError(e)}');
       return [];
+    }
+  }
+
+  /// 逆地理编码：通过坐标反查地点名称
+  Future<PlaceResult?> reverseGeocode({
+    required LatLng point,
+  }) async {
+    try {
+      final response = await _dio.get(
+        '/api/reverse-geocode',
+        queryParameters: {
+          'lat': point.latitude,
+          'lng': point.longitude,
+        },
+      );
+      final data = response.data['place'];
+      if (data is! Map<String, dynamic>) return null;
+      return PlaceResult.fromJson(data);
+    } catch (e) {
+      print('逆地理编码失败: ${_formatError(e)}');
+      return null;
     }
   }
 

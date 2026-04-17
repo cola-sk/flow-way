@@ -12,6 +12,19 @@ import '../widgets/jinjing_marker.dart';
 
 enum _BottomTab { explore, plan, saved, recent }
 
+class _NavStopItem {
+  final PlaceResult place;
+  final bool fromMyLocation;
+
+  const _NavStopItem({
+    required this.place,
+    this.fromMyLocation = false,
+  });
+
+  String get id =>
+      '${place.name}_${place.location.latitude}_${place.location.longitude}_$fromMyLocation';
+}
+
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
 
@@ -41,8 +54,11 @@ class _MapPageState extends State<MapPage> {
   // 当前导航路线
   NavigationRoute? _currentRoute;
   bool _isNavigating = false;
+  bool _stopPlanningRequested = false;
   int _planningIteration = 0;
-  final int _planningMaxIterations = 15;
+  static const int _planStepMaxIterations = 1000000000;
+  static const int _minPlanStepIntervalMs = 500;
+  int _lastPlanStepRequestAtMs = 0;
   String? _planningStatus;
   // 路线上无法绕开的摄像头索引（仅 avoidCameras=true 时有效）
   Set<int> _unavoidableCameraIndices = {};
@@ -236,73 +252,185 @@ class _MapPageState extends State<MapPage> {
     }
   }
 
+  String _formatLatLng(LatLng point) {
+    return '${point.longitude.toStringAsFixed(6)}, ${point.latitude.toStringAsFixed(6)}';
+  }
+
+  PlaceResult _buildMapPointPlace(LatLng point) {
+    return PlaceResult(
+      name: '地图选点',
+      address: _formatLatLng(point),
+      location: point,
+    );
+  }
+
+  Future<void> _addNavWaypointFromPlace(PlaceResult place) async {
+    var waypoint = place;
+
+    // 地图点选默认名称较泛化，先尝试反查真实地点名；失败则保留现有兜底文案。
+    if (place.name == '地图选点') {
+      final resolved = await _apiService.reverseGeocode(point: place.location);
+      if (resolved != null) {
+        waypoint = resolved;
+      }
+    }
+
+    if (!mounted) return;
+
+    if (!_navMode) {
+      _enterNavMode(
+        startIsMyLocation: true,
+        waypoints: [waypoint],
+      );
+    } else {
+      setState(() {
+        _navWaypoints.add(waypoint);
+        _navSearchTarget = null;
+        _searchController.text = waypoint.name;
+      });
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已添加途径点: ${waypoint.name}')),
+    );
+  }
+
+  void _showMapPointActions(LatLng point) {
+    _showPlaceActions(_buildMapPointPlace(point));
+  }
+
+  void _setEndPlaceFromAction(PlaceResult place) {
+    final wasNavMode = _navMode;
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+
+    setState(() {
+      _navMode = true;
+      _activeTab = _BottomTab.plan;
+      _navEndPlace = place;
+      _navSearchTarget = null;
+
+      if (!wasNavMode) {
+        _navStartIsMyLocation = true;
+        _navStartPlace = null;
+        _navWaypoints.clear();
+      }
+
+      _selectedPlace = null;
+      _showSuggestions = false;
+      _suggestions = [];
+    });
+  }
+
+  void _setStartPlaceFromAction(PlaceResult place) {
+    final wasNavMode = _navMode;
+    _searchController.clear();
+    _searchFocusNode.unfocus();
+
+    setState(() {
+      _navMode = true;
+      _activeTab = _BottomTab.plan;
+      _navStartIsMyLocation = false;
+      _navStartPlace = place;
+      _navSearchTarget = null;
+
+      if (!wasNavMode) {
+        _navEndPlace = null;
+        _navWaypoints.clear();
+      }
+
+      _selectedPlace = null;
+      _showSuggestions = false;
+      _suggestions = [];
+    });
+  }
+
   void _showPlaceActions(PlaceResult place) {
     showModalBottomSheet(
       context: context,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.location_on, color: Colors.blue),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    place.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+      builder: (ctx) {
+        final bottomInset = MediaQuery.of(ctx).padding.bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset + 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.location_on, color: Colors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      place.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            if (place.address.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                place.address,
-                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                ],
               ),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _enterNavMode(
-                        startPlace: place,
-                        startIsMyLocation: false,
-                      );
-                    },
-                    icon: const Icon(Icons.navigation, size: 16),
-                    label: const Text('从这里出发'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _enterNavMode(endPlace: place, startIsMyLocation: true);
-                    },
-                    icon: const Icon(Icons.directions, size: 16),
-                    label: const Text('去这里'),
-                  ),
+              if (place.address.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(
+                  place.address,
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                 ),
               ],
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _setEndPlaceFromAction(place);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: _primary.withValues(alpha: 0.55),
+                          width: 1.2,
+                        ),
+                      ),
+                      icon: const Icon(Icons.directions, size: 16),
+                      label: const Text('去这里'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _setStartPlaceFromAction(place);
+                      },
+                      icon: const Icon(Icons.navigation, size: 16),
+                      label: const Text('从这里出发'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _addNavWaypointFromPlace(place);
+                  },
+                  icon: const Icon(Icons.add_road_rounded, size: 16),
+                  label: const Text('作为途径点'),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -310,6 +438,7 @@ class _MapPageState extends State<MapPage> {
     PlaceResult? startPlace,
     PlaceResult? endPlace,
     bool startIsMyLocation = true,
+    List<PlaceResult>? waypoints,
   }) {
     _searchController.clear();
     _searchFocusNode.unfocus();
@@ -319,7 +448,9 @@ class _MapPageState extends State<MapPage> {
       _navStartIsMyLocation = startIsMyLocation;
       _navStartPlace = startPlace;
       _navEndPlace = endPlace;
-      _navWaypoints.clear();
+      _navWaypoints
+        ..clear()
+        ..addAll(waypoints ?? const []);
       _selectedPlace = null;
       _showSuggestions = false;
       _suggestions = [];
@@ -369,17 +500,149 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _startNavigation() async {
-    final start = _navStartIsMyLocation
-        ? (_userPosition ?? _beijingCenter)
-        : (_navStartPlace?.location ?? _beijingCenter);
-    final end = _navEndPlace?.location;
-    if (end == null) {
+    if (_isNavigating) return;
+
+    if (_navEndPlace == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('请先设置终点')));
       return;
     }
-    await _planRoute(start, end, _avoidCameras);
+
+    final orderedPoints = _buildNavStopItems()
+        .map((item) => item.place.location)
+        .toList();
+    if (orderedPoints.length < 2) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请至少设置起点和终点')));
+      return;
+    }
+
+    _stopPlanningRequested = false;
+    await _planRouteWithStops(orderedPoints, _avoidCameras);
+  }
+
+  void _requestStopPlanning() {
+    if (!_isNavigating || _stopPlanningRequested) return;
+    setState(() {
+      _stopPlanningRequested = true;
+      _planningStatus = '正在停止...';
+    });
+  }
+
+  PlaceResult _resolvedNavStartPlace() {
+    if (_navStartIsMyLocation) {
+      final pos = _userPosition ?? _beijingCenter;
+      return PlaceResult(
+        name: '我的位置',
+        address: _formatLatLng(pos),
+        location: pos,
+      );
+    }
+
+    return _navStartPlace ??
+        PlaceResult(
+          name: '起点',
+          address: _formatLatLng(_beijingCenter),
+          location: _beijingCenter,
+        );
+  }
+
+  List<_NavStopItem> _buildNavStopItems() {
+    final items = <_NavStopItem>[
+      _NavStopItem(
+        place: _resolvedNavStartPlace(),
+        fromMyLocation: _navStartIsMyLocation,
+      ),
+      ..._navWaypoints.map((wp) => _NavStopItem(place: wp)),
+    ];
+
+    if (_navEndPlace != null) {
+      items.add(_NavStopItem(place: _navEndPlace!));
+    }
+
+    return items;
+  }
+
+  void _reorderNavStops(int oldIndex, int newIndex) {
+    final items = _buildNavStopItems();
+    if (items.length < 2) return;
+
+    setState(() {
+      if (newIndex > oldIndex) newIndex -= 1;
+      final moved = items.removeAt(oldIndex);
+      items.insert(newIndex, moved);
+
+      final hasEnd = _navEndPlace != null && items.length >= 2;
+      final first = items.first;
+
+      _navStartIsMyLocation = first.fromMyLocation;
+      _navStartPlace = first.fromMyLocation ? null : first.place;
+
+      if (hasEnd) {
+        _navEndPlace = items.last.place;
+      }
+
+      final middle = hasEnd
+          ? items.sublist(1, items.length - 1)
+          : items.sublist(1);
+      _navWaypoints
+        ..clear()
+        ..addAll(middle.map((e) => e.place));
+    });
+  }
+
+  String _stopLabel(int index, int total) {
+    final hasEnd = _navEndPlace != null;
+    if (index == 0) return '起点';
+    if (hasEnd && index == total - 1) return '终点';
+    return '途径点';
+  }
+
+  Color _stopColor(int index, int total) {
+    final hasEnd = _navEndPlace != null;
+    if (index == 0) return Colors.green[700]!;
+    if (hasEnd && index == total - 1) return const Color(0xFFBA1A1A);
+    return _secondary;
+  }
+
+  IconData _stopIcon(int index, int total) {
+    final hasEnd = _navEndPlace != null;
+    if (index == 0) return Icons.my_location_rounded;
+    if (hasEnd && index == total - 1) return Icons.location_on_rounded;
+    return Icons.more_horiz_rounded;
+  }
+
+  NavigationRoute _mergeRoutes(List<NavigationRoute> segments, bool avoidCameras) {
+    final mergedPoints = <LatLng>[];
+    final mergedCameraIndices = <int>{};
+    double distance = 0;
+    int duration = 0;
+
+    for (var i = 0; i < segments.length; i++) {
+      final route = segments[i];
+      if (i == 0) {
+        mergedPoints.addAll(route.polylinePoints);
+      } else {
+        mergedPoints.addAll(route.polylinePoints.skip(1));
+      }
+      mergedCameraIndices.addAll(route.cameraIndicesOnRoute);
+      distance += route.distance;
+      duration += route.duration;
+    }
+
+    return NavigationRoute(
+      id: 'merged-${DateTime.now().millisecondsSinceEpoch}',
+      startPoint: segments.first.startPoint,
+      endPoint: segments.last.endPoint,
+      polylinePoints: mergedPoints,
+      distance: distance,
+      duration: duration,
+      routeType: avoidCameras ? 'avoid_cameras' : 'normal',
+      cameraIndicesOnRoute: mergedCameraIndices.toList()..sort(),
+      createdAt: DateTime.now(),
+    );
   }
 
   Future<void> _loadCameras() async {
@@ -452,27 +715,45 @@ class _MapPageState extends State<MapPage> {
 
   Future<NavigationRoute?> _planRouteIteratively(
     LatLng start,
-    LatLng end,
-  ) async {
+    LatLng end, {
+    String? legLabel,
+    List<LatLng>? userWaypoints,
+    int? legIndex,
+    int? totalLegs,
+  }) async {
     NavigationRoute? bestRoute;
     NavigationRoute? currentRoute;
     double? anchorDistance;
 
-    for (var i = 0; i < _planningMaxIterations; i++) {
-      if (!mounted) return bestRoute ?? currentRoute;
+    var i = 0;
+    while (mounted && !_stopPlanningRequested) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final elapsed = now - _lastPlanStepRequestAtMs;
+      if (elapsed < _minPlanStepIntervalMs) {
+        await Future.delayed(
+          Duration(milliseconds: _minPlanStepIntervalMs - elapsed),
+        );
+      }
+      _lastPlanStepRequestAtMs = DateTime.now().millisecondsSinceEpoch;
+
+      if (!mounted || _stopPlanningRequested) return bestRoute ?? currentRoute;
 
       setState(() {
         _planningIteration = i + 1;
-        _planningStatus = '第${i + 1}轮规划中...';
+        final prefix = legLabel == null ? '' : '$legLabel · ';
+        _planningStatus = '$prefix第${i + 1}轮规划中...';
       });
 
       final step = await _apiService.planRouteStep(
         start: start,
         end: end,
         iteration: i,
-        maxIterations: _planningMaxIterations,
+        maxIterations: _planStepMaxIterations,
         bestRoute: bestRoute,
         anchorDistance: anchorDistance,
+        waypoints: userWaypoints,
+        legIndex: legIndex,
+        totalLegs: totalLegs,
       );
 
       if (step.errorMessage != null) {
@@ -495,10 +776,10 @@ class _MapPageState extends State<MapPage> {
 
       currentRoute = step.currentRoute!;
       bestRoute = step.bestRoute!;
-        anchorDistance = step.anchorDistance ?? anchorDistance;
+      anchorDistance = step.anchorDistance ?? anchorDistance;
       final currentRouteValue = currentRoute;
       final bestRouteValue = bestRoute;
-        final anchor = anchorDistance ?? bestRouteValue.distance;
+      final anchor = anchorDistance ?? bestRouteValue.distance;
       final bool shouldDrawCurrent =
           currentRouteValue.distance <= anchor * 1.20 ||
           currentRouteValue.cameraIndicesOnRoute.length <
@@ -512,14 +793,17 @@ class _MapPageState extends State<MapPage> {
       setState(() {
         _currentRoute = displayRoute;
         _unavoidableCameraIndices = displayRoute.cameraIndicesOnRoute.toSet();
+        final prefix = legLabel == null ? '' : '$legLabel · ';
         _planningStatus =
-            '第${i + 1}轮：当前${currentRouteValue.cameraIndicesOnRoute.length}个，最优${bestRouteValue.cameraIndicesOnRoute.length}个';
+            '$prefix第${i + 1}轮：当前${currentRouteValue.cameraIndicesOnRoute.length}个，最优${bestRouteValue.cameraIndicesOnRoute.length}个';
       });
       _fitRouteToMap(displayRoute);
 
       if (step.done) {
         break;
       }
+
+      i += 1;
     }
 
     if (bestRoute != null && mounted) {
@@ -536,38 +820,82 @@ class _MapPageState extends State<MapPage> {
   }
 
   Future<void> _planRoute(LatLng start, LatLng end, bool avoidCameras) async {
+    await _planRouteWithStops([start, end], avoidCameras);
+  }
+
+  Future<void> _planRouteWithStops(
+    List<LatLng> orderedStops,
+    bool avoidCameras,
+  ) async {
+    if (orderedStops.length < 2) return;
+
+    final userWaypoints = orderedStops.length > 2
+        ? orderedStops.sublist(1, orderedStops.length - 1)
+        : <LatLng>[];
+
+    final totalLegs = orderedStops.length - 1;
+
     setState(() {
       _isNavigating = true;
+      _stopPlanningRequested = false;
       _planningIteration = 0;
       _planningStatus = avoidCameras ? '准备路线规划...' : null;
     });
 
     try {
-      if (avoidCameras) {
-        final finalRoute = await _planRouteIteratively(start, end);
-        if (finalRoute != null && mounted) {
-          _showRouteResult(finalRoute, true);
-        }
-      } else {
-        final response = await _apiService.planRoute(
-          start: start,
-          end: end,
-          avoidCameras: false,
-        );
-        if (!mounted) return;
+      final segmentRoutes = <NavigationRoute>[];
 
-        if (response.route != null) {
-          final route = response.route!;
-          setState(() {
-            _currentRoute = route;
-            _unavoidableCameraIndices = {};
-          });
-          _fitRouteToMap(route);
-          if (mounted) _showRouteResult(route, false);
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(response.errorMessage ?? '路线规划失败')),
+      for (var i = 0; i < totalLegs; i++) {
+        if (!mounted || _stopPlanningRequested) break;
+
+        final start = orderedStops[i];
+        final end = orderedStops[i + 1];
+        final legLabel = '路段 ${i + 1}/$totalLegs';
+
+        setState(() {
+          _planningIteration = 0;
+          _planningStatus = '$legLabel 规划中...';
+        });
+
+        if (avoidCameras) {
+          final legRoute = await _planRouteIteratively(
+            start,
+            end,
+            legLabel: legLabel,
+            userWaypoints: userWaypoints,
+            legIndex: i + 1,
+            totalLegs: totalLegs,
           );
+          if (legRoute == null) {
+            throw Exception('$legLabel 规划失败');
+          }
+          segmentRoutes.add(legRoute);
+        } else {
+          final response = await _apiService.planRoute(
+            start: start,
+            end: end,
+            avoidCameras: false,
+          );
+          if (response.route == null) {
+            throw Exception(response.errorMessage ?? '$legLabel 规划失败');
+          }
+          segmentRoutes.add(response.route!);
+        }
+      }
+
+      if (segmentRoutes.isNotEmpty && mounted) {
+        final merged = _mergeRoutes(segmentRoutes, avoidCameras);
+        setState(() {
+          _currentRoute = merged;
+          _unavoidableCameraIndices = merged.cameraIndicesOnRoute.toSet();
+        });
+        _fitRouteToMap(merged);
+        if (_stopPlanningRequested) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已暂停/停止重试')),
+          );
+        } else {
+          _showRouteResult(merged, avoidCameras);
         }
       }
     } catch (e) {
@@ -580,6 +908,7 @@ class _MapPageState extends State<MapPage> {
       if (mounted) {
         setState(() {
           _isNavigating = false;
+          _stopPlanningRequested = false;
           _planningIteration = 0;
           _planningStatus = null;
         });
@@ -765,61 +1094,6 @@ class _MapPageState extends State<MapPage> {
           ),
         ),
       ],
-    );
-  }
-
-  void _addWayPoint(LatLng location) {
-    showDialog(
-      context: context,
-      builder: (ctx) {
-        final nameController = TextEditingController();
-        return AlertDialog(
-          title: const Text('添加标记点'),
-          content: TextField(
-            controller: nameController,
-            decoration: const InputDecoration(hintText: '输入标记点名称'),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('取消'),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final name = nameController.text.trim();
-                if (name.isEmpty) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('请输入标记点名称')));
-                  return;
-                }
-
-                final success = await _apiService.saveWayPoint(
-                  name: name,
-                  location: location,
-                );
-
-                if (success) {
-                  await _loadWayPoints();
-                  if (mounted) {
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('标记点已保存')));
-                  }
-                } else {
-                  if (mounted) {
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('保存标记点失败')));
-                  }
-                }
-              },
-              child: const Text('保存'),
-            ),
-          ],
-        );
-      },
     );
   }
 
@@ -1252,10 +1526,6 @@ class _MapPageState extends State<MapPage> {
   }
 
   Widget _buildNavPanel() {
-    final startLabel = _navStartIsMyLocation
-        ? '我的位置'
-        : (_navStartPlace?.name ?? '选择起点');
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -1307,72 +1577,136 @@ class _MapPageState extends State<MapPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
-_navSearchTarget == 'start'
-                    ? _buildNavInputRow(
-                        icon: Icons.my_location_rounded,
-                        iconColor: Colors.green[700]!,
-                        hintText: '搜索起点...',
-                      )
-                    : _buildNavRow(
-                        icon: Icons.my_location_rounded,
-                        iconColor: Colors.green[700]!,
-                        label: startLabel,
-                        isPlaceholder: false,
-                        onTap: () {
-                          setState(() => _navSearchTarget = 'start');
-                          _searchController.clear();
-                          _searchFocusNode.requestFocus();
+                if (_navSearchTarget == 'start')
+                  _buildNavInputRow(
+                    icon: Icons.my_location_rounded,
+                    iconColor: Colors.green[700]!,
+                    hintText: '搜索起点...',
+                  )
+                else if (_navSearchTarget == 'end')
+                  _buildNavInputRow(
+                    icon: Icons.location_on_rounded,
+                    iconColor: const Color(0xFFBA1A1A),
+                    hintText: '搜索终点...',
+                  )
+                else if (_navSearchTarget == 'waypoint')
+                  _buildNavInputRow(
+                    icon: Icons.more_horiz_rounded,
+                    iconColor: _secondary,
+                    hintText: '搜索途径点...',
+                  )
+                else ...[
+                  Builder(
+                    builder: (context) {
+                      final stops = _buildNavStopItems();
+                      return ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        buildDefaultDragHandles: false,
+                        itemCount: stops.length,
+                        onReorder: _reorderNavStops,
+                        itemBuilder: (context, index) {
+                          final item = stops[index];
+                          final total = stops.length;
+                          final hasEnd = _navEndPlace != null;
+                          final isStart = index == 0;
+                          final isEnd = hasEnd && index == total - 1;
+                          final isWaypoint = !isStart && !isEnd;
+
+                          final waypointIndex = index - 1;
+
+                          return Padding(
+                            key: ValueKey(item.id),
+                            padding: EdgeInsets.only(
+                              bottom: index == total - 1 ? 0 : 8,
+                            ),
+                            child: _buildNavRow(
+                              icon: _stopIcon(index, total),
+                              iconColor: _stopColor(index, total),
+                              label: '${_stopLabel(index, total)} · ${item.place.name}',
+                              isPlaceholder: false,
+                              onTap: isStart
+                                  ? () {
+                                      setState(() => _navSearchTarget = 'start');
+                                      _searchController.clear();
+                                      _searchFocusNode.requestFocus();
+                                    }
+                                  : (isEnd
+                                      ? () {
+                                          setState(() => _navSearchTarget = 'end');
+                                          _searchController.clear();
+                                          _searchFocusNode.requestFocus();
+                                        }
+                                      : null),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isWaypoint)
+                                    IconButton(
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(),
+                                      icon: const Icon(
+                                        Icons.close_rounded,
+                                        size: 16,
+                                        color: _onSurfaceVariant,
+                                      ),
+                                      onPressed: () {
+                                        if (waypointIndex < 0 ||
+                                            waypointIndex >= _navWaypoints.length) {
+                                          return;
+                                        }
+                                        setState(() =>
+                                            _navWaypoints.removeAt(waypointIndex));
+                                      },
+                                    ),
+                                  const SizedBox(width: 4),
+                                  ReorderableDragStartListener(
+                                    index: index,
+                                    child: const Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 2),
+                                      child: Icon(
+                                        Icons.drag_indicator_rounded,
+                                        size: 18,
+                                        color: _onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
                         },
-                      ),
-                ..._navWaypoints.asMap().entries.map(
-                  (entry) => Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: _buildNavRow(
-                      icon: Icons.more_vert_rounded,
-                      iconColor: _secondary,
-                      label: entry.value.name,
-                      isPlaceholder: false,
-                      trailing: IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          size: 16,
-                          color: _onSurfaceVariant,
-                        ),
-                        onPressed: () =>
-                            setState(() => _navWaypoints.removeAt(entry.key)),
-                      ),
-                    ),
+                      );
+                    },
                   ),
-                ),
-                if (_navSearchTarget == 'waypoint')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: _buildNavInputRow(
-                      icon: Icons.more_vert_rounded,
-                      iconColor: _secondary,
-                      hintText: '搜索途径点...',
-                    ),
-                  ),
-                const SizedBox(height: 8),
-_navSearchTarget == 'end'
-                    ? _buildNavInputRow(
+                  if (_navEndPlace == null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _buildNavRow(
                         icon: Icons.location_on_rounded,
                         iconColor: const Color(0xFFBA1A1A),
-                        hintText: '搜索终点...',
-                      )
-                    : _buildNavRow(
-                        icon: Icons.location_on_rounded,
-                        iconColor: const Color(0xFFBA1A1A),
-                        label: _navEndPlace?.name ?? '选择终点',
-                        isPlaceholder: _navEndPlace == null,
+                        label: '选择终点',
+                        isPlaceholder: true,
                         onTap: () {
                           setState(() => _navSearchTarget = 'end');
                           _searchController.clear();
                           _searchFocusNode.requestFocus();
                         },
                       ),
+                    ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '拖拽右侧手柄可调整起点 / 途径点 / 终点顺序',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _onSurfaceVariant.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -1416,43 +1750,43 @@ _navSearchTarget == 'end'
                     ),
                   ],
                 ),
+                if (_isNavigating && _planningStatus != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2, bottom: 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        _planningStatus ??
+                            (_planningIteration > 0
+                                ? '第$_planningIteration轮规划中...'
+                                : '规划中...'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _onSurfaceVariant.withValues(alpha: 0.9),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: _navEndPlace != null ? _startNavigation : null,
+                    onPressed: _isNavigating
+                        ? _requestStopPlanning
+                        : (_navEndPlace != null ? _startNavigation : null),
                     style: FilledButton.styleFrom(
-                      backgroundColor: _primary,
+                      backgroundColor:
+                          _isNavigating ? const Color(0xFFBA1A1A) : _primary,
                       disabledBackgroundColor: _surfaceVariant,
                       foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(42),
                     ),
-                    child: _isNavigating
-                        ? Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const SizedBox(
-                                height: 16,
-                                width: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                _planningIteration > 0
-                                    ? '规划中 ${_planningIteration}/$_planningMaxIterations'
-                                    : '规划中...',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          )
-                        : const Text(
-                            '开始导航',
-                            style: TextStyle(fontWeight: FontWeight.w700),
-                          ),
+                    child: Text(
+                      _isNavigating
+                          ? (_stopPlanningRequested ? '正在停止...' : '暂停/停止')
+                          : '开始导航',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
                   ),
                 ),
               ],
@@ -1743,14 +2077,10 @@ _navSearchTarget == 'end'
               minZoom: 5,
               maxZoom: 18,
               onTap: (tapPosition, point) {
-                // 短按添加标记点
-                _addWayPoint(point);
+                _showMapPointActions(point);
               },
               onLongPress: (tapPosition, point) {
-                // 长按添加标记点
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('长按地图可添加标记点 (开发中)')),
-                );
+                _showMapPointActions(point);
               },
             ),
             children: [
