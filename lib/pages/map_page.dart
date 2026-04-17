@@ -95,6 +95,15 @@ class _MapPageState extends State<MapPage> {
   String? _navSearchTarget;
   _BottomTab _activeTab = _BottomTab.explore;
 
+  List<SavedNavigationRouteRecord> _savedRoutes = [];
+  List<SavedRoutePlanRecord> _savedRoutePlans = [];
+  bool _loadingSaved = false;
+  String? _savedError;
+
+  List<RecentNavigationRecord> _recentNavigations = [];
+  bool _loadingRecent = false;
+  String? _recentError;
+
   @override
   void initState() {
     super.initState();
@@ -457,10 +466,10 @@ class _MapPageState extends State<MapPage> {
     });
   }
 
-  void _exitNavMode() {
+  void _exitNavMode({_BottomTab nextTab = _BottomTab.explore}) {
     setState(() {
       _navMode = false;
-      _activeTab = _BottomTab.explore;
+      _activeTab = nextTab;
       _navStartPlace = null;
       _navEndPlace = null;
       _navWaypoints.clear();
@@ -475,27 +484,37 @@ class _MapPageState extends State<MapPage> {
 
   void _switchTab(_BottomTab tab) {
     if (tab == _activeTab &&
-        (tab == _BottomTab.explore || tab == _BottomTab.plan)) {
-      return;
-    }
-    setState(() => _activeTab = tab);
-    if (tab == _BottomTab.plan) {
-      if (!_navMode) {
-        _enterNavMode();
+        (tab == _BottomTab.explore ||
+            tab == _BottomTab.plan ||
+            tab == _BottomTab.saved ||
+            tab == _BottomTab.recent)) {
+      if (tab == _BottomTab.saved) {
+        _loadSavedData(silent: true);
+      } else if (tab == _BottomTab.recent) {
+        _loadRecentData(silent: true);
       }
       return;
     }
-    if (_navMode) {
-      _exitNavMode();
+
+    if (tab == _BottomTab.plan) {
+      if (!_navMode) {
+        _enterNavMode();
+      } else {
+        setState(() => _activeTab = tab);
+      }
+      return;
     }
+
+    if (_navMode) {
+      _exitNavMode(nextTab: tab);
+    } else {
+      setState(() => _activeTab = tab);
+    }
+
     if (tab == _BottomTab.saved) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('收藏列表即将上线')));
+      _loadSavedData();
     } else if (tab == _BottomTab.recent) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('最近路线即将上线')));
+      _loadRecentData();
     }
   }
 
@@ -509,15 +528,29 @@ class _MapPageState extends State<MapPage> {
       return;
     }
 
-    final orderedPoints = _buildNavStopItems()
-        .map((item) => item.place.location)
-        .toList();
+    final stopItems = _buildNavStopItems();
+    final orderedPoints = stopItems.map((item) => item.place.location).toList();
     if (orderedPoints.length < 2) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('请至少设置起点和终点')));
       return;
     }
+
+    final start = stopItems.first.place;
+    final end = stopItems.last.place;
+    final waypoints = stopItems.length > 2
+        ? stopItems.sublist(1, stopItems.length - 1).map((e) => e.place).toList()
+        : <PlaceResult>[];
+    unawaited(
+      _recordRecentNavigation(
+        start: start,
+        end: end,
+        waypoints: waypoints,
+        avoidCameras: _avoidCameras,
+        source: 'start_navigation',
+      ),
+    );
 
     _stopPlanningRequested = false;
     await _planRouteWithStops(orderedPoints, _avoidCameras);
@@ -529,6 +562,409 @@ class _MapPageState extends State<MapPage> {
       _stopPlanningRequested = true;
       _planningStatus = '正在停止...';
     });
+  }
+
+  String _saveNameTimestamp() {
+    final now = DateTime.now();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(now.month)}-${two(now.day)} ${two(now.hour)}:${two(now.minute)}';
+  }
+
+  String _formatRecentCreatedAt(DateTime dt) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  Future<void> _saveCurrentRoute() async {
+    final route = _currentRoute;
+    if (route == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无可保存的导航线路，请先完成一次导航规划')),
+      );
+      return;
+    }
+
+    final stops = _buildNavStopItems().map((item) => item.place).toList();
+    final startName = stops.isNotEmpty ? stops.first.name : '起点';
+    final endName = stops.length >= 2 ? stops.last.name : '终点';
+    final routeName = '$startName -> $endName ${_saveNameTimestamp()}';
+
+    final ok = await _apiService.saveNavigationRoute(
+      route: route,
+      name: routeName,
+      stops: stops,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? '线路已保存' : '保存线路失败')),
+    );
+  }
+
+  Future<void> _saveCurrentRoutePlanPoints() async {
+    final end = _navEndPlace;
+    if (end == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先设置终点后再保存点位方案')),
+      );
+      return;
+    }
+
+    final start = _resolvedNavStartPlace();
+    final waypoints = List<PlaceResult>.from(_navWaypoints);
+    final planName = '${start.name} -> ${end.name} ${_saveNameTimestamp()}';
+
+    final ok = await _apiService.saveRoutePlanPoints(
+      name: planName,
+      start: start,
+      end: end,
+      waypoints: waypoints,
+      avoidCameras: _avoidCameras,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(ok ? '点位方案已保存' : '保存点位方案失败')),
+    );
+  }
+
+  PlaceResult _placeFromSavedCoordinate(SavedCoordinate c) {
+    return PlaceResult(
+      name: c.name,
+      address: c.address,
+      location: c.location,
+    );
+  }
+
+  List<PlaceResult> _stopsFromSavedRoute(SavedNavigationRouteRecord record) {
+    if (record.stops.isNotEmpty) {
+      return record.stops.map(_placeFromSavedCoordinate).toList();
+    }
+    return [
+      PlaceResult(
+        name: '起点',
+        address: _formatLatLng(record.route.startPoint),
+        location: record.route.startPoint,
+      ),
+      PlaceResult(
+        name: '终点',
+        address: _formatLatLng(record.route.endPoint),
+        location: record.route.endPoint,
+      ),
+    ];
+  }
+
+  Future<void> _loadSavedData({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loadingSaved = true;
+        _savedError = null;
+      });
+    }
+
+    try {
+      final results = await Future.wait([
+        _apiService.getSavedNavigationRoutes(),
+        _apiService.getSavedRoutePlans(),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _savedRoutes = results[0] as List<SavedNavigationRouteRecord>;
+        _savedRoutePlans = results[1] as List<SavedRoutePlanRecord>;
+        _loadingSaved = false;
+        _savedError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingSaved = false;
+        _savedError = '加载保存列表失败: $e';
+      });
+    }
+  }
+
+  Future<void> _deleteSavedRoute(SavedNavigationRouteRecord record) async {
+    final ok = await _apiService.deleteSavedNavigationRoute(record.id);
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _savedRoutes.removeWhere((item) => item.id == record.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已删除保存线路')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('删除保存线路失败')),
+      );
+    }
+  }
+
+  Future<void> _deleteSavedRoutePlan(SavedRoutePlanRecord plan) async {
+    final ok = await _apiService.deleteSavedRoutePlan(plan.id);
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _savedRoutePlans.removeWhere((item) => item.id == plan.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已删除点位方案')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('删除点位方案失败')),
+      );
+    }
+  }
+
+  void _applySavedRouteToNavigation(SavedNavigationRouteRecord record) {
+    final stops = _stopsFromSavedRoute(record);
+    final start = stops.first;
+    final end = stops.length >= 2 ? stops.last : start;
+    final waypoints =
+        stops.length > 2 ? stops.sublist(1, stops.length - 1) : <PlaceResult>[];
+
+    setState(() {
+      _navMode = true;
+      _activeTab = _BottomTab.plan;
+      _navStartIsMyLocation = false;
+      _navStartPlace = start;
+      _navEndPlace = end;
+      _navWaypoints
+        ..clear()
+        ..addAll(waypoints);
+      _avoidCameras = record.route.routeType == 'avoid_cameras';
+      _currentRoute = record.route;
+      _unavoidableCameraIndices = record.route.cameraIndicesOnRoute.toSet();
+      _navSearchTarget = null;
+      _selectedPlace = null;
+      _showSuggestions = false;
+      _suggestions = [];
+      _searchController.clear();
+    });
+    unawaited(
+      _recordRecentNavigation(
+        start: start,
+        end: end,
+        waypoints: waypoints,
+        avoidCameras: record.route.routeType == 'avoid_cameras',
+        source: 'apply_saved_route',
+      ),
+    );
+    _fitRouteToMap(record.route);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已将保存线路应用到导航模式')),
+    );
+  }
+
+  void _applySavedRoutePlanToNavigation(SavedRoutePlanRecord plan) {
+    final start = _placeFromSavedCoordinate(plan.start);
+    final end = _placeFromSavedCoordinate(plan.end);
+    final waypoints = plan.waypoints.map(_placeFromSavedCoordinate).toList();
+
+    setState(() {
+      _navMode = true;
+      _activeTab = _BottomTab.plan;
+      _navStartIsMyLocation = false;
+      _navStartPlace = start;
+      _navEndPlace = end;
+      _navWaypoints
+        ..clear()
+        ..addAll(waypoints);
+      _avoidCameras = plan.avoidCameras;
+      _currentRoute = null;
+      _unavoidableCameraIndices = {};
+      _navSearchTarget = null;
+      _selectedPlace = null;
+      _showSuggestions = false;
+      _suggestions = [];
+      _searchController.clear();
+    });
+    unawaited(
+      _recordRecentNavigation(
+        start: start,
+        end: end,
+        waypoints: waypoints,
+        avoidCameras: plan.avoidCameras,
+        source: 'apply_saved_plan',
+      ),
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已将点位方案应用到导航模式')),
+    );
+  }
+
+  void _showSavedRouteDetail(SavedNavigationRouteRecord record) {
+    final stops = _stopsFromSavedRoute(record);
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              record.name,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            _infoRow('类型', record.route.routeType == 'avoid_cameras' ? '避开摄像头' : '普通'),
+            _infoRow('里程', '${(record.route.distance / 1000).toStringAsFixed(1)} km'),
+            _infoRow('时长', '${(record.route.duration / 60).round()} 分钟'),
+            _infoRow('点位', '${stops.length} 个'),
+            const SizedBox(height: 10),
+            ...stops.take(4).map((p) => Text(
+                  '• ${p.name}',
+                  style: const TextStyle(fontSize: 13, color: _onSurfaceVariant),
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSavedRoutePlanDetail(SavedRoutePlanRecord plan) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              plan.name,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            _infoRow('起点', plan.start.name),
+            _infoRow('终点', plan.end.name),
+            _infoRow('途径点', '${plan.waypoints.length} 个'),
+            _infoRow('避开摄像头', plan.avoidCameras ? '是' : '否'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _loadRecentData({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loadingRecent = true;
+        _recentError = null;
+      });
+    }
+
+    try {
+      final data = await _apiService.getRecentNavigations();
+      if (!mounted) return;
+      setState(() {
+        _recentNavigations = data;
+        _loadingRecent = false;
+        _recentError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingRecent = false;
+        _recentError = '加载最近记录失败: $e';
+      });
+    }
+  }
+
+  Future<void> _deleteRecentNavigation(RecentNavigationRecord record) async {
+    final ok = await _apiService.deleteRecentNavigation(record.id);
+    if (!mounted) return;
+    if (ok) {
+      setState(() {
+        _recentNavigations.removeWhere((item) => item.id == record.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已删除最近记录')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('删除最近记录失败')),
+      );
+    }
+  }
+
+  Future<void> _recordRecentNavigation({
+    required PlaceResult start,
+    required PlaceResult end,
+    required List<PlaceResult> waypoints,
+    required bool avoidCameras,
+    required String source,
+  }) async {
+    final name = '${start.name} -> ${end.name} ${_saveNameTimestamp()}';
+    await _apiService.saveRecentNavigation(
+      name: name,
+      start: start,
+      end: end,
+      waypoints: waypoints,
+      avoidCameras: avoidCameras,
+      source: source,
+    );
+  }
+
+  void _applyRecentNavigationToNavigation(RecentNavigationRecord record) {
+    setState(() {
+      _navMode = true;
+      _activeTab = _BottomTab.plan;
+      _navStartIsMyLocation = false;
+      _navStartPlace = _placeFromSavedCoordinate(record.start);
+      _navEndPlace = _placeFromSavedCoordinate(record.end);
+      _navWaypoints
+        ..clear()
+        ..addAll(record.waypoints.map(_placeFromSavedCoordinate));
+      _avoidCameras = record.avoidCameras;
+      _currentRoute = null;
+      _unavoidableCameraIndices = {};
+      _navSearchTarget = null;
+      _selectedPlace = null;
+      _showSuggestions = false;
+      _suggestions = [];
+      _searchController.clear();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('已将最近记录应用到导航模式')),
+    );
+  }
+
+  void _showRecentNavigationDetail(RecentNavigationRecord record) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              record.name,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            _infoRow('起点', record.start.name),
+            _infoRow('终点', record.end.name),
+            _infoRow('途径点', '${record.waypoints.length} 个'),
+            _infoRow('避开摄像头', record.avoidCameras ? '是' : '否'),
+            _infoRow('来源', record.source.isEmpty ? '未知' : record.source),
+            _infoRow('记录时间', _formatRecentCreatedAt(record.createdAt)),
+          ],
+        ),
+      ),
+    );
   }
 
   PlaceResult _resolvedNavStartPlace() {
@@ -1525,6 +1961,311 @@ class _MapPageState extends State<MapPage> {
     );
   }
 
+  Widget _buildSavedPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: _buildGlassPanel(
+            borderRadius: BorderRadius.circular(24),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 430),
+              child: _loadingSaved
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(18),
+                        child: CircularProgressIndicator(color: _primary),
+                      ),
+                    )
+                  : (_savedError != null
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _savedError!,
+                              style: const TextStyle(color: Color(0xFFBA1A1A)),
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton(
+                              onPressed: _loadSavedData,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _primary,
+                              ),
+                              child: const Text('重试加载'),
+                            ),
+                          ],
+                        )
+                      : (_savedRoutes.isEmpty && _savedRoutePlans.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(18),
+                                child: Text(
+                                  '暂无保存内容\n先在导航页点击“保存线路 / 保存点位”',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: _onSurfaceVariant),
+                                ),
+                              ),
+                            )
+                          : SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        '已保存',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                          color: _onSurface,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      IconButton(
+                                        icon: const Icon(Icons.refresh_rounded),
+                                        onPressed: () => _loadSavedData(silent: true),
+                                      ),
+                                    ],
+                                  ),
+                                  if (_savedRoutes.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    const Text(
+                                      '线路',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: _onSurfaceVariant,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    ..._savedRoutes.map(
+                                      (item) => Padding(
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: _buildNavRow(
+                                          icon: Icons.alt_route_rounded,
+                                          iconColor: _primary,
+                                          label: item.name,
+                                          isPlaceholder: false,
+                                          onTap: () => _applySavedRouteToNavigation(item),
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                                icon: const Icon(
+                                                  Icons.visibility_outlined,
+                                                  size: 16,
+                                                  color: _onSurfaceVariant,
+                                                ),
+                                                onPressed: () => _showSavedRouteDetail(item),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              IconButton(
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                                icon: const Icon(
+                                                  Icons.delete_outline_rounded,
+                                                  size: 16,
+                                                  color: Color(0xFFBA1A1A),
+                                                ),
+                                                onPressed: () => _deleteSavedRoute(item),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (_savedRoutePlans.isNotEmpty) ...[
+                                    const SizedBox(height: 8),
+                                    const Text(
+                                      '起终点与途径点方案',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: _onSurfaceVariant,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    ..._savedRoutePlans.map(
+                                      (item) => Padding(
+                                        padding: const EdgeInsets.only(bottom: 6),
+                                        child: _buildNavRow(
+                                          icon: Icons.playlist_add_check_circle_outlined,
+                                          iconColor: _secondary,
+                                          label: item.name,
+                                          isPlaceholder: false,
+                                          onTap: () => _applySavedRoutePlanToNavigation(item),
+                                          trailing: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              IconButton(
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                                icon: const Icon(
+                                                  Icons.visibility_outlined,
+                                                  size: 16,
+                                                  color: _onSurfaceVariant,
+                                                ),
+                                                onPressed: () =>
+                                                    _showSavedRoutePlanDetail(item),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              IconButton(
+                                                padding: EdgeInsets.zero,
+                                                constraints: const BoxConstraints(),
+                                                icon: const Icon(
+                                                  Icons.delete_outline_rounded,
+                                                  size: 16,
+                                                  color: Color(0xFFBA1A1A),
+                                                ),
+                                                onPressed: () => _deleteSavedRoutePlan(item),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ))),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRecentPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: _buildGlassPanel(
+            borderRadius: BorderRadius.circular(24),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 430),
+              child: _loadingRecent
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(18),
+                        child: CircularProgressIndicator(color: _primary),
+                      ),
+                    )
+                  : (_recentError != null
+                      ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _recentError!,
+                              style: const TextStyle(color: Color(0xFFBA1A1A)),
+                            ),
+                            const SizedBox(height: 8),
+                            FilledButton(
+                              onPressed: _loadRecentData,
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _primary,
+                              ),
+                              child: const Text('重试加载'),
+                            ),
+                          ],
+                        )
+                      : (_recentNavigations.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(18),
+                                child: Text(
+                                  '暂无最近记录\n开始导航或应用保存项后会自动记录',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: _onSurfaceVariant),
+                                ),
+                              ),
+                            )
+                          : SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Text(
+                                        '最近记录',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w800,
+                                          color: _onSurface,
+                                        ),
+                                      ),
+                                      const Spacer(),
+                                      IconButton(
+                                        icon: const Icon(Icons.refresh_rounded),
+                                        onPressed: () =>
+                                            _loadRecentData(silent: true),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 6),
+                                  ..._recentNavigations.map(
+                                    (item) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: _buildNavRow(
+                                        icon: Icons.history_rounded,
+                                        iconColor: _secondary,
+                                        label:
+                                            '${item.name} · ${_formatRecentCreatedAt(item.createdAt)}',
+                                        isPlaceholder: false,
+                                        onTap: () =>
+                                            _applyRecentNavigationToNavigation(item),
+                                        trailing: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                              icon: const Icon(
+                                                Icons.visibility_outlined,
+                                                size: 16,
+                                                color: _onSurfaceVariant,
+                                              ),
+                                              onPressed: () =>
+                                                  _showRecentNavigationDetail(item),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            IconButton(
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(),
+                                              icon: const Icon(
+                                                Icons.delete_outline_rounded,
+                                                size: 16,
+                                                color: Color(0xFFBA1A1A),
+                                              ),
+                                              onPressed: () =>
+                                                  _deleteRecentNavigation(item),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ))),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildNavPanel() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1747,6 +2488,26 @@ class _MapPageState extends State<MapPage> {
                       onChanged: (value) =>
                           setState(() => _avoidCameras = value),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _currentRoute != null ? _saveCurrentRoute : null,
+                        icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                        label: const Text('保存线路'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _navEndPlace != null ? _saveCurrentRoutePlanPoints : null,
+                        icon: const Icon(Icons.playlist_add_rounded, size: 16),
+                        label: const Text('保存点位'),
+                      ),
                     ),
                   ],
                 ),
@@ -2297,7 +3058,13 @@ class _MapPageState extends State<MapPage> {
           ),
 
           // 顶部搜索框 / 导航面板
-          SafeArea(child: _navMode ? _buildNavPanel() : _buildSearchBar()),
+          SafeArea(
+            child: _activeTab == _BottomTab.saved
+              ? _buildSavedPanel()
+              : (_activeTab == _BottomTab.recent
+                ? _buildRecentPanel()
+                : (_navMode ? _buildNavPanel() : _buildSearchBar())),
+          ),
 
           // 加载指示器
           if (_loading)

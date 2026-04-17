@@ -232,6 +232,172 @@ class ApiService {
     }
   }
 
+  /// 保存导航线路（含规划后的折线）
+  Future<bool> saveNavigationRoute({
+    required NavigationRoute route,
+    required String name,
+    List<PlaceResult>? stops,
+  }) async {
+    try {
+      await _dio.post('/api/saved-routes', data: {
+        'name': name,
+        'route': route.toJson(),
+        if (stops != null)
+          'stops': stops
+              .map(
+                (p) => {
+                  'name': p.name,
+                  'address': p.address,
+                  'lat': p.location.latitude,
+                  'lng': p.location.longitude,
+                },
+              )
+              .toList(),
+      });
+      return true;
+    } catch (e) {
+      print('保存导航线路失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 保存起点/终点/途径点方案
+  Future<bool> saveRoutePlanPoints({
+    required String name,
+    required PlaceResult start,
+    required PlaceResult end,
+    required List<PlaceResult> waypoints,
+    required bool avoidCameras,
+  }) async {
+    try {
+      Map<String, dynamic> toPoint(PlaceResult p) => {
+            'name': p.name,
+            'address': p.address,
+            'lat': p.location.latitude,
+            'lng': p.location.longitude,
+          };
+
+      await _dio.post('/api/saved-route-plans', data: {
+        'name': name,
+        'start': toPoint(start),
+        'end': toPoint(end),
+        'waypoints': waypoints.map(toPoint).toList(),
+        'avoidCameras': avoidCameras,
+      });
+      return true;
+    } catch (e) {
+      print('保存点位方案失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 获取已保存的导航线路
+  Future<List<SavedNavigationRouteRecord>> getSavedNavigationRoutes() async {
+    try {
+      final response = await _dio.get('/api/saved-routes');
+      final List<dynamic> data = response.data['routes'] ?? [];
+      return data
+          .map((e) => SavedNavigationRouteRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('获取已保存线路失败: ${_formatError(e)}');
+      return [];
+    }
+  }
+
+  /// 删除已保存线路
+  Future<bool> deleteSavedNavigationRoute(String id) async {
+    try {
+      await _dio.delete('/api/saved-routes/$id');
+      return true;
+    } catch (e) {
+      print('删除已保存线路失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 获取已保存的起终点/途径点方案
+  Future<List<SavedRoutePlanRecord>> getSavedRoutePlans() async {
+    try {
+      final response = await _dio.get('/api/saved-route-plans');
+      final List<dynamic> data = response.data['plans'] ?? [];
+      return data
+          .map((e) => SavedRoutePlanRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('获取点位方案失败: ${_formatError(e)}');
+      return [];
+    }
+  }
+
+  /// 删除已保存点位方案
+  Future<bool> deleteSavedRoutePlan(String id) async {
+    try {
+      await _dio.delete('/api/saved-route-plans/$id');
+      return true;
+    } catch (e) {
+      print('删除点位方案失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 保存最近导航记录
+  Future<bool> saveRecentNavigation({
+    required String name,
+    required PlaceResult start,
+    required PlaceResult end,
+    required List<PlaceResult> waypoints,
+    required bool avoidCameras,
+    String? source,
+  }) async {
+    try {
+      Map<String, dynamic> toPoint(PlaceResult p) => {
+            'name': p.name,
+            'address': p.address,
+            'lat': p.location.latitude,
+            'lng': p.location.longitude,
+          };
+
+      await _dio.post('/api/recent-navigations', data: {
+        'name': name,
+        'start': toPoint(start),
+        'end': toPoint(end),
+        'waypoints': waypoints.map(toPoint).toList(),
+        'avoidCameras': avoidCameras,
+        if (source != null) 'source': source,
+      });
+      return true;
+    } catch (e) {
+      print('保存最近导航失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 获取最近导航记录
+  Future<List<RecentNavigationRecord>> getRecentNavigations() async {
+    try {
+      final response = await _dio.get('/api/recent-navigations');
+      final List<dynamic> data = response.data['records'] ?? [];
+      return data
+          .map((e) => RecentNavigationRecord.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('获取最近导航失败: ${_formatError(e)}');
+      return [];
+    }
+  }
+
+  /// 删除最近导航记录
+  Future<bool> deleteRecentNavigation(String id) async {
+    try {
+      await _dio.delete('/api/recent-navigations/$id');
+      return true;
+    } catch (e) {
+      print('删除最近导航失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
   /// 获取废弃摄像头列表
   Future<List<DismissedCamera>> getDismissedCameras() async {
     try {
@@ -297,6 +463,139 @@ class PlaceResult {
         (json['lat'] as num).toDouble(),
         (json['lng'] as num).toDouble(),
       ),
+    );
+  }
+}
+
+class SavedCoordinate {
+  final String name;
+  final String address;
+  final LatLng location;
+
+  SavedCoordinate({
+    required this.name,
+    required this.address,
+    required this.location,
+  });
+
+  factory SavedCoordinate.fromJson(Map<String, dynamic> json) {
+    return SavedCoordinate(
+      name: json['name'] as String? ?? '未命名地点',
+      address: json['address'] as String? ?? '',
+      location: LatLng(
+        (json['lat'] as num).toDouble(),
+        (json['lng'] as num).toDouble(),
+      ),
+    );
+  }
+
+  PlaceResult toPlaceResult() => PlaceResult(
+        name: name,
+        address: address,
+        location: location,
+      );
+}
+
+class SavedNavigationRouteRecord {
+  final String id;
+  final String name;
+  final NavigationRoute route;
+  final List<SavedCoordinate> stops;
+  final DateTime createdAt;
+
+  SavedNavigationRouteRecord({
+    required this.id,
+    required this.name,
+    required this.route,
+    required this.stops,
+    required this.createdAt,
+  });
+
+  factory SavedNavigationRouteRecord.fromJson(Map<String, dynamic> json) {
+    final List<dynamic> stopsData = json['stops'] as List<dynamic>? ?? const [];
+    return SavedNavigationRouteRecord(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '未命名线路',
+      route: NavigationRoute.fromJson(json['route'] as Map<String, dynamic>),
+      stops: stopsData
+          .map((e) => SavedCoordinate.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+}
+
+class SavedRoutePlanRecord {
+  final String id;
+  final String name;
+  final SavedCoordinate start;
+  final SavedCoordinate end;
+  final List<SavedCoordinate> waypoints;
+  final bool avoidCameras;
+  final DateTime createdAt;
+
+  SavedRoutePlanRecord({
+    required this.id,
+    required this.name,
+    required this.start,
+    required this.end,
+    required this.waypoints,
+    required this.avoidCameras,
+    required this.createdAt,
+  });
+
+  factory SavedRoutePlanRecord.fromJson(Map<String, dynamic> json) {
+    final List<dynamic> waypointsData =
+        json['waypoints'] as List<dynamic>? ?? const [];
+    return SavedRoutePlanRecord(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '未命名点位方案',
+      start: SavedCoordinate.fromJson(json['start'] as Map<String, dynamic>),
+      end: SavedCoordinate.fromJson(json['end'] as Map<String, dynamic>),
+      waypoints: waypointsData
+          .map((e) => SavedCoordinate.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      avoidCameras: json['avoidCameras'] as bool? ?? false,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+    );
+  }
+}
+
+class RecentNavigationRecord {
+  final String id;
+  final String name;
+  final SavedCoordinate start;
+  final SavedCoordinate end;
+  final List<SavedCoordinate> waypoints;
+  final bool avoidCameras;
+  final String source;
+  final DateTime createdAt;
+
+  RecentNavigationRecord({
+    required this.id,
+    required this.name,
+    required this.start,
+    required this.end,
+    required this.waypoints,
+    required this.avoidCameras,
+    required this.source,
+    required this.createdAt,
+  });
+
+  factory RecentNavigationRecord.fromJson(Map<String, dynamic> json) {
+    final List<dynamic> waypointsData =
+        json['waypoints'] as List<dynamic>? ?? const [];
+    return RecentNavigationRecord(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '未命名最近导航',
+      start: SavedCoordinate.fromJson(json['start'] as Map<String, dynamic>),
+      end: SavedCoordinate.fromJson(json['end'] as Map<String, dynamic>),
+      waypoints: waypointsData
+          .map((e) => SavedCoordinate.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      avoidCameras: json['avoidCameras'] as bool? ?? false,
+      source: json['source'] as String? ?? '',
+      createdAt: DateTime.parse(json['createdAt'] as String),
     );
   }
 }
