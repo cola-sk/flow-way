@@ -436,16 +436,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               Row(
                 children: [
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: FilledButton.icon(
                       onPressed: () async {
                         Navigator.pop(ctx);
                         await _setEndPlaceFromAction(place);
                       },
-                      style: OutlinedButton.styleFrom(
-                        side: BorderSide(
-                          color: _primary.withValues(alpha: 0.55),
-                          width: 1.2,
-                        ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primary,
+                        foregroundColor: Colors.white,
                       ),
                       icon: const Icon(Icons.directions, size: 16),
                       label: const Text('去这里'),
@@ -458,6 +456,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         Navigator.pop(ctx);
                         await _setStartPlaceFromAction(place);
                       },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.green.shade700,
+                        side: BorderSide(
+                          color: Colors.green.shade400,
+                          width: 1.2,
+                        ),
+                      ),
                       icon: const Icon(Icons.navigation, size: 16),
                       label: const Text('从这里出发'),
                     ),
@@ -473,6 +478,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         Navigator.pop(ctx);
                         await _addNavWaypointFromPlace(place);
                       },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange.shade700,
+                        side: BorderSide(
+                          color: Colors.orange.shade400,
+                          width: 1.2,
+                        ),
+                      ),
                       icon: const Icon(Icons.add_road_rounded, size: 16),
                       label: const Text('作为途径点'),
                     ),
@@ -484,6 +496,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         Navigator.pop(ctx);
                         await _promptSaveWayPoint(place);
                       },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.blueGrey.shade600,
+                        side: BorderSide(
+                          color: Colors.blueGrey.shade300,
+                          width: 1.2,
+                        ),
+                      ),
                       icon: const Icon(Icons.bookmark_add, size: 16),
                       label: const Text('收藏该点'),
                     ),
@@ -1731,7 +1750,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         context: context,
                         builder: (context) => SaveRouteDialog(
                           route: route,
-                          apiService: _apiService,
+                          apiService: _apiService, stops: _buildNavStopItems().map((e) => e.place).toList(),
                         ),
                       );
                     },
@@ -1753,7 +1772,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ActiveNavigationPage(
+                          builder: (context) => ActiveNavigationPage( stops: _buildNavStopItems().map((e) => e.place).toList(),
                             route: route,
                             apiService: _apiService,
                             camerasOnRoute: route.cameraIndicesOnRoute
@@ -2413,7 +2432,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                       Navigator.push(
                                                         context,
                                                         MaterialPageRoute(
-                                                          builder: (ctx) => ActiveNavigationPage(
+                                                          builder: (ctx) => ActiveNavigationPage( stops: item.stops.map((s) => PlaceResult(name: s.name, address: '', location: s.location)).toList(),
                                                             route: item.route,
                                                             apiService: _apiService,
                                                             camerasOnRoute: item.route.cameraIndicesOnRoute
@@ -3089,7 +3108,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (ctx) => ActiveNavigationPage(
+                                        builder: (ctx) => ActiveNavigationPage( stops: _buildNavStopItems().map((e) => e.place).toList(),
                                           route: _currentRoute!,
                                           apiService: _apiService,
                                           camerasOnRoute: _currentRoute!.cameraIndicesOnRoute

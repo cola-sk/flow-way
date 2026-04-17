@@ -6,11 +6,13 @@ import '../services/api_service.dart';
 class SaveRouteDialog extends StatefulWidget {
   final NavigationRoute route;
   final ApiService apiService;
+  final List<PlaceResult> stops;
   
   const SaveRouteDialog({
     Key? key,
     required this.route,
     required this.apiService,
+    required this.stops,
   }) : super(key: key);
 
   @override
@@ -20,6 +22,14 @@ class SaveRouteDialog extends StatefulWidget {
 class _SaveRouteDialogState extends State<SaveRouteDialog> {
   final TextEditingController _nameController = TextEditingController();
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final startName = widget.stops.isNotEmpty ? widget.stops.first.name : '起点';
+    final endName = widget.stops.length >= 2 ? widget.stops.last.name : '终点';
+    _nameController.text = '$startName -> $endName路线';
+  }
 
   @override
   void dispose() {
@@ -37,26 +47,11 @@ class _SaveRouteDialogState extends State<SaveRouteDialog> {
     }
 
     setState(() => _saving = true);
-    
-    // Create basic stop PlaceResults for start and end, since they are required
-    // (apiService.saveNavigationRoute takes List<PlaceResult> stops)
-    final stops = [
-      PlaceResult(
-        name: '起点',
-        address: '',
-        location: widget.route.startPoint,
-      ),
-      PlaceResult(
-        name: '终点',
-        address: '',
-        location: widget.route.endPoint,
-      ),
-    ];
 
     final success = await widget.apiService.saveNavigationRoute(
       route: widget.route,
       name: name,
-      stops: stops,
+      stops: widget.stops,
     );
 
     if (!mounted) return;

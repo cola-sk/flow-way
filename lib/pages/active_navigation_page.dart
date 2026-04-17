@@ -16,12 +16,14 @@ class ActiveNavigationPage extends StatefulWidget {
   final NavigationRoute route;
   final List<Camera> camerasOnRoute;
   final ApiService apiService;
+  final List<PlaceResult> stops;
 
   const ActiveNavigationPage({
     Key? key,
     required this.route,
     required this.camerasOnRoute,
     required this.apiService,
+    required this.stops,
   }) : super(key: key);
 
   @override
@@ -373,6 +375,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                     builder: (context) => SaveRouteDialog(
                       route: widget.route,
                       apiService: widget.apiService,
+                      stops: widget.stops,
                     ),
                   );
                 },
