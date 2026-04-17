@@ -95,6 +95,43 @@ function getCameraBearingsFromName(name: string): number[] | null {
  * 检查摄像头是否在路线附近（距离阈值：100 米）
  * 且路线通过方向与摄像头拍摄方向一致（方向未知时保守计入）
  */
+function distanceToSegment(pLat: number, pLng: number, aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const R = 6371000;
+  
+  // Convert inputs to radians
+  const lat1 = (aLat * Math.PI) / 180;
+  const lng1 = (aLng * Math.PI) / 180;
+  const lat2 = (bLat * Math.PI) / 180;
+  const lng2 = (bLng * Math.PI) / 180;
+  const lat3 = (pLat * Math.PI) / 180;
+  const lng3 = (pLng * Math.PI) / 180;
+
+  // Haversine formula for distance between points
+  const dLat_ab = lat2 - lat1;
+  const dLng_ab = lng2 - lng1;
+  
+  if (dLat_ab === 0 && dLng_ab === 0) {
+    return calculateDistance(pLat, pLng, aLat, aLng);
+  }
+
+  // Equirectangular approximation for small distances
+  const x = (lng2 - lng1) * Math.cos((lat1 + lat2) / 2);
+  const y = lat2 - lat1;
+  const len2 = x * x + y * y;
+
+  const dx_pa = (lng3 - lng1) * Math.cos((lat1 + lat3) / 2);
+  const dy_pa = lat3 - lat1;
+
+  // Projection of p-a onto b-a
+  let t = (dx_pa * x + dy_pa * y) / len2;
+  t = Math.max(0, Math.min(1, t));
+
+  const projLng = aLng + t * (bLng - aLng);
+  const projLat = aLat + t * (bLat - aLat);
+
+  return calculateDistance(pLat, pLng, projLat, projLng);
+}
+
 export function findCamerasNearRoute(
   polylinePoints: RoutePoint[],
   cameras: Camera[],
@@ -106,31 +143,41 @@ export function findCamerasNearRoute(
   if (polylinePoints.length === 0) return cameraIndices;
 
   cameras.forEach((camera, index) => {
-    // aa=4（待核实）摄像头不计入路线风险，无需躲避
     if (camera.type === 4) return;
 
-    // 找到离摄像头最近的路线点，用于距离和方向判断
     let minDistance = Infinity;
-    let nearestIdx = 0;
-    for (let i = 0; i < polylinePoints.length; i++) {
-      const point = polylinePoints[i];
-      const distance = calculateDistance(point.lat, point.lng, camera.lat, camera.lng);
-      if (distance < minDistance) {
-        minDistance = distance;
-        nearestIdx = i;
-      }
+    let matchingSegIdx = 0;
+    
+    // Check distance to all segments instead of just vertices
+    for (let i = 0; i < polylinePoints.length - 1; i++) {
+        const p1 = polylinePoints[i];
+        const p2 = polylinePoints[i+1];
+        const dist = distanceToSegment(camera.lat, camera.lng, p1.lat, p1.lng, p2.lat, p2.lng);
+        if (dist < minDistance) {
+            minDistance = dist;
+            matchingSegIdx = i;
+        }
+    }
+    
+    // Also check the very last point
+    const lastPointDist = calculateDistance(
+      camera.lat, camera.lng,
+      polylinePoints[polylinePoints.length-1].lat, polylinePoints[polylinePoints.length-1].lng
+    );
+    if (lastPointDist < minDistance) {
+      minDistance = lastPointDist;
+      matchingSegIdx = Math.max(0, polylinePoints.length - 2);
     }
 
     if (minDistance >= threshold) return;
 
     const cameraBearings = getCameraBearingsFromName(camera.name);
     if (cameraBearings === null) {
-      // 名称没有可解析方向时，保守认为会拍到
       cameraIndices.push(index);
       return;
     }
 
-    const routeBearing = getRouteBearingNearIndex(polylinePoints, nearestIdx);
+    const routeBearing = getRouteBearingNearIndex(polylinePoints, matchingSegIdx);
     if (routeBearing === null) {
       cameraIndices.push(index);
       return;
