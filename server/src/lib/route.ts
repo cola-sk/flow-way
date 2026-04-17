@@ -101,7 +101,7 @@ export function findCamerasNearRoute(
   threshold: number = 100
 ): number[] {
   const cameraIndices: number[] = [];
-  const DIRECTION_TOLERANCE_DEG = 40;
+  const DIRECTION_TOLERANCE_DEG = 60;
 
   if (polylinePoints.length === 0) return cameraIndices;
 
