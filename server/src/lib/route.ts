@@ -160,7 +160,8 @@ async function callTencentDrivingAPI(
   start: Coordinate,
   end: Coordinate,
   alternatives = false,
-  waypoints?: Coordinate[]
+  waypoints?: Coordinate[],
+  avoidPolygons?: string[]
 ): Promise<Array<{ points: RoutePoint[]; distance: number; duration: number }>> {
   if (!getTencentMapKey()) {
     throw new Error('未配置 TENCENT_MAP_KEY 环境变量');
@@ -172,6 +173,9 @@ async function callTencentDrivingAPI(
   if (alternatives) baseUrl.searchParams.set('alternatives', '1');
   if (waypoints && waypoints.length > 0) {
     baseUrl.searchParams.set('waypoints', waypoints.map((w) => `${w.lat},${w.lng}`).join(';'));
+  }
+  if (avoidPolygons && avoidPolygons.length > 0) {
+    baseUrl.searchParams.set('avoid_polygons', avoidPolygons.join('|'));
   }
 
   await waitTencentRequestSlot();
@@ -282,7 +286,7 @@ type EvaluatedAvoidRoute = {
 export type AvoidRouteStepState = EvaluatedAvoidRoute;
 
 const AVOID_ROUTE_MAX_WAYPOINTS = 1;
-const AVOID_ROUTE_OFFSETS = [80, 120, 160, 200, 240, 280];
+const AVOID_ROUTE_OFFSETS = [100, 200, 300];
 const AVOID_ROUTE_SIDES: Array<'left' | 'right'> = ['left', 'right'];
 
 const AVOID_ROUTE_MAX_DISTANCE_RATIO = 1.18;
@@ -349,16 +353,22 @@ function buildAvoidWaypoints(
   cameras: Camera[],
   iteration: number
 ): Coordinate[] {
-  const camerasOnRoute = best.cameraIndices
+  const allCamerasOnRoute = best.cameraIndices
     .map((idx) => cameras[idx])
     .filter((cam): cam is Camera => Boolean(cam))
     .map((cam) => ({
       cam,
       routeIdx: findNearestRoutePointIndex(best.points, cam.lat, cam.lng),
     }))
-    // 关键：按路线先后顺序排列途径点，避免路径来回折返形成大回环
-    .sort((a, b) => a.routeIdx - b.routeIdx)
-    .slice(0, AVOID_ROUTE_MAX_WAYPOINTS)
+    // 按路线先后顺序排列途径点，避免路径来回折返形成大回环
+    .sort((a, b) => a.routeIdx - b.routeIdx);
+
+  const combinationsPerCamera = AVOID_ROUTE_OFFSETS.length * AVOID_ROUTE_SIDES.length;
+  const cameraFocusIndex = Math.floor(iteration / combinationsPerCamera);
+  const startIndex = cameraFocusIndex % Math.max(1, allCamerasOnRoute.length);
+
+  const camerasOnRoute = allCamerasOnRoute
+    .slice(startIndex, startIndex + AVOID_ROUTE_MAX_WAYPOINTS)
     .map((item) => item.cam);
 
   const offset = AVOID_ROUTE_OFFSETS[iteration % AVOID_ROUTE_OFFSETS.length];
@@ -384,24 +394,34 @@ export async function planAvoidCamerasRouteStep(
       ? buildAvoidWaypoints(best, cameras, iteration)
       : undefined;
 
-  const routes = await callTencentDrivingAPI(start, end, false, waypoints);
+  const routes = await callTencentDrivingAPI(start, end, true, waypoints); // true for alternatives
   if (routes.length === 0) {
     throw new Error('腾讯地图路线规划失败: 未返回可用路线');
   }
 
-  const currentRoute = routes[0];
-  const current: AvoidRouteStepState = {
-    ...currentRoute,
-    cameraIndices: findCamerasNearRoute(currentRoute.points, cameras),
-  };
+  const nextAnchorDistance = anchorDistance ?? routes[0].distance;
+  
+  let currentBest: AvoidRouteStepState | null = null;
+  let overallBest: AvoidRouteStepState | undefined = best;
 
-  const nextAnchorDistance = anchorDistance ?? current.distance;
-  const nextBest = pickBetterAvoidRoute(best, current, nextAnchorDistance);
+  for (const r of routes) {
+    const state: AvoidRouteStepState = {
+      ...r,
+      cameraIndices: findCamerasNearRoute(r.points, cameras),
+    };
+    
+    if (!currentBest || state.cameraIndices.length < currentBest.cameraIndices.length || 
+        (state.cameraIndices.length === currentBest.cameraIndices.length && state.distance < currentBest.distance)) {
+      currentBest = state;
+    }
+    
+    overallBest = pickBetterAvoidRoute(overallBest, state, nextAnchorDistance);
+  }
 
   return {
-    current,
-    best: nextBest,
-    done: nextBest.cameraIndices.length === 0,
+    current: currentBest!,
+    best: overallBest!,
+    done: overallBest!.cameraIndices.length === 0,
     anchorDistance: nextAnchorDistance,
   };
 }
@@ -427,71 +447,138 @@ export async function planRoute(
 /**
  * 规划避开摄像头路线
  *
- * 策略：逐步迭代，最多 15 次 API 调用
- *   1. 请求一条路线；
- *   2. 检查路线上是否有摄像头；
- *   3. 如果有，为路线上的摄像头生成绕行途径点，再请求一条新路线；
- *   4. 如此循环，每轮用不同偏移距离/方向，最多 15 次。
+ * 策略：调用腾讯地图核心 avoid_polygons 原生避让属性，结合随机退火抖动（多次尝试）
+ *   1. 请求带 alternatives 的路线；
+ *   2. 检查路线上是否有摄像头，有则转化为约 35x35 米多边形；
+ *   3. 前期贪心加入所有雷区；
+ *   4. 如果陷入局部最优（连续两次无法改善），则随机解除部分多边形限制，进行更多路径抖动尝试，总计不超过 20 次。
  */
 export async function planAvoidCamerasRoute(
   start: Coordinate,
   end: Coordinate,
   cameras: Camera[]
 ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
-  const MAX_ITERATIONS = 15;
-  let best: AvoidRouteStepState | null = null;
-  let anchorDistance: number | undefined;
+  const MAX_ITERATIONS = 20;
+  let bestGlobalRoute: { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number } | null = null;
+  let bestGlobalHits = 999999;
+  let bestGlobalDist = Infinity;
+  let currentAvoidCamIds = new Set<number>();
+  
+  // 约 35 米的微型避让区半径 (0.00035度)
+  const POLYGON_RADIUS = 0.00035; 
+  let noImprovementCount = 0;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     try {
-      const step = await planAvoidCamerasRouteStep(
-        start,
-        end,
-        cameras,
-        i,
-        best ?? undefined,
-        anchorDistance
-      );
-      best = step.best;
-      anchorDistance = step.anchorDistance;
-      console.log(
-        `[route] iteration ${i + 1}: current=${step.current.cameraIndices.length}, best=${step.best.cameraIndices.length}`
-      );
-      if (step.done) break;
+      const avoidPolygons = Array.from(currentAvoidCamIds)
+        .slice(0, 32)
+        .map(idx => {
+            const cam = cameras[idx];
+            return `${cam.lat - POLYGON_RADIUS},${cam.lng - POLYGON_RADIUS};${cam.lat + POLYGON_RADIUS},${cam.lng - POLYGON_RADIUS};${cam.lat + POLYGON_RADIUS},${cam.lng + POLYGON_RADIUS};${cam.lat - POLYGON_RADIUS},${cam.lng + POLYGON_RADIUS}`;
+        });
+
+      const routes = await callTencentDrivingAPI(start, end, true, undefined, avoidPolygons);
+      if (routes.length === 0) {
+        throw new Error('腾讯地图路线规划失败: 未返回可用路线');
+      }
+
+      let bestHitsInIter = 999999;
+      let bestDistInIter = Infinity;
+      let newCamIdsThisIter: number[] = [];
+      let bestRouteInIter: { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number } | null = null;
+
+      for (const r of routes) {
+        const hitCams = findCamerasNearRoute(r.points, cameras);
+        if (hitCams.length < bestHitsInIter || (hitCams.length === bestHitsInIter && r.distance < bestDistInIter)) {
+            bestHitsInIter = hitCams.length;
+            bestDistInIter = r.distance;
+            newCamIdsThisIter = hitCams;
+            bestRouteInIter = { ...r, cameraIndices: hitCams };
+        }
+      }
+
+      if (!bestRouteInIter) break;
+
+      let improvedThisRound = false;
+
+      // 如果能在里程不失控的情况下找到更少摄像头的路，就全局接纳它
+      // 放宽绕路限制：最多允许绕行 2.0 倍的距离
+      if (bestGlobalDist === Infinity || (bestDistInIter <= bestGlobalDist * 2.0)) {
+          if (bestHitsInIter < bestGlobalHits || (bestHitsInIter === bestGlobalHits && bestDistInIter < bestGlobalDist)) {
+              bestGlobalHits = bestHitsInIter;
+              bestGlobalDist = bestDistInIter;
+              bestGlobalRoute = bestRouteInIter;
+              improvedThisRound = true;
+          }
+      }
+
+      if (improvedThisRound) {
+        noImprovementCount = 0;
+      } else {
+        noImprovementCount++;
+      }
+
+      console.log(`[route] iteration ${i + 1}: hit ${bestHitsInIter} cameras. Distance ${bestDistInIter}. Best Global: ${bestGlobalHits}`);
+
+      if (bestHitsInIter === 0) {
+        break; // 0摄像头，直接收工
+      }
+
+      // 贪婪添加策略 OR 抖动策略
+      if (noImprovementCount < 2) {
+          // 贪婪把本次路上的摄像头全部拉黑
+          let added = false;
+          for (const camIdx of newCamIdsThisIter) {
+              if (!currentAvoidCamIds.has(camIdx) && currentAvoidCamIds.size < 32) {
+                  currentAvoidCamIds.add(camIdx);
+                  added = true;
+              }
+          }
+          if (!added && noImprovementCount === 0) {
+              noImprovementCount = 2; // 虽然有 improved，但没能产生新雷区(死胡同)，强制进入抖动
+          }
+      } else {
+          // 陷入局部最优（死胡同），启动"退火/抖动"：随机丢弃几个已拉黑的摄像头放行（可能是必经之路的桥之类），并把最佳路线里剩下的摄像头随机挑 1~2 个封锁
+          console.log(`[route] Local minimum detected, applying perturbation...`);
+          
+          // 1. 从当前黑名单中随机宽恕（移除）1~3 个摄像头
+          const currentArr = Array.from(currentAvoidCamIds);
+          if (currentArr.length > 0) {
+            const numToRemove = Math.floor(Math.random() * 3) + 1;
+            for (let j = 0; j < numToRemove; j++) {
+              if (currentArr.length === 0) break;
+              const removeIdx = Math.floor(Math.random() * currentArr.length);
+              currentAvoidCamIds.delete(currentArr[removeIdx]);
+              currentArr.splice(removeIdx, 1);
+            }
+          }
+
+          // 2. 将全局最优路线中的目前存留的摄像头，随机挑 1 个加进黑名单进行专点打击
+          if (bestGlobalRoute?.cameraIndices.length) {
+            const bestCams = bestGlobalRoute.cameraIndices;
+            const targetCamIdx = bestCams[Math.floor(Math.random() * bestCams.length)];
+            currentAvoidCamIds.add(targetCamIdx);
+          }
+          
+          noImprovementCount = 0; // 重置计数器，给本次抖动 2 轮机会
+      }
+      
     } catch (err) {
       const message = String(err);
-      if (message.includes('每秒请求量已达到上限')) {
+      if (message.includes('每秒请求量')) {
         await new Promise((resolve) => setTimeout(resolve, 600));
-        try {
-          const retryStep = await planAvoidCamerasRouteStep(
-            start,
-            end,
-            cameras,
-            i,
-            best ?? undefined,
-            anchorDistance
-          );
-          best = retryStep.best;
-          anchorDistance = retryStep.anchorDistance;
-          console.log(
-            `[route] iteration ${i + 1} retry: current=${retryStep.current.cameraIndices.length}, best=${retryStep.best.cameraIndices.length}`
-          );
-          if (retryStep.done) break;
-          continue;
-        } catch (retryErr) {
-          console.warn(`[route] iteration ${i + 1} failed after retry:`, retryErr);
-          break;
-        }
+        i--; // 重试
+        continue;
       }
       console.warn(`[route] iteration ${i + 1} failed:`, err);
       break;
     }
   }
 
-  if (!best) {
+  if (!bestGlobalRoute) {
     const points = generateFallbackRoute(start, end);
     const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
-    best = {
+    bestGlobalRoute = {
       points,
       distance,
       duration: Math.round(distance / 13.33),
@@ -499,8 +586,8 @@ export async function planAvoidCamerasRoute(
     };
   }
 
-  console.log(`[route] final: ${best.cameraIndices.length} cameras`);
-  return best;
+  console.log(`[route] final: ${bestGlobalRoute.cameraIndices.length} cameras`);
+  return bestGlobalRoute;
 }
 
 /**

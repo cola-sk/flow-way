@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { RoutePlanStepRequest, RoutePlanStepResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
-import { createRoute, planAvoidCamerasRouteStep, AvoidRouteStepState } from '@/lib/route';
+import { createRoute, planAvoidCamerasRoute } from '@/lib/route';
 import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
       cameras = cameras.filter((cam) => !dismissedSet.has(coordKey(cam.lat, cam.lng)));
     }
 
-    let bestState: AvoidRouteStepState | undefined;
+    let bestState: any | undefined;
     if (reqBody.bestRoute) {
       bestState = {
         points: reqBody.bestRoute.polylinePoints,
@@ -50,42 +50,40 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    const step = await planAvoidCamerasRouteStep(
+    // 调用新版极速避免策略（只需调用一次内部自动循环完成）
+    const finalState = await planAvoidCamerasRoute(
       start,
       end,
-      cameras,
-      iteration,
-      bestState,
-      reqBody.anchorDistance
+      cameras
     );
 
     const currentRoute = createRoute(
       start,
       end,
-      step.current.points,
-      step.current.cameraIndices,
+      finalState.points,
+      finalState.cameraIndices,
       true,
-      step.current.distance,
-      step.current.duration
+      finalState.distance,
+      finalState.duration
     );
 
     const bestRoute = createRoute(
       start,
       end,
-      step.best.points,
-      step.best.cameraIndices,
+      finalState.points,
+      finalState.cameraIndices,
       true,
-      step.best.distance,
-      step.best.duration
+      finalState.distance,
+      finalState.duration
     );
 
     const response: RoutePlanStepResponse = {
       currentRoute,
       bestRoute,
-      iteration,
+      iteration: maxIterations,
       maxIterations,
-      done: step.done,
-      anchorDistance: step.anchorDistance,
+      done: true,
+      anchorDistance: 0,
     };
 
     return NextResponse.json(response);
