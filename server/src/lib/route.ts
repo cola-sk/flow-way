@@ -71,11 +71,24 @@ function getRouteBearingNearIndex(points: RoutePoint[], centerIdx: number): numb
   return calculateBearing(points[prevIdx], points[nextIdx]);
 }
 
-function getCameraBearingFromName(name: string): number | null {
+function getCameraBearingsFromName(name: string): number[] | null {
+  const bearings: number[] = [];
+  if (name.includes('东西双向') || name.includes('东西方向') || name.includes('双向东西')) {
+    bearings.push(CAMERA_DIRECTION_VECTORS[CameraDirection.EAST_WEST]);
+    bearings.push(CAMERA_DIRECTION_VECTORS[CameraDirection.WEST_EAST]);
+  } else if (name.includes('南北双向') || name.includes('南北方向') || name.includes('双向南北')) {
+    bearings.push(CAMERA_DIRECTION_VECTORS[CameraDirection.SOUTH_NORTH]);
+    bearings.push(CAMERA_DIRECTION_VECTORS[CameraDirection.NORTH_SOUTH]);
+  }
+  if (bearings.length > 0) return bearings;
+
   const direction = extractDirection(name);
   if (direction === CameraDirection.UNKNOWN) return null;
   const bearing = CAMERA_DIRECTION_VECTORS[direction];
-  return typeof bearing === 'number' && bearing >= 0 ? bearing : null;
+  if (typeof bearing === 'number' && bearing >= 0) {
+    return [bearing];
+  }
+  return null;
 }
 
 /**
@@ -88,7 +101,7 @@ export function findCamerasNearRoute(
   threshold: number = 100
 ): number[] {
   const cameraIndices: number[] = [];
-  const DIRECTION_TOLERANCE_DEG = 60;
+  const DIRECTION_TOLERANCE_DEG = 40;
 
   if (polylinePoints.length === 0) return cameraIndices;
 
@@ -110,8 +123,8 @@ export function findCamerasNearRoute(
 
     if (minDistance >= threshold) return;
 
-    const cameraBearing = getCameraBearingFromName(camera.name);
-    if (cameraBearing === null) {
+    const cameraBearings = getCameraBearingsFromName(camera.name);
+    if (cameraBearings === null) {
       // 名称没有可解析方向时，保守认为会拍到
       cameraIndices.push(index);
       return;
@@ -123,8 +136,8 @@ export function findCamerasNearRoute(
       return;
     }
 
-    const gap = angleGapDeg(routeBearing, cameraBearing);
-    if (gap <= DIRECTION_TOLERANCE_DEG) {
+    const isMatched = cameraBearings.some(cb => angleGapDeg(routeBearing, cb) <= DIRECTION_TOLERANCE_DEG);
+    if (isMatched) {
       cameraIndices.push(index);
     }
   });
