@@ -26,10 +26,25 @@ export async function POST(request: NextRequest) {
     }
 
     // 获取摄像头数据，过滤掉用户标记废弃的（Redis 持久化，60s 内存缓存）
-    let { cameras } = await getCameras();
+    const { cameras: originalCameras } = await getCameras();
+    let cameras = originalCameras;
     const dismissedSet = await getDismissedSet();
+    const indexMapping: Record<number, number> = {};
+    
     if (dismissedSet.size > 0) {
-      cameras = cameras.filter((cam) => !dismissedSet.has(coordKey(cam.lat, cam.lng)));
+      cameras = [];
+      let fIdx = 0;
+      for (let i = 0; i < originalCameras.length; i++) {
+        const cam = originalCameras[i];
+        if (!dismissedSet.has(coordKey(cam.lat, cam.lng))) {
+          cameras.push(cam);
+          indexMapping[fIdx++] = i;
+        }
+      }
+    } else {
+      for (let i = 0; i < originalCameras.length; i++) {
+        indexMapping[i] = i;
+      }
     }
 
     let polylinePoints;
@@ -42,14 +57,15 @@ export async function POST(request: NextRequest) {
       // 规划避开摄像头的路线（腾讯地图备选路线中选摄像头最少的）
       const result = await planAvoidCamerasRoute(start, end, cameras);
       polylinePoints = result.points;
-      cameraIndices = result.cameraIndices;
+      cameraIndices = result.cameraIndices.map((i) => indexMapping[i]);
       routeDistance = result.distance;
       routeDuration = result.duration;
     } else {
       // 规划普通路线（腾讯地图真实路网）
       const result = await planRoute(start, end);
       polylinePoints = result.points;
-      cameraIndices = findCamerasNearRoute(polylinePoints, cameras);
+      const rawIndices = findCamerasNearRoute(polylinePoints, cameras);
+      cameraIndices = rawIndices.map((i) => indexMapping[i]);
       routeDistance = result.distance;
       routeDuration = result.duration;
     }

@@ -34,20 +34,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ errorMessage: '迭代次数无效' }, { status: 400 });
     }
 
-    let { cameras } = await getCameras();
+    const { cameras: originalCameras } = await getCameras();
+    let cameras = originalCameras;
     const dismissedSet = await getDismissedSet();
+    const indexMapping: Record<number, number> = {};
+    
     if (dismissedSet.size > 0) {
-      cameras = cameras.filter((cam) => !dismissedSet.has(coordKey(cam.lat, cam.lng)));
-    }
-
-    let bestState: any | undefined;
-    if (reqBody.bestRoute) {
-      bestState = {
-        points: reqBody.bestRoute.polylinePoints,
-        cameraIndices: reqBody.bestRoute.cameraIndicesOnRoute,
-        distance: reqBody.bestRoute.distance,
-        duration: reqBody.bestRoute.duration,
-      };
+      cameras = [];
+      let fIdx = 0;
+      for (let i = 0; i < originalCameras.length; i++) {
+        const cam = originalCameras[i];
+        if (!dismissedSet.has(coordKey(cam.lat, cam.lng))) {
+          cameras.push(cam);
+          indexMapping[fIdx++] = i;
+        }
+      }
+    } else {
+      for (let i = 0; i < originalCameras.length; i++) {
+        indexMapping[i] = i;
+      }
     }
 
     // 调用新版极速避免策略（只需调用一次内部自动循环完成）
@@ -57,11 +62,13 @@ export async function POST(request: NextRequest) {
       cameras
     );
 
+    const globalCameraIndices = finalState.cameraIndices.map((i) => indexMapping[i]);
+
     const currentRoute = createRoute(
       start,
       end,
       finalState.points,
-      finalState.cameraIndices,
+      globalCameraIndices,
       true,
       finalState.distance,
       finalState.duration
@@ -71,7 +78,7 @@ export async function POST(request: NextRequest) {
       start,
       end,
       finalState.points,
-      finalState.cameraIndices,
+      globalCameraIndices,
       true,
       finalState.distance,
       finalState.duration
