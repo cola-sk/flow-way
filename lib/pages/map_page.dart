@@ -9,6 +9,8 @@ import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
 import '../widgets/jinjing_marker.dart';
+import 'active_navigation_page.dart';
+import 'save_route_dialog.dart';
 
 enum _BottomTab { explore, plan, saved, recent }
 
@@ -1669,20 +1671,61 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
 
             const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(ctx),
-                style: FilledButton.styleFrom(
-                  backgroundColor: _primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(42),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => SaveRouteDialog(
+                          route: route,
+                          apiService: _apiService,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(42),
+                    ),
+                    label: const Text(
+                      '保存路线',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
                 ),
-                child: const Text(
-                  '知道了',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ActiveNavigationPage(
+                            route: route,
+                            apiService: _apiService,
+                            camerasOnRoute: route.cameraIndicesOnRoute
+                                .where((i) => i < _cameras.length)
+                                .map((i) => _cameras[i])
+                                .toList(),
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.navigation, size: 18),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(42),
+                    ),
+                    label: const Text(
+                      '开始导航',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
