@@ -98,10 +98,10 @@ function getCameraBearingsFromName(name: string): number[] | null {
 export function findCamerasNearRoute(
   polylinePoints: RoutePoint[],
   cameras: Camera[],
-  threshold: number = 100
+  threshold: number = 40
 ): number[] {
   const cameraIndices: number[] = [];
-  const DIRECTION_TOLERANCE_DEG = 70;
+  const DIRECTION_TOLERANCE_DEG = 50;
 
   if (polylinePoints.length === 0) return cameraIndices;
 
