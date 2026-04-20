@@ -348,9 +348,19 @@ export type AvoidRouteStepState = EvaluatedAvoidRoute;
 const AVOID_ROUTE_MAX_WAYPOINTS = 1;
 const AVOID_ROUTE_OFFSETS = [100, 200, 300];
 const AVOID_ROUTE_SIDES: Array<'left' | 'right'> = ['left', 'right'];
+const AVOID_ROUTE_GUIDED_HELPER_ATTEMPTS = 8;
+const AVOID_ROUTE_GUIDED_HELPER_OFFSETS = [180, 280, 380];
+const AVOID_ROUTE_SPLIT_HELPER_OFFSETS = [900, 1400];
 
 const AVOID_ROUTE_MAX_DISTANCE_RATIO = 1.18;
 const AVOID_ROUTE_MAX_DISTANCE_RATIO_IF_BIG_IMPROVEMENT = 1.30;
+
+type AvoidRouteEvaluation = {
+  points: RoutePoint[];
+  cameraIndices: number[];
+  distance: number;
+  duration: number;
+};
 
 function findNearestRoutePointIndex(points: RoutePoint[], lat: number, lng: number): number {
   let minDistance = Infinity;
@@ -441,6 +451,183 @@ function buildAvoidWaypoints(
   });
 }
 
+function buildAvoidPolygonsByCameraIndices(
+  cameraIndices: Iterable<number>,
+  cameras: Camera[],
+  radius: number
+): string[] {
+  return Array.from(cameraIndices)
+    .slice(0, 32)
+    .map((idx) => {
+      const cam = cameras[idx];
+      return `${cam.lat - radius},${cam.lng - radius};${cam.lat + radius},${cam.lng - radius};${cam.lat + radius},${cam.lng + radius};${cam.lat - radius},${cam.lng + radius}`;
+    });
+}
+
+function buildGuidedHelperWaypoint(
+  route: AvoidRouteEvaluation,
+  cameras: Camera[],
+  attempt: number
+): { waypoint: Coordinate; focusCameraIndex: number } | null {
+  const camerasOnRoute = route.cameraIndices
+    .map((cameraIndex) => {
+      const cam = cameras[cameraIndex];
+      if (!cam) return null;
+      return {
+        cameraIndex,
+        cam,
+        routeIdx: findNearestRoutePointIndex(route.points, cam.lat, cam.lng),
+      };
+    })
+    .filter(
+      (item): item is { cameraIndex: number; cam: Camera; routeIdx: number } => Boolean(item)
+    )
+    .sort((a, b) => a.routeIdx - b.routeIdx);
+
+  if (camerasOnRoute.length === 0) {
+    return null;
+  }
+
+  const focusIdx = attempt % camerasOnRoute.length;
+  const focus = camerasOnRoute[focusIdx];
+  const offset =
+    AVOID_ROUTE_GUIDED_HELPER_OFFSETS[
+      Math.floor(attempt / camerasOnRoute.length) % AVOID_ROUTE_GUIDED_HELPER_OFFSETS.length
+    ];
+  const side: 'left' | 'right' =
+    Math.floor(attempt / (camerasOnRoute.length * AVOID_ROUTE_GUIDED_HELPER_OFFSETS.length)) % 2 === 0
+      ? 'left'
+      : 'right';
+
+  const { left, right } = computePerpendicularOffsets(route.points, focus.cam.lat, focus.cam.lng, offset);
+  return {
+    waypoint: side === 'left' ? left : right,
+    focusCameraIndex: focus.cameraIndex,
+  };
+}
+
+async function tryGuidedHelperRoute(
+  start: Coordinate,
+  end: Coordinate,
+  cameras: Camera[],
+  baseAvoidCameraIds: Set<number>,
+  currentBest: AvoidRouteEvaluation,
+  attempt: number,
+  polygonRadius: number
+): Promise<AvoidRouteEvaluation | null> {
+  const helper = buildGuidedHelperWaypoint(currentBest, cameras, attempt);
+  if (!helper) {
+    return null;
+  }
+
+  const helperAvoid = new Set(baseAvoidCameraIds);
+  helperAvoid.add(helper.focusCameraIndex);
+  const avoidPolygons = buildAvoidPolygonsByCameraIndices(helperAvoid, cameras, polygonRadius);
+
+  let routes: Array<{ points: RoutePoint[]; distance: number; duration: number }> = [];
+  try {
+    routes = await callTencentDrivingAPI(start, end, true, [helper.waypoint], avoidPolygons);
+  } catch (err) {
+    const msg = String(err);
+    if (msg.includes('每秒请求量')) {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      routes = await callTencentDrivingAPI(start, end, true, [helper.waypoint], avoidPolygons);
+    } else {
+      console.warn('[route] guided helper request failed:', err);
+      return null;
+    }
+  }
+
+  let best: AvoidRouteEvaluation | null = null;
+  for (const r of routes) {
+    const evaluated: AvoidRouteEvaluation = {
+      ...r,
+      cameraIndices: findCamerasNearRoute(r.points, cameras),
+    };
+    if (
+      !best ||
+      evaluated.cameraIndices.length < best.cameraIndices.length ||
+      (evaluated.cameraIndices.length === best.cameraIndices.length && evaluated.distance < best.distance)
+    ) {
+      best = evaluated;
+    }
+  }
+
+  if (best) {
+    console.log(
+      `[route] guided helper attempt ${attempt + 1}: hit ${best.cameraIndices.length}, distance ${best.distance}`
+    );
+  }
+
+  return best;
+}
+
+function buildSplitHelperWaypoints(
+  route: AvoidRouteEvaluation,
+  cameras: Camera[]
+): Coordinate[] {
+  if (route.points.length < 2) {
+    return [];
+  }
+
+  let focusRouteIdx = Math.floor(route.points.length / 2);
+  if (route.cameraIndices.length > 0) {
+    const routeIndices = route.cameraIndices
+      .map((cameraIndex) => {
+        const cam = cameras[cameraIndex];
+        if (!cam) return null;
+        return findNearestRoutePointIndex(route.points, cam.lat, cam.lng);
+      })
+      .filter((idx): idx is number => typeof idx === 'number')
+      .sort((a, b) => a - b);
+
+    if (routeIndices.length > 0) {
+      focusRouteIdx = routeIndices[Math.floor(routeIndices.length / 2)];
+    }
+  }
+
+  const anchor = route.points[focusRouteIdx] ?? route.points[Math.floor(route.points.length / 2)];
+  if (!anchor) {
+    return [];
+  }
+
+  const helpers: Coordinate[] = [];
+  for (const offset of AVOID_ROUTE_SPLIT_HELPER_OFFSETS) {
+    const { left, right } = computePerpendicularOffsets(route.points, anchor.lat, anchor.lng, offset);
+    helpers.push(left, right);
+  }
+  return helpers;
+}
+
+function mergeSplitLegRoutes(
+  firstLeg: AvoidRouteEvaluation,
+  secondLeg: AvoidRouteEvaluation
+): AvoidRouteEvaluation {
+  const mergedPoints: RoutePoint[] = [...firstLeg.points];
+
+  if (secondLeg.points.length > 0) {
+    const secondPoints = [...secondLeg.points];
+    const tail = mergedPoints[mergedPoints.length - 1];
+    const head = secondPoints[0];
+    if (tail && head && calculateDistance(tail.lat, tail.lng, head.lat, head.lng) < 8) {
+      secondPoints.shift();
+    }
+    mergedPoints.push(...secondPoints);
+  }
+
+  const cameraIndexSet = new Set<number>([
+    ...firstLeg.cameraIndices,
+    ...secondLeg.cameraIndices,
+  ]);
+
+  return {
+    points: mergedPoints,
+    cameraIndices: Array.from(cameraIndexSet),
+    distance: firstLeg.distance + secondLeg.distance,
+    duration: firstLeg.duration + secondLeg.duration,
+  };
+}
+
 export async function planAvoidCamerasRouteStep(
   start: Coordinate,
   end: Coordinate,
@@ -516,10 +703,11 @@ export async function planRoute(
 export async function planAvoidCamerasRoute(
   start: Coordinate,
   end: Coordinate,
-  cameras: Camera[]
+  cameras: Camera[],
+  splitAssistDepth = 0
 ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
-  const MAX_ITERATIONS = 20;
-  let bestGlobalRoute: { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number } | null = null;
+  const MAX_ITERATIONS = 24;
+  let bestGlobalRoute: AvoidRouteEvaluation | null = null;
   let bestGlobalHits = 999999;
   let bestGlobalDist = Infinity;
   let currentAvoidCamIds = new Set<number>();
@@ -530,12 +718,11 @@ export async function planAvoidCamerasRoute(
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     try {
-      const avoidPolygons = Array.from(currentAvoidCamIds)
-        .slice(0, 32)
-        .map(idx => {
-            const cam = cameras[idx];
-            return `${cam.lat - POLYGON_RADIUS},${cam.lng - POLYGON_RADIUS};${cam.lat + POLYGON_RADIUS},${cam.lng - POLYGON_RADIUS};${cam.lat + POLYGON_RADIUS},${cam.lng + POLYGON_RADIUS};${cam.lat - POLYGON_RADIUS},${cam.lng + POLYGON_RADIUS}`;
-        });
+      const avoidPolygons = buildAvoidPolygonsByCameraIndices(
+        currentAvoidCamIds,
+        cameras,
+        POLYGON_RADIUS
+      );
 
       const routes = await callTencentDrivingAPI(start, end, true, undefined, avoidPolygons);
       if (routes.length === 0) {
@@ -632,6 +819,95 @@ export async function planAvoidCamerasRoute(
       }
       console.warn(`[route] iteration ${i + 1} failed:`, err);
       break;
+    }
+  }
+
+  // 辅助破局：若最终仍有摄像头，模拟“人工加一个中途点”的定向尝试。
+  if (bestGlobalRoute && bestGlobalRoute.cameraIndices.length > 0) {
+    console.log('[route] entering guided helper attempts...');
+
+    for (let attempt = 0; attempt < AVOID_ROUTE_GUIDED_HELPER_ATTEMPTS; attempt++) {
+      const guided = await tryGuidedHelperRoute(
+        start,
+        end,
+        cameras,
+        currentAvoidCamIds,
+        bestGlobalRoute,
+        attempt,
+        POLYGON_RADIUS
+      );
+
+      if (!guided) {
+        continue;
+      }
+
+      const canAcceptByDistance = bestGlobalDist === Infinity || guided.distance <= bestGlobalDist * 2.0;
+      if (canAcceptByDistance) {
+        if (
+          guided.cameraIndices.length < bestGlobalHits ||
+          (guided.cameraIndices.length === bestGlobalHits && guided.distance < bestGlobalDist)
+        ) {
+          bestGlobalHits = guided.cameraIndices.length;
+          bestGlobalDist = guided.distance;
+          bestGlobalRoute = guided;
+        }
+      }
+
+      for (const camIdx of guided.cameraIndices) {
+        if (!currentAvoidCamIds.has(camIdx) && currentAvoidCamIds.size < 32) {
+          currentAvoidCamIds.add(camIdx);
+        }
+      }
+
+      if (bestGlobalHits === 0) {
+        break;
+      }
+    }
+  }
+
+  // 最终兜底：模拟“人工增加中途点”将单段避让拆成两段，专门处理顽固局部最优。
+  if (
+    splitAssistDepth < 1 &&
+    bestGlobalRoute &&
+    bestGlobalRoute.cameraIndices.length > 0
+  ) {
+    const helperWaypoints = buildSplitHelperWaypoints(bestGlobalRoute, cameras);
+    for (const helper of helperWaypoints) {
+      const startToHelper = calculateDistance(start.lat, start.lng, helper.lat, helper.lng);
+      const helperToEnd = calculateDistance(helper.lat, helper.lng, end.lat, end.lng);
+      if (startToHelper < 500 || helperToEnd < 500) {
+        continue;
+      }
+
+      try {
+        const firstLeg = await planAvoidCamerasRoute(start, helper, cameras, splitAssistDepth + 1);
+        const secondLeg = await planAvoidCamerasRoute(helper, end, cameras, splitAssistDepth + 1);
+        const merged = mergeSplitLegRoutes(firstLeg, secondLeg);
+
+        const canAcceptByDistance =
+          bestGlobalDist === Infinity || merged.distance <= bestGlobalDist * 2.0;
+        if (!canAcceptByDistance) {
+          continue;
+        }
+
+        if (
+          merged.cameraIndices.length < bestGlobalHits ||
+          (merged.cameraIndices.length === bestGlobalHits && merged.distance < bestGlobalDist)
+        ) {
+          bestGlobalRoute = merged;
+          bestGlobalHits = merged.cameraIndices.length;
+          bestGlobalDist = merged.distance;
+          console.log(
+            `[route] split helper improved: hit ${bestGlobalHits}, distance ${bestGlobalDist}`
+          );
+        }
+
+        if (bestGlobalHits === 0) {
+          break;
+        }
+      } catch (err) {
+        console.warn('[route] split helper attempt failed:', err);
+      }
     }
   }
 
