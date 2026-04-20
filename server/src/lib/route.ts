@@ -552,8 +552,8 @@ export async function planAvoidCamerasRoute(
   let bestGlobalDist = Infinity;
   let currentAvoidCamIds = new Set<number>();
   
-  // 约 35 米的微型避让区半径 (0.00035度)
-  const POLYGON_RADIUS = 0.00035; 
+// 约 110 米的避让区半径 (0.001度)，确保能逼迫导航绕开整个路口/街区
+  const POLYGON_RADIUS = 0.001; 
   let noImprovementCount = 0;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
