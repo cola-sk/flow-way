@@ -2166,7 +2166,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               _infoRow('类型', camera.typeLabel),
               _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
               _infoRow('更新日期', camera.date),
-              _infoRow('详情链接', sourceUri?.toString() ?? '暂无'),
               const SizedBox(height: 12),
               if (sourceUri != null)
                 SizedBox(

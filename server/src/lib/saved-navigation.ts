@@ -39,6 +39,7 @@ export interface RecentNavigationRecord {
 const ROUTES_HASH_KEY = 'saved-routes';
 const PLANS_HASH_KEY = 'saved-route-plans';
 const RECENT_HASH_KEY = 'recent-navigations';
+const RECENT_KEEP_LIMIT = 10;
 
 let redis: Redis;
 function getRedis(): Redis {
@@ -139,14 +140,35 @@ export async function saveRecentNavigationRecord(input: {
     createdAt,
   };
 
-  await getRedis().hset(RECENT_HASH_KEY, { [record.id]: record });
+  const redisClient = getRedis();
+  await redisClient.hset(RECENT_HASH_KEY, { [record.id]: record });
+
+  // 仅保留最近 10 条，超出部分直接物理删除，降低存储占用。
+  const all = await redisClient.hgetall<Record<string, RecentNavigationRecord>>(RECENT_HASH_KEY);
+  if (all) {
+    const sorted = sortedByTimeDesc(Object.values(all));
+    const staleIds = sorted.slice(RECENT_KEEP_LIMIT).map((item) => item.id);
+    if (staleIds.length > 0) {
+      await redisClient.hdel(RECENT_HASH_KEY, ...staleIds);
+    }
+  }
+
   return record;
 }
 
 export async function listRecentNavigationRecords(): Promise<RecentNavigationRecord[]> {
-  const all = await getRedis().hgetall<Record<string, RecentNavigationRecord>>(RECENT_HASH_KEY);
+  const redisClient = getRedis();
+  const all = await redisClient.hgetall<Record<string, RecentNavigationRecord>>(RECENT_HASH_KEY);
   if (!all) return [];
-  return sortedByTimeDesc(Object.values(all));
+  const sorted = sortedByTimeDesc(Object.values(all));
+
+  // 兜底清理历史脏数据：超过限制的记录一并删除。
+  const staleIds = sorted.slice(RECENT_KEEP_LIMIT).map((item) => item.id);
+  if (staleIds.length > 0) {
+    await redisClient.hdel(RECENT_HASH_KEY, ...staleIds);
+  }
+
+  return sorted.slice(0, RECENT_KEEP_LIMIT);
 }
 
 export async function deleteRecentNavigationRecord(id: string): Promise<boolean> {
