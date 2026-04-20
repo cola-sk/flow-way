@@ -10,7 +10,6 @@ import 'package:latlong2/latlong.dart';
 
 const String _cameraCacheKey = 'camera_response_v1';
 const int _cameraCacheTtlMs = 24 * 60 * 60 * 1000;
-const String _localWayPointsKey = 'local_waypoints_v1';
 const String _localRoutePlansKey = 'local_route_plans_v1';
 
 String _resolveBaseUrl() {
@@ -72,46 +71,6 @@ class ApiService {
   Future<void> _writeLocalList(String key, List<Map<String, dynamic>> value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(key, jsonEncode(value));
-  }
-
-  Future<bool> _saveWayPointToLocal({
-    required String name,
-    required LatLng location,
-  }) async {
-    try {
-      final list = await _readLocalList(_localWayPointsKey);
-      final item = <String, dynamic>{
-        'id': _makeLocalId('wp'),
-        'name': name,
-        'lat': location.latitude,
-        'lng': location.longitude,
-        'createdAt': DateTime.now().toIso8601String(),
-      };
-
-      list.insert(0, item);
-      await _writeLocalList(_localWayPointsKey, list);
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<List<WayPoint>> _getLocalWayPoints() async {
-    final list = await _readLocalList(_localWayPointsKey);
-    return list.map(WayPoint.fromJson).toList();
-  }
-
-  Future<bool> _deleteLocalWayPoint(String id) async {
-    try {
-      final list = await _readLocalList(_localWayPointsKey);
-      final before = list.length;
-      list.removeWhere((e) => (e['id'] as String?) == id);
-      if (list.length == before) return false;
-      await _writeLocalList(_localWayPointsKey, list);
-      return true;
-    } catch (_) {
-      return false;
-    }
   }
 
   Future<bool> _saveRoutePlanToLocal({
@@ -341,57 +300,35 @@ class ApiService {
         'lat': location.latitude,
         'lng': location.longitude,
       });
-
-      // Keep a local cache copy after remote persistence succeeds.
-      await _saveWayPointToLocal(name: name, location: location);
       return true;
     } catch (e) {
       print('保存标记点失败: ${_formatError(e)}');
-
-      // Best-effort local backup, but report failure to avoid masking DB issues.
-      await _saveWayPointToLocal(name: name, location: location);
       return false;
     }
   }
 
   /// 获取用户保存的标记点
   Future<List<WayPoint>> getWayPoints() async {
-    final local = await _getLocalWayPoints();
-
     try {
       final response = await _dio.get('/api/waypoints');
       final List<dynamic> data = response.data['waypoints'] ?? [];
-      final remote = data
+      return data
           .map((item) => WayPoint.fromJson(item as Map<String, dynamic>))
           .toList();
-
-      final merged = <String, WayPoint>{};
-      for (final wp in [...remote, ...local]) {
-        final key = '${wp.name}_${wp.location.latitude.toStringAsFixed(6)}_${wp.location.longitude.toStringAsFixed(6)}';
-        merged[key] = wp;
-      }
-      final result = merged.values.toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      return result;
     } catch (e) {
       print('获取标记点失败: ${_formatError(e)}');
-      return local..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return [];
     }
   }
 
   /// 删除标记点
   Future<bool> deleteWayPoint(String id) async {
-    if (id.startsWith('local-')) {
-      return _deleteLocalWayPoint(id);
-    }
-
-    final localDeleted = await _deleteLocalWayPoint(id);
     try {
       await _dio.delete('/api/waypoints/$id');
       return true;
     } catch (e) {
       print('删除标记点失败: ${_formatError(e)}');
-      return localDeleted;
+      return false;
     }
   }
 
