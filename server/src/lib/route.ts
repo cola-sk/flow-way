@@ -346,14 +346,11 @@ type EvaluatedAvoidRoute = {
 export type AvoidRouteStepState = EvaluatedAvoidRoute;
 
 const AVOID_ROUTE_MAX_WAYPOINTS = 1;
-// 增加探测偏离范围（针对主干道间的街区大概在500-1000m级别）
-const AVOID_ROUTE_OFFSETS = [200, 500, 800, 1500];
+const AVOID_ROUTE_OFFSETS = [100, 200, 300];
 const AVOID_ROUTE_SIDES: Array<'left' | 'right'> = ['left', 'right'];
 
-// 提升偏离约束，因为如果路线较短（例如3km），1.18x的距离只有+500m，很难有足够迂回空间
-const AVOID_ROUTE_MAX_DISTANCE_RATIO = 1.30;
-const AVOID_ROUTE_MAX_DISTANCE_RATIO_IF_BIG_IMPROVEMENT = 1.60;
-const AVOID_ROUTE_MAX_ABSOLUTE_DETOUR = 2500; // 即使比例超标，只要迂回绝对距离<2.5公里也予以容忍
+const AVOID_ROUTE_MAX_DISTANCE_RATIO = 1.18;
+const AVOID_ROUTE_MAX_DISTANCE_RATIO_IF_BIG_IMPROVEMENT = 1.30;
 
 function findNearestRoutePointIndex(points: RoutePoint[], lat: number, lng: number): number {
   let minDistance = Infinity;
@@ -384,22 +381,16 @@ function pickBetterAvoidRoute(
 
   if (currentCount < previousCount) {
     const reducedBy = previousCount - currentCount;
-    // 增加一个绝对冗余值的判断条件，防止超短路线 (如2km) 的比例(比如1.30)非常容易超标
-    const absoluteDetour = current.distance - anchorDistance;
 
     // 以第一条基线路线为锚点做约束，避免逐轮相对比较导致漂移
-    if (
-      distanceRatioToAnchor <= AVOID_ROUTE_MAX_DISTANCE_RATIO ||
-      absoluteDetour <= AVOID_ROUTE_MAX_ABSOLUTE_DETOUR
-    ) {
+    if (distanceRatioToAnchor <= AVOID_ROUTE_MAX_DISTANCE_RATIO) {
       return current;
     }
 
     // 仅当摄像头显著减少时，放宽一点里程上限
     if (
       reducedBy >= 2 &&
-      (distanceRatioToAnchor <= AVOID_ROUTE_MAX_DISTANCE_RATIO_IF_BIG_IMPROVEMENT ||
-        absoluteDetour <= AVOID_ROUTE_MAX_ABSOLUTE_DETOUR * 1.5)
+      distanceRatioToAnchor <= AVOID_ROUTE_MAX_DISTANCE_RATIO_IF_BIG_IMPROVEMENT
     ) {
       return current;
     }
@@ -421,7 +412,7 @@ function buildAvoidWaypoints(
   best: AvoidRouteStepState,
   cameras: Camera[],
   iteration: number
-): { waypoints: Coordinate[]; isExhausted: boolean } {
+): Coordinate[] {
   const allCamerasOnRoute = best.cameraIndices
     .map((idx) => cameras[idx])
     .filter((cam): cam is Camera => Boolean(cam))
@@ -433,9 +424,6 @@ function buildAvoidWaypoints(
     .sort((a, b) => a.routeIdx - b.routeIdx);
 
   const combinationsPerCamera = AVOID_ROUTE_OFFSETS.length * AVOID_ROUTE_SIDES.length;
-  // 增加 termination 支持：判断是否已经尝试完当前 best 路线上的所有摄像头的全部侧边+补偿距组合
-  const isExhausted = iteration >= Math.max(1, allCamerasOnRoute.length) * combinationsPerCamera;
-
   const cameraFocusIndex = Math.floor(iteration / combinationsPerCamera);
   const startIndex = cameraFocusIndex % Math.max(1, allCamerasOnRoute.length);
 
@@ -447,12 +435,10 @@ function buildAvoidWaypoints(
   const sideRound = Math.floor(iteration / AVOID_ROUTE_OFFSETS.length);
   const side = AVOID_ROUTE_SIDES[sideRound % AVOID_ROUTE_SIDES.length];
 
-  const waypoints = camerasOnRoute.map((cam) => {
+  return camerasOnRoute.map((cam) => {
     const { left, right } = computePerpendicularOffsets(best.points, cam.lat, cam.lng, offset);
     return side === 'left' ? left : right;
   });
-
-  return { waypoints, isExhausted };
 }
 
 export async function planAvoidCamerasRouteStep(
@@ -463,24 +449,10 @@ export async function planAvoidCamerasRouteStep(
   best?: AvoidRouteStepState,
   anchorDistance?: number
 ): Promise<{ current: AvoidRouteStepState; best: AvoidRouteStepState; done: boolean; anchorDistance: number }> {
-  let waypoints: Coordinate[] | undefined;
-  let isExhausted = false;
-
-  if (best && best.cameraIndices.length > 0) {
-    const buildResult = buildAvoidWaypoints(best, cameras, iteration);
-    waypoints = buildResult.waypoints;
-    isExhausted = buildResult.isExhausted;
-  }
-
-  // 避免无意义的API请求如果已经穷举完毕
-  if (isExhausted && best) {
-    return {
-      current: best,
-      best: best,
-      done: true,
-      anchorDistance: anchorDistance ?? best.distance,
-    };
-  }
+  const waypoints =
+    best && best.cameraIndices.length > 0
+      ? buildAvoidWaypoints(best, cameras, iteration)
+      : undefined;
 
   const routes = await callTencentDrivingAPI(start, end, true, waypoints); // true for alternatives
   if (routes.length === 0) {
@@ -509,7 +481,7 @@ export async function planAvoidCamerasRouteStep(
   return {
     current: currentBest!,
     best: overallBest!,
-    done: overallBest!.cameraIndices.length === 0 || isExhausted,
+    done: overallBest!.cameraIndices.length === 0,
     anchorDistance: nextAnchorDistance,
   };
 }
@@ -552,8 +524,8 @@ export async function planAvoidCamerasRoute(
   let bestGlobalDist = Infinity;
   let currentAvoidCamIds = new Set<number>();
   
-// 约 110 米的避让区半径 (0.001度)，确保能逼迫导航绕开整个路口/街区
-  const POLYGON_RADIUS = 0.001; 
+  // 约 35 米的微型避让区半径 (0.00035度)
+  const POLYGON_RADIUS = 0.00035; 
   let noImprovementCount = 0;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
