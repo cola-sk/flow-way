@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
@@ -85,6 +86,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   // 用户当前位置
   LatLng? _userPosition;
+  StreamSubscription<Position>? _cruisePositionStream;
+  bool _cruiseModeEnabled = false;
 
   // 搜索状态
   final TextEditingController _searchController = TextEditingController();
@@ -136,22 +139,114 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _loadCameras();
     _loadWayPoints();
     _loadDismissedCameras();
-    _locateUser();
+    _locateUser(forceRefresh: true);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) return;
     _requestStopPlanning('应用切到后台，正在停止...');
+    if (_cruiseModeEnabled) {
+      unawaited(_stopCruiseMode(silent: true));
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _suggestDebounce?.cancel();
+    _cruisePositionStream?.cancel();
+    if (_cruiseModeEnabled) {
+      unawaited(WakelockPlus.disable());
+    }
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _startCruiseMode() async {
+    if (_cruiseModeEnabled) return;
+
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showToast('请先开启设备定位服务（GPS）');
+      return;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      _showToast('请授予定位权限后再开启巡航');
+      return;
+    }
+
+    final LocationSettings settings = kIsWeb
+        ? const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 1,
+          )
+        : AndroidSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 2,
+            intervalDuration: const Duration(seconds: 1),
+            forceLocationManager: true,
+          );
+
+    await _cruisePositionStream?.cancel();
+    _cruisePositionStream = Geolocator.getPositionStream(
+      locationSettings: settings,
+    ).listen(
+      (position) {
+        if (!mounted) return;
+        final pos = CoordinateTransform.wgs84ToGcj02(
+          position.latitude,
+          position.longitude,
+        );
+        setState(() {
+          _userPosition = pos;
+          _locationResolved = true;
+        });
+
+        if (_activeTab == _BottomTab.explore && !_navMode) {
+          _mapController.move(pos, 17);
+        }
+      },
+      onError: (_) {
+        if (mounted) {
+          _showToast('巡航定位中断，已自动关闭');
+          unawaited(_stopCruiseMode(silent: true));
+        }
+      },
+    );
+
+    await WakelockPlus.enable();
+    if (!mounted) return;
+    setState(() => _cruiseModeEnabled = true);
+    _showToast('巡航模式已开启');
+  }
+
+  Future<void> _stopCruiseMode({bool silent = false}) async {
+    await _cruisePositionStream?.cancel();
+    _cruisePositionStream = null;
+    await WakelockPlus.disable();
+    if (!mounted) return;
+    if (_cruiseModeEnabled) {
+      setState(() => _cruiseModeEnabled = false);
+    }
+    if (!silent) {
+      _showToast('巡航模式已关闭');
+    }
+  }
+
+  Future<void> _toggleCruiseMode() async {
+    if (_cruiseModeEnabled) {
+      await _stopCruiseMode();
+    } else {
+      await _startCruiseMode();
+    }
   }
 
   Future<void> _locateUser({bool forceRefresh = false}) async {
@@ -192,17 +287,40 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         }
       }
 
-      // 再获取精确位置：Android 用 AndroidSettings，Web/iOS 用通用 LocationSettings
-      final LocationSettings locationSettings = kIsWeb
-          ? const LocationSettings(accuracy: LocationAccuracy.high)
-          : AndroidSettings(
-              accuracy: LocationAccuracy.high,
-              timeLimit: const Duration(seconds: 40),
-              forceLocationManager: false,
+      // 获取精确位置：强制刷新时使用更强的 Android GPS 策略，避免回落到旧缓存点。
+      final LocationSettings locationSettings;
+      if (kIsWeb) {
+        locationSettings = const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        );
+      } else if (forceRefresh) {
+        locationSettings = AndroidSettings(
+          accuracy: LocationAccuracy.bestForNavigation,
+          distanceFilter: 0,
+          intervalDuration: const Duration(seconds: 1),
+          forceLocationManager: true,
+          timeLimit: const Duration(seconds: 60),
+        );
+      } else {
+        locationSettings = AndroidSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 40),
+          forceLocationManager: false,
+        );
+      }
+
+      final Position position = forceRefresh
+          ? await Geolocator.getPositionStream(
+              locationSettings: locationSettings,
+            ).first.timeout(
+              const Duration(seconds: 25),
+              onTimeout: () => Geolocator.getCurrentPosition(
+                locationSettings: locationSettings,
+              ),
+            )
+          : await Geolocator.getCurrentPosition(
+              locationSettings: locationSettings,
             );
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: locationSettings,
-      );
       if (mounted) {
         final pos = CoordinateTransform.wgs84ToGcj02(
           position.latitude,
@@ -610,6 +728,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     bool startIsMyLocation = true,
     List<PlaceResult>? waypoints,
   }) {
+    if (_cruiseModeEnabled) {
+      unawaited(_stopCruiseMode(silent: true));
+    }
     _searchController.clear();
     _searchFocusNode.unfocus();
     setState(() {
@@ -649,6 +770,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   void _switchTab(_BottomTab tab) {
+    if (tab != _BottomTab.explore && _cruiseModeEnabled) {
+      unawaited(_stopCruiseMode(silent: true));
+    }
+
     if (tab == _activeTab &&
         (tab == _BottomTab.explore ||
             tab == _BottomTab.plan ||
@@ -2467,7 +2592,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildSavedPanel() {
+  Widget _buildSavedPanel({bool standalone = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -2478,7 +2603,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(24),
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 430),
+              constraints: BoxConstraints(
+                maxHeight:
+                    standalone ? MediaQuery.of(context).size.height - 140 : 430,
+              ),
               child: _loadingSaved
                   ? const Center(
                       child: Padding(
@@ -2521,6 +2649,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                   ),
                                 )
                               : SingleChildScrollView(
+                                  padding: EdgeInsets.only(
+                                    bottom: standalone ? 76 : 16,
+                                  ),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -2599,10 +2730,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                   IconButton(
                                                     padding: EdgeInsets.zero,
                                                     constraints:
-                                                        const BoxConstraints(),
+                                                        const BoxConstraints.tightFor(
+                                                          width: 26,
+                                                          height: 26,
+                                                        ),
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    splashRadius: 16,
                                                     icon: const Icon(
                                                       Icons.navigation,
-                                                      size: 16,
+                                                      size: 15,
                                                       color: _primary,
                                                     ),
                                                     onPressed: () {
@@ -2621,30 +2758,21 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                       );
                                                     },
                                                   ),
-                                                  const SizedBox(width: 8),
+                                                  const SizedBox(width: 2),
                                                   IconButton(
                                                     padding: EdgeInsets.zero,
                                                     constraints:
-                                                        const BoxConstraints(),
-                                                    icon: const Icon(
-                                                      Icons.visibility_outlined,
-                                                      size: 16,
-                                                      color: _onSurfaceVariant,
-                                                    ),
-                                                    onPressed: () =>
-                                                        _showSavedRouteDetail(
-                                                          item,
+                                                        const BoxConstraints.tightFor(
+                                                          width: 26,
+                                                          height: 26,
                                                         ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints(),
+                                                    visualDensity:
+                                                        VisualDensity.compact,
+                                                    splashRadius: 16,
                                                     icon: const Icon(
                                                       Icons
                                                           .delete_outline_rounded,
-                                                      size: 16,
+                                                      size: 15,
                                                       color: Color(0xFFBA1A1A),
                                                     ),
                                                     onPressed: () =>
@@ -2785,7 +2913,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildRecentPanel() {
+  Widget _buildRecentPanel({bool standalone = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -2796,7 +2924,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(24),
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 430),
+              constraints: BoxConstraints(
+                maxHeight:
+                    standalone ? MediaQuery.of(context).size.height - 140 : 430,
+              ),
               child: _loadingRecent
                   ? const Center(
                       child: Padding(
@@ -2839,6 +2970,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                   ),
                                 )
                               : SingleChildScrollView(
+                                  padding: EdgeInsets.only(
+                                    bottom: standalone ? 76 : 16,
+                                  ),
                                   child: Column(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
@@ -2927,7 +3061,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildSettingsPanel() {
+  Widget _buildSettingsPanel({bool standalone = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -2938,7 +3072,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             borderRadius: BorderRadius.circular(24),
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 430),
+              constraints: BoxConstraints(
+                maxHeight:
+                    standalone ? MediaQuery.of(context).size.height - 140 : 430,
+              ),
               child: SingleChildScrollView(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -3762,8 +3899,39 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildStandaloneTabBody() {
+    final Widget panel = switch (_activeTab) {
+      _BottomTab.saved => _buildSavedPanel(standalone: true),
+      _BottomTab.recent => _buildRecentPanel(standalone: true),
+      _BottomTab.settings => _buildSettingsPanel(standalone: true),
+      _ => const SizedBox.shrink(),
+    };
+
+    return Container(
+      color: _surface,
+      child: SafeArea(
+        bottom: true,
+        child: panel,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isStandaloneTab =
+        _activeTab == _BottomTab.saved ||
+        _activeTab == _BottomTab.recent ||
+        _activeTab == _BottomTab.settings;
+
+    if (isStandaloneTab) {
+      return Scaffold(
+        resizeToAvoidBottomInset: false,
+        body: _buildStandaloneTabBody(),
+        bottomNavigationBar:
+            SafeArea(top: false, child: _buildBottomNavigationBar()),
+      );
+    }
+
     // 底部安全区高度 + 导航栏估算高度（icon+label+padding ≈ 72，外层 Padding bottom:8）
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final navBarHeight = 72.0 + bottomInset + 8;
@@ -3935,18 +4103,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   );
                 }).toList(),
               ),
-              // 用户定位标记
-              if (_userPosition != null)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: _userPosition!,
-                      width: 48,
-                      height: 48,
-                      child: const JinjingMarker(size: 48),
-                    ),
-                  ],
-                ),
               // 导航模式地点标记
               if (_navMode)
                 MarkerLayer(
@@ -3987,6 +4143,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         onTap: () => _showPlaceActions(_selectedPlace!),
                         child: const JinjingMarker(size: 48),
                       ),
+                    ),
+                  ],
+                ),
+              // 用户定位标记（置顶，避免被导航标记遮挡）
+              if (_userPosition != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _userPosition!,
+                      width: 48,
+                      height: 48,
+                      child: const JinjingMarker(size: 48),
                     ),
                   ],
                 ),
@@ -4084,7 +4252,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   vertical: 8,
                 ),
                 child: Text(
-                  '摄像头 ${_visibleCameraCount()}/${_cameras.length} · 标记点 ${_wayPoints.length} · 最后爬取 $_updatedAt',
+                  '摄像头 ${_visibleCameraCount()}/${_cameras.length} · 标记点 ${_wayPoints.length} · 最后爬取 $_updatedAt${_cruiseModeEnabled ? ' · 巡航中' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -4116,6 +4284,27 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
             ),
 
+          if (_activeTab == _BottomTab.explore && !_navMode)
+            Positioned(
+              right: 16,
+              bottom: navBarHeight + 60,
+              child: FloatingActionButton.small(
+                heroTag: 'cruise-btn',
+                backgroundColor: _cruiseModeEnabled
+                    ? const Color(0xFF2E7D32)
+                    : _primaryContainer,
+                foregroundColor:
+                    _cruiseModeEnabled ? Colors.white : _primary,
+                elevation: 2,
+                onPressed: _toggleCruiseMode,
+                child: Icon(
+                  _cruiseModeEnabled
+                      ? Icons.directions_car_filled_rounded
+                      : Icons.directions_car_outlined,
+                ),
+              ),
+            ),
+
           Positioned(
             right: 16,
             bottom: navBarHeight + 8,
@@ -4125,9 +4314,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               foregroundColor: _primary,
               elevation: 2,
               onPressed: () async {
-                if (_userPosition != null) {
-                  _mapController.move(_userPosition!, 15);
-                }
                 await _locateUser(forceRefresh: true);
               },
               child: const Icon(Icons.my_location_rounded),

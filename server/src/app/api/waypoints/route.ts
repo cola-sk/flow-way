@@ -1,15 +1,13 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { WayPoint, WayPointsResponse } from '@/types/route';
 import { v4 as uuidv4 } from 'uuid';
-import { wayPointsStorage } from '@/lib/waypoints-storage';
+import { listWayPoints, saveWayPoint } from '@/lib/waypoints-storage';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const waypoints = Array.from(wayPointsStorage.values()).sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
+    const waypoints = await listWayPoints();
 
     const response: WayPointsResponse = { waypoints };
     return NextResponse.json(response);
@@ -43,7 +41,7 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
     };
 
-    wayPointsStorage.set(wayPoint.id, wayPoint);
+    await saveWayPoint(wayPoint);
 
     return NextResponse.json(wayPoint);
   } catch (error) {

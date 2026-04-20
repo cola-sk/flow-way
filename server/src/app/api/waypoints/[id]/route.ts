@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { wayPointsStorage } from '@/lib/waypoints-storage';
+import { deleteWayPointById } from '@/lib/waypoints-storage';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,14 +10,13 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    if (!wayPointsStorage.has(id)) {
+    const deleted = await deleteWayPointById(id);
+    if (!deleted) {
       return NextResponse.json(
         { error: '标记点不存在' },
         { status: 404 }
       );
     }
-
-    wayPointsStorage.delete(id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

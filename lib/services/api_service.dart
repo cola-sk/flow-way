@@ -335,17 +335,22 @@ class ApiService {
     required String name,
     required LatLng location,
   }) async {
-    final localSaved = await _saveWayPointToLocal(name: name, location: location);
     try {
       await _dio.post('/api/waypoints', data: {
         'name': name,
         'lat': location.latitude,
         'lng': location.longitude,
       });
+
+      // Keep a local cache copy after remote persistence succeeds.
+      await _saveWayPointToLocal(name: name, location: location);
       return true;
     } catch (e) {
       print('保存标记点失败: ${_formatError(e)}');
-      return localSaved;
+
+      // Best-effort local backup, but report failure to avoid masking DB issues.
+      await _saveWayPointToLocal(name: name, location: location);
+      return false;
     }
   }
 
