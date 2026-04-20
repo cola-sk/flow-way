@@ -6,6 +6,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
@@ -1513,6 +1514,31 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     return _dismissedCoords.contains(key);
   }
 
+  Uri? _cameraDetailUri(String href) {
+    final trimmed = href.trim();
+    if (trimmed.isEmpty) return null;
+
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return Uri.tryParse(trimmed);
+    }
+
+    final normalized = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+    return Uri.tryParse('https://www.jinjing365.com$normalized');
+  }
+
+  Future<void> _openCameraSourcePage(Camera camera) async {
+    final uri = _cameraDetailUri(camera.href);
+    if (uri == null) {
+      _showToast('该摄像头暂无详情链接');
+      return;
+    }
+
+    final ok = await launchUrl(uri, mode: LaunchMode.platformDefault);
+    if (!ok && mounted) {
+      _showToast('打开链接失败');
+    }
+  }
+
   int _visibleCameraCount() {
     return _cameras.where(_shouldShowCameraMarker).length;
   }
@@ -2089,6 +2115,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       ),
       builder: (ctx) {
         final isDismissed = _isCameraDismissed(camera);
+        final sourceUri = _cameraDetailUri(camera.href);
         final bottomInset = MediaQuery.of(ctx).padding.bottom;
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset + 8),
@@ -2139,7 +2166,21 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               _infoRow('类型', camera.typeLabel),
               _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
               _infoRow('更新日期', camera.date),
+              _infoRow('详情链接', sourceUri?.toString() ?? '暂无'),
               const SizedBox(height: 12),
+              if (sourceUri != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    label: const Text('查看进京网原始页面'),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      await _openCameraSourcePage(camera);
+                    },
+                  ),
+                ),
+              if (sourceUri != null) const SizedBox(height: 8),
               SizedBox(
                 width: double.infinity,
                 child: isDismissed

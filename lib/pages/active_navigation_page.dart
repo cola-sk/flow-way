@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/camera.dart';
 import '../models/route.dart';
@@ -54,6 +55,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   @override
   void initState() {
     super.initState();
+    unawaited(WakelockPlus.enable());
     _initTts();
     _startNavigation();
   }
@@ -170,6 +172,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   void dispose() {
     _positionStream?.cancel();
     _flutterTts.stop();
+    unawaited(WakelockPlus.disable());
     super.dispose();
   }
 
