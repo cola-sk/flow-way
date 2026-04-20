@@ -7,7 +7,7 @@ import { signTencentUrl, getTencentMapKey } from './tencent-sign';
 
 const MIN_TENCENT_REQUEST_INTERVAL_MS = 500;
 let lastTencentRequestAt = 0;
-const AVOID_ROUTE_MAX_TENCENT_API_CALLS = 120;
+const AVOID_ROUTE_MAX_TENCENT_API_CALLS = 80;
 const AVOID_ROUTE_MAX_RATE_LIMIT_RETRIES = 6;
 
 type TencentApiRequestContext = {
