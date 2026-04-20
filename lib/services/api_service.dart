@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -9,6 +10,8 @@ import 'package:latlong2/latlong.dart';
 
 const String _cameraCacheKey = 'camera_response_v1';
 const int _cameraCacheTtlMs = 24 * 60 * 60 * 1000;
+const String _localWayPointsKey = 'local_waypoints_v1';
+const String _localRoutePlansKey = 'local_route_plans_v1';
 
 String _resolveBaseUrl() {
   if (kIsWeb) {
@@ -43,6 +46,125 @@ class ApiService {
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 60),
         ));
+
+  String _makeLocalId(String prefix) {
+    final now = DateTime.now().microsecondsSinceEpoch;
+    final rnd = Random().nextInt(1 << 20);
+    return 'local-$prefix-$now-$rnd';
+  }
+
+  Future<List<Map<String, dynamic>>> _readLocalList(String key) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(key);
+      if (raw == null || raw.isEmpty) return [];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return [];
+      return decoded
+          .whereType<Map>()
+          .map((e) => Map<String, dynamic>.from(e))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _writeLocalList(String key, List<Map<String, dynamic>> value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(key, jsonEncode(value));
+  }
+
+  Future<bool> _saveWayPointToLocal({
+    required String name,
+    required LatLng location,
+  }) async {
+    try {
+      final list = await _readLocalList(_localWayPointsKey);
+      final item = <String, dynamic>{
+        'id': _makeLocalId('wp'),
+        'name': name,
+        'lat': location.latitude,
+        'lng': location.longitude,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
+
+      list.insert(0, item);
+      await _writeLocalList(_localWayPointsKey, list);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<WayPoint>> _getLocalWayPoints() async {
+    final list = await _readLocalList(_localWayPointsKey);
+    return list.map(WayPoint.fromJson).toList();
+  }
+
+  Future<bool> _deleteLocalWayPoint(String id) async {
+    try {
+      final list = await _readLocalList(_localWayPointsKey);
+      final before = list.length;
+      list.removeWhere((e) => (e['id'] as String?) == id);
+      if (list.length == before) return false;
+      await _writeLocalList(_localWayPointsKey, list);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _saveRoutePlanToLocal({
+    required String name,
+    required PlaceResult start,
+    required PlaceResult end,
+    required List<PlaceResult> waypoints,
+    required bool avoidCameras,
+  }) async {
+    try {
+      Map<String, dynamic> toPoint(PlaceResult p) => {
+            'name': p.name,
+            'address': p.address,
+            'lat': p.location.latitude,
+            'lng': p.location.longitude,
+          };
+
+      final list = await _readLocalList(_localRoutePlansKey);
+      final item = <String, dynamic>{
+        'id': _makeLocalId('plan'),
+        'name': name,
+        'start': toPoint(start),
+        'end': toPoint(end),
+        'waypoints': waypoints.map(toPoint).toList(),
+        'avoidCameras': avoidCameras,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
+
+      list.insert(0, item);
+      await _writeLocalList(_localRoutePlansKey, list);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<SavedRoutePlanRecord>> _getLocalRoutePlans() async {
+    final list = await _readLocalList(_localRoutePlansKey);
+    return list.map(SavedRoutePlanRecord.fromJson).toList();
+  }
+
+  Future<bool> _deleteLocalRoutePlan(String id) async {
+    try {
+      final list = await _readLocalList(_localRoutePlansKey);
+      final before = list.length;
+      list.removeWhere((e) => (e['id'] as String?) == id);
+      if (list.length == before) return false;
+      await _writeLocalList(_localRoutePlansKey, list);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<CamerasResponse?> _readCachedCameras({
     required bool allowExpired,
@@ -92,9 +214,11 @@ class ApiService {
   /// 获取所有摄像头数据
   /// 策略：每次启动时检查缓存是否超过 24 小时；
   /// 未过期直接返回，过期则请求接口并更新缓存。
-  Future<CamerasResponse> getCameras() async {
-    final cachedFresh = await _readCachedCameras(allowExpired: false);
-    if (cachedFresh != null) return cachedFresh;
+  Future<CamerasResponse> getCameras({bool forceRefresh = false}) async {
+    if (!forceRefresh) {
+      final cachedFresh = await _readCachedCameras(allowExpired: false);
+      if (cachedFresh != null) return cachedFresh;
+    }
 
     try {
       final response = await _dio.get('/api/cameras');
@@ -116,6 +240,7 @@ class ApiService {
     required LatLng start,
     required LatLng end,
     bool avoidCameras = false,
+    bool ignoreOutsideSixthRing = false,
   }) async {
     try {
       final response = await _dio.post('/api/route/plan', data: {
@@ -128,6 +253,7 @@ class ApiService {
           'lng': end.longitude,
         },
         'avoidCameras': avoidCameras,
+        'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
       });
       return RouteResponse.fromJson(response.data);
     } catch (e) {
@@ -143,6 +269,7 @@ class ApiService {
     required LatLng end,
     required int iteration,
     required int maxIterations,
+    bool ignoreOutsideSixthRing = false,
     NavigationRoute? bestRoute,
     double? anchorDistance,
     List<LatLng>? waypoints,
@@ -168,6 +295,7 @@ class ApiService {
         if (legIndex != null) 'legIndex': legIndex,
         if (totalLegs != null) 'totalLegs': totalLegs,
         if (anchorDistance != null) 'anchorDistance': anchorDistance,
+        'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
         if (bestRoute != null) 'bestRoute': {
           'polylinePoints': bestRoute.polylinePoints
               .map((p) => {'lat': p.latitude, 'lng': p.longitude})
@@ -195,6 +323,7 @@ class ApiService {
     required String name,
     required LatLng location,
   }) async {
+    final localSaved = await _saveWayPointToLocal(name: name, location: location);
     try {
       await _dio.post('/api/waypoints', data: {
         'name': name,
@@ -204,30 +333,48 @@ class ApiService {
       return true;
     } catch (e) {
       print('保存标记点失败: ${_formatError(e)}');
-      return false;
+      return localSaved;
     }
   }
 
   /// 获取用户保存的标记点
   Future<List<WayPoint>> getWayPoints() async {
+    final local = await _getLocalWayPoints();
+
     try {
       final response = await _dio.get('/api/waypoints');
       final List<dynamic> data = response.data['waypoints'] ?? [];
-      return data.map((item) => WayPoint.fromJson(item as Map<String, dynamic>)).toList();
+      final remote = data
+          .map((item) => WayPoint.fromJson(item as Map<String, dynamic>))
+          .toList();
+
+      final merged = <String, WayPoint>{};
+      for (final wp in [...remote, ...local]) {
+        final key = '${wp.name}_${wp.location.latitude.toStringAsFixed(6)}_${wp.location.longitude.toStringAsFixed(6)}';
+        merged[key] = wp;
+      }
+      final result = merged.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return result;
     } catch (e) {
       print('获取标记点失败: ${_formatError(e)}');
-      return [];
+      return local..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     }
   }
 
   /// 删除标记点
   Future<bool> deleteWayPoint(String id) async {
+    if (id.startsWith('local-')) {
+      return _deleteLocalWayPoint(id);
+    }
+
+    final localDeleted = await _deleteLocalWayPoint(id);
     try {
       await _dio.delete('/api/waypoints/$id');
       return true;
     } catch (e) {
       print('删除标记点失败: ${_formatError(e)}');
-      return false;
+      return localDeleted;
     }
   }
 
@@ -333,6 +480,14 @@ class ApiService {
     required List<PlaceResult> waypoints,
     required bool avoidCameras,
   }) async {
+    final localSaved = await _saveRoutePlanToLocal(
+      name: name,
+      start: start,
+      end: end,
+      waypoints: waypoints,
+      avoidCameras: avoidCameras,
+    );
+
     try {
       Map<String, dynamic> toPoint(PlaceResult p) => {
             'name': p.name,
@@ -351,7 +506,7 @@ class ApiService {
       return true;
     } catch (e) {
       print('保存点位方案失败: ${_formatError(e)}');
-      return false;
+      return localSaved;
     }
   }
 
@@ -382,26 +537,45 @@ class ApiService {
 
   /// 获取已保存的起终点/途径点方案
   Future<List<SavedRoutePlanRecord>> getSavedRoutePlans() async {
+    final local = await _getLocalRoutePlans();
+
     try {
       final response = await _dio.get('/api/saved-route-plans');
       final List<dynamic> data = response.data['plans'] ?? [];
-      return data
+      final remote = data
           .map((e) => SavedRoutePlanRecord.fromJson(e as Map<String, dynamic>))
           .toList();
+
+      final merged = <String, SavedRoutePlanRecord>{};
+      for (final plan in [...remote, ...local]) {
+        final wpKey = plan.waypoints
+            .map((w) => '${w.location.latitude.toStringAsFixed(6)},${w.location.longitude.toStringAsFixed(6)}')
+            .join(';');
+        final key = '${plan.name}_${plan.start.location.latitude.toStringAsFixed(6)},${plan.start.location.longitude.toStringAsFixed(6)}_${plan.end.location.latitude.toStringAsFixed(6)},${plan.end.location.longitude.toStringAsFixed(6)}_${plan.avoidCameras}_$wpKey';
+        merged[key] = plan;
+      }
+      final result = merged.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return result;
     } catch (e) {
       print('获取点位方案失败: ${_formatError(e)}');
-      return [];
+      return local..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     }
   }
 
   /// 删除已保存点位方案
   Future<bool> deleteSavedRoutePlan(String id) async {
+    if (id.startsWith('local-')) {
+      return _deleteLocalRoutePlan(id);
+    }
+
+    final localDeleted = await _deleteLocalRoutePlan(id);
     try {
       await _dio.delete('/api/saved-route-plans/$id');
       return true;
     } catch (e) {
       print('删除点位方案失败: ${_formatError(e)}');
-      return false;
+      return localDeleted;
     }
   }
 

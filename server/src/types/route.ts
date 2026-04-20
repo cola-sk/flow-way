@@ -7,6 +7,7 @@ export interface RouteRequest {
   start: Coordinate;
   end: Coordinate;
   avoidCameras: boolean;
+  ignoreOutsideSixthRing?: boolean;
 }
 
 export interface RouteStepState {
@@ -20,6 +21,7 @@ export interface RoutePlanStepRequest {
   start: Coordinate;
   end: Coordinate;
   iteration: number;
+  ignoreOutsideSixthRing?: boolean;
   maxIterations?: number;
   waypoints?: Coordinate[];
   legIndex?: number;

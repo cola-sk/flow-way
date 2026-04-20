@@ -25,7 +25,10 @@ class WayPoint {
   factory WayPoint.fromJson(Map<String, dynamic> json) => WayPoint(
     id: json['id'] as String,
     name: json['name'] as String,
-    location: LatLng(json['lat'] as double, json['lng'] as double),
+    location: LatLng(
+      (json['lat'] as num).toDouble(),
+      (json['lng'] as num).toDouble(),
+    ),
     createdAt: DateTime.parse(json['createdAt'] as String),
   );
 }

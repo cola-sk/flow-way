@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
@@ -12,7 +13,7 @@ import '../widgets/jinjing_marker.dart';
 import 'active_navigation_page.dart';
 import 'save_route_dialog.dart';
 
-enum _BottomTab { explore, plan, saved, recent }
+enum _BottomTab { explore, plan, saved, recent, settings }
 
 class _NavStopItem {
   final PlaceResult place;
@@ -43,6 +44,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   final MapController _mapController = MapController();
   final ApiService _apiService = ApiService();
+  final Distance _distance = const Distance();
+
+  static const String _settingsIgnoreOutsideSixthOnAvoidKey =
+      'settings_ignore_outside_sixth_on_avoid';
+  static const String _settingsHideOutsideSixthMarkersKey =
+      'settings_hide_outside_sixth_markers';
+  static const String _settingsHideInsideFourthMarkersKey =
+      'settings_hide_inside_fourth_markers';
+  static const String _settingsHideInsideFifthMarkersKey =
+      'settings_hide_inside_fifth_markers';
+  static const double _fourthRingRadiusMeters = 10000;
+  static const double _fifthRingRadiusMeters = 15000;
 
   List<Camera> _cameras = [];
   List<WayPoint> _wayPoints = [];
@@ -106,10 +119,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool _loadingRecent = false;
   String? _recentError;
 
+  bool _ignoreOutsideSixthOnAvoid = true;
+  bool _hideOutsideSixthMarkers = true;
+  bool _hideInsideFourthMarkers = true;
+  bool _hideInsideFifthMarkers = false;
+  bool _updatingCameras = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _loadUserSettings();
     _loadCameras();
     _loadWayPoints();
     _loadDismissedCameras();
@@ -131,7 +151,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  Future<void> _locateUser() async {
+  Future<void> _locateUser({bool forceRefresh = false}) async {
     try {
       // 先检查设备级定位服务开关
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -153,8 +173,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         return;
       }
 
-      // 优先用上次缓存位置快速定位（Web 不支持此 API）
-      if (!kIsWeb) {
+      // 非强制刷新时优先用上次缓存位置快速定位（Web 不支持此 API）
+      if (!kIsWeb && !forceRefresh) {
         final lastKnown = await Geolocator.getLastKnownPosition();
         if (lastKnown != null && mounted) {
           final pos = LatLng(lastKnown.latitude, lastKnown.longitude);
@@ -190,6 +210,68 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       print('定位失败: $e');
       if (mounted) setState(() => _locationResolved = true);
     }
+  }
+
+  Future<void> _loadUserSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (!mounted) return;
+      setState(() {
+        _ignoreOutsideSixthOnAvoid =
+            prefs.getBool(_settingsIgnoreOutsideSixthOnAvoidKey) ?? true;
+        _hideOutsideSixthMarkers =
+            prefs.getBool(_settingsHideOutsideSixthMarkersKey) ?? true;
+        _hideInsideFourthMarkers =
+            prefs.getBool(_settingsHideInsideFourthMarkersKey) ?? true;
+        _hideInsideFifthMarkers =
+            prefs.getBool(_settingsHideInsideFifthMarkersKey) ?? false;
+      });
+    } catch (e) {
+      print('加载设置失败: $e');
+    }
+  }
+
+  Future<void> _saveUserSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(
+        _settingsIgnoreOutsideSixthOnAvoidKey,
+        _ignoreOutsideSixthOnAvoid,
+      );
+      await prefs.setBool(
+        _settingsHideOutsideSixthMarkersKey,
+        _hideOutsideSixthMarkers,
+      );
+      await prefs.setBool(
+        _settingsHideInsideFourthMarkersKey,
+        _hideInsideFourthMarkers,
+      );
+      await prefs.setBool(
+        _settingsHideInsideFifthMarkersKey,
+        _hideInsideFifthMarkers,
+      );
+    } catch (e) {
+      print('保存设置失败: $e');
+    }
+  }
+
+  bool _isInsideRing(Camera cam, double ringRadiusMeters) {
+    final cameraPoint = LatLng(cam.lat, cam.lng);
+    final d = _distance(_beijingCenter, cameraPoint);
+    return d <= ringRadiusMeters;
+  }
+
+  bool _shouldShowCameraMarker(Camera cam) {
+    if (_hideOutsideSixthMarkers && cam.type == 6) {
+      return false;
+    }
+    if (_hideInsideFifthMarkers && _isInsideRing(cam, _fifthRingRadiusMeters)) {
+      return false;
+    }
+    if (_hideInsideFourthMarkers && _isInsideRing(cam, _fourthRingRadiusMeters)) {
+      return false;
+    }
+    return true;
   }
 
   void _fetchSuggestions(String keyword) {
@@ -562,7 +644,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         (tab == _BottomTab.explore ||
             tab == _BottomTab.plan ||
             tab == _BottomTab.saved ||
-            tab == _BottomTab.recent)) {
+            tab == _BottomTab.recent ||
+            tab == _BottomTab.settings)) {
       if (tab == _BottomTab.saved) {
         _loadSavedData(silent: true);
       } else if (tab == _BottomTab.recent) {
@@ -1276,39 +1359,94 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  OverlayEntry? _toastEntry;
+  Timer? _toastTimer;
+
   void _showToast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.only(bottom: 24.0, left: 16.0, right: 16.0),
-          duration: const Duration(seconds: 2),
+
+    _toastEntry?.remove();
+    _toastTimer?.cancel();
+
+    final topInset = MediaQuery.of(context).padding.top;
+
+    _toastEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: topInset + 16.0,
+        left: 24.0,
+        right: 24.0,
+        child: SafeArea(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              decoration: BoxDecoration(
+                color: const Color(0xFF323232),
+                borderRadius: BorderRadius.circular(12.0),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
+                ]
+              ),
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white, fontSize: 14.0),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
         ),
-      );
+      ),
+    );
+
+    Overlay.of(context).insert(_toastEntry!);
+
+    _toastTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (_toastEntry != null && mounted) {
+        _toastEntry!.remove();
+        _toastEntry = null;
+      }
+    });
   }
 
-  Future<void> _loadCameras() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  Future<bool> _loadCameras({
+    bool forceRefresh = false,
+    bool showLoading = true,
+  }) async {
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
-      final response = await _apiService.getCameras();
+      final response = await _apiService.getCameras(forceRefresh: forceRefresh);
       setState(() {
         _cameras = response.cameras;
         _updatedAt = response.updatedAt;
-        _loading = false;
+        if (showLoading) {
+          _loading = false;
+        }
       });
+      return true;
     } catch (e) {
       setState(() {
         _error = '加载摄像头数据失败: $e';
-        _loading = false;
+        if (showLoading) {
+          _loading = false;
+        }
       });
+      return false;
+    }
+  }
+
+  Future<void> _refreshCamerasManually() async {
+    if (_updatingCameras) return;
+    setState(() => _updatingCameras = true);
+    final ok = await _loadCameras(forceRefresh: true, showLoading: false);
+    if (mounted) {
+      setState(() => _updatingCameras = false);
+      _showToast(ok ? '摄像头数据已更新' : '手动更新失败');
     }
   }
 
@@ -1343,6 +1481,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final key =
         '${camera.lat.toStringAsFixed(6)},${camera.lng.toStringAsFixed(6)}';
     return _dismissedCoords.contains(key);
+  }
+
+  int _visibleCameraCount() {
+    return _cameras.where(_shouldShowCameraMarker).length;
   }
 
   void _fitRouteToMap(NavigationRoute route) {
@@ -1411,6 +1553,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         end: end,
         iteration: i,
         maxIterations: _planStepMaxIterations,
+        ignoreOutsideSixthRing: _ignoreOutsideSixthOnAvoid,
         bestRoute: bestRoute,
         anchorDistance: anchorDistance,
         waypoints: userWaypoints,
@@ -1536,6 +1679,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             start: start,
             end: end,
             avoidCameras: false,
+            ignoreOutsideSixthRing: false,
           );
           if (response.route == null) {
             throw Exception(response.errorMessage ?? '$legLabel 规划失败');
@@ -1909,13 +2053,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void _showCameraInfo(Camera camera) {
     showModalBottomSheet(
       context: context,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
         final isDismissed = _isCameraDismissed(camera);
+        final bottomInset = MediaQuery.of(ctx).padding.bottom;
         return Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset + 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2711,6 +2857,129 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildSettingsPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+          child: _buildGlassPanel(
+            borderRadius: BorderRadius.circular(24),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 430),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '设置',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: _onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SwitchListTile.adaptive(
+                      value: _ignoreOutsideSixthOnAvoid,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '避让导航时忽略六环外摄像头',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        '默认开启。开启后，避让算法不会把六环外摄像头作为避让目标。',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      onChanged: (value) {
+                        setState(() => _ignoreOutsideSixthOnAvoid = value);
+                        unawaited(_saveUserSettings());
+                      },
+                    ),
+                    const Divider(height: 20),
+                    SwitchListTile.adaptive(
+                      value: _hideOutsideSixthMarkers,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '地图隐藏六环外摄像头',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('默认开启。', style: TextStyle(fontSize: 12)),
+                      onChanged: (value) {
+                        setState(() => _hideOutsideSixthMarkers = value);
+                        unawaited(_saveUserSettings());
+                      },
+                    ),
+                    SwitchListTile.adaptive(
+                      value: _hideInsideFourthMarkers,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '地图隐藏四环内摄像头',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text('默认开启。', style: TextStyle(fontSize: 12)),
+                      onChanged: (value) {
+                        setState(() => _hideInsideFourthMarkers = value);
+                        unawaited(_saveUserSettings());
+                      },
+                    ),
+                    SwitchListTile.adaptive(
+                      value: _hideInsideFifthMarkers,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '地图隐藏五环内摄像头',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        '默认关闭。开启后会同时隐藏四环内。',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      onChanged: (value) {
+                        setState(() => _hideInsideFifthMarkers = value);
+                        unawaited(_saveUserSettings());
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed:
+                            _updatingCameras ? null : _refreshCamerasManually,
+                        style: FilledButton.styleFrom(backgroundColor: _primary),
+                        icon: _updatingCameras
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.sync_rounded, size: 18),
+                        label: Text(_updatingCameras ? '更新中...' : '手动更新摄像头'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '当前显示: ${_visibleCameraCount()}/${_cameras.length} · 数据时间 $_updatedAt',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: _onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildNavPanel() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3338,6 +3607,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               icon: Icons.history_rounded,
               label: 'Recent',
             ),
+            _buildBottomTab(
+              tab: _BottomTab.settings,
+              icon: Icons.tune_rounded,
+              label: 'Settings',
+            ),
           ],
         ),
       ),
@@ -3465,7 +3739,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               // 摄像头标记层（定位完成后才显示）
               if (_locationResolved)
                 MarkerLayer(
-                  markers: _cameras.asMap().entries.map((entry) {
+                  markers: _cameras
+                      .asMap()
+                      .entries
+                      .where((entry) => _shouldShowCameraMarker(entry.value))
+                      .map((entry) {
                     final idx = entry.key;
                     final cam = entry.value;
                     final isUnavoidable = _unavoidableCameraIndices.contains(
@@ -3643,7 +3921,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ? _buildSavedPanel()
                 : (_activeTab == _BottomTab.recent
                       ? _buildRecentPanel()
-                      : (_navMode ? _buildNavPanel() : _buildSearchBar())),
+                  : (_activeTab == _BottomTab.settings
+                    ? _buildSettingsPanel()
+                    : (_navMode
+                      ? _buildNavPanel()
+                      : _buildSearchBar()))),
           ),
 
           // 加载指示器
@@ -3684,7 +3966,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     Text(_error!, textAlign: TextAlign.center),
                     const SizedBox(height: 10),
                     FilledButton(
-                      onPressed: _loadCameras,
+                      onPressed: () => _loadCameras(),
                       style: FilledButton.styleFrom(backgroundColor: _primary),
                       child: const Text('重试'),
                     ),
@@ -3706,7 +3988,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   vertical: 8,
                 ),
                 child: Text(
-                  '摄像头 ${_cameras.length} · 标记点 ${_wayPoints.length} · $_updatedAt',
+                  '摄像头 ${_visibleCameraCount()}/${_cameras.length} · 标记点 ${_wayPoints.length} · $_updatedAt',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -3746,12 +4028,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               backgroundColor: _primaryContainer,
               foregroundColor: _primary,
               elevation: 2,
-              onPressed: () {
+              onPressed: () async {
                 if (_userPosition != null) {
-                  _mapController.move(_userPosition!, 14);
-                } else {
-                  _locateUser();
+                  _mapController.move(_userPosition!, 15);
                 }
+                await _locateUser(forceRefresh: true);
               },
               child: const Icon(Icons.my_location_rounded),
             ),

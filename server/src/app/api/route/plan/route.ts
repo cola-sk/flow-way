@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body: RouteRequest = await request.json();
-    const { start, end, avoidCameras } = body;
+    const { start, end, avoidCameras, ignoreOutsideSixthRing } = body;
 
     // 验证输入
     if (!start || !end || typeof start.lat !== 'number' || typeof start.lng !== 'number') {
@@ -27,24 +27,24 @@ export async function POST(request: NextRequest) {
 
     // 获取摄像头数据，过滤掉用户标记废弃的（Redis 持久化，60s 内存缓存）
     const { cameras: originalCameras } = await getCameras();
-    let cameras = originalCameras;
     const dismissedSet = await getDismissedSet();
+    const shouldIgnoreOutsideSixth =
+      avoidCameras && ignoreOutsideSixthRing === true;
+
+    const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
-    
-    if (dismissedSet.size > 0) {
-      cameras = [];
-      let fIdx = 0;
-      for (let i = 0; i < originalCameras.length; i++) {
-        const cam = originalCameras[i];
-        if (!dismissedSet.has(coordKey(cam.lat, cam.lng))) {
-          cameras.push(cam);
-          indexMapping[fIdx++] = i;
-        }
+
+    let filteredIdx = 0;
+    for (let i = 0; i < originalCameras.length; i++) {
+      const cam = originalCameras[i];
+      if (dismissedSet.has(coordKey(cam.lat, cam.lng))) {
+        continue;
       }
-    } else {
-      for (let i = 0; i < originalCameras.length; i++) {
-        indexMapping[i] = i;
+      if (shouldIgnoreOutsideSixth && cam.type === 6) {
+        continue;
       }
+      cameras.push(cam);
+      indexMapping[filteredIdx++] = i;
     }
 
     let polylinePoints;

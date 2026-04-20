@@ -35,24 +35,23 @@ export async function POST(request: NextRequest) {
     }
 
     const { cameras: originalCameras } = await getCameras();
-    let cameras = originalCameras;
     const dismissedSet = await getDismissedSet();
+    const ignoreOutsideSixthRing = reqBody.ignoreOutsideSixthRing === true;
+
+    const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
-    
-    if (dismissedSet.size > 0) {
-      cameras = [];
-      let fIdx = 0;
-      for (let i = 0; i < originalCameras.length; i++) {
-        const cam = originalCameras[i];
-        if (!dismissedSet.has(coordKey(cam.lat, cam.lng))) {
-          cameras.push(cam);
-          indexMapping[fIdx++] = i;
-        }
+
+    let filteredIdx = 0;
+    for (let i = 0; i < originalCameras.length; i++) {
+      const cam = originalCameras[i];
+      if (dismissedSet.has(coordKey(cam.lat, cam.lng))) {
+        continue;
       }
-    } else {
-      for (let i = 0; i < originalCameras.length; i++) {
-        indexMapping[i] = i;
+      if (ignoreOutsideSixthRing && cam.type === 6) {
+        continue;
       }
+      cameras.push(cam);
+      indexMapping[filteredIdx++] = i;
     }
 
     // 调用新版极速避免策略（只需调用一次内部自动循环完成）
