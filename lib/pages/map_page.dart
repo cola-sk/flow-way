@@ -89,6 +89,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   StreamSubscription<Position>? _cruisePositionStream;
   bool _cruiseModeEnabled = false;
 
+  final LayerHitNotifier<NavigationRoute> _routeHitNotifier = ValueNotifier(null);
+
   // 搜索状态
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
@@ -135,6 +137,27 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    _searchFocusNode.addListener(() {
+      if (_searchFocusNode.hasFocus && _searchController.text.trim().isEmpty) {
+        _fetchSuggestions('');
+      } else if (!_searchFocusNode.hasFocus && _searchController.text.trim().isEmpty) {
+        setState(() {
+          _showSuggestions = false;
+        });
+      }
+    });
+
+    _routeHitNotifier.addListener(() {
+      final hitValues = _routeHitNotifier.value?.hitValues ?? [];
+      if (hitValues.isNotEmpty) {
+        final r = hitValues.first;
+        // avoidCameras is inferred roughly from the planner if not stored.
+        // Actually, if it's hit, it was drawn, so we can just show it.
+        _showRouteResult(r, true);
+      }
+    });
+
     _loadUserSettings();
     _loadCameras();
     _loadWayPoints();
@@ -159,6 +182,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (_cruiseModeEnabled) {
       unawaited(WakelockPlus.disable());
     }
+    _routeHitNotifier.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -405,21 +429,38 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _suggestDebounce?.cancel();
     if (keyword.trim().isEmpty) {
       setState(() {
-        _suggestions = [];
-        _showSuggestions = false;
+        _suggestions = _wayPoints
+            .map((wp) => PlaceResult(
+                  name: wp.name,
+                  address: '⭐ 保存的点位',
+                  location: wp.location,
+                ))
+            .toList();
+        _showSuggestions = _suggestions.isNotEmpty;
       });
       return;
     }
     _suggestDebounce = Timer(const Duration(milliseconds: 350), () async {
       if (!mounted) return;
       setState(() => _isSuggesting = true);
+      
+      final localMatches = _wayPoints
+          .where((wp) => wp.name.toLowerCase().contains(keyword.toLowerCase()))
+          .map((wp) => PlaceResult(
+                name: wp.name,
+                address: '⭐ 保存的点位',
+                location: wp.location,
+              ))
+          .toList();
+          
       final results = await _apiService.suggestPlaces(
         keyword,
         nearBy: _userPosition,
       );
+      
       if (mounted) {
         setState(() {
-          _suggestions = results;
+          _suggestions = [...localMatches, ...results];
           _isSuggesting = false;
           _showSuggestions = true;
         });
@@ -3966,11 +4007,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               // 路线图层
               if (_currentRoute != null)
                 PolylineLayer(
+                  hitNotifier: _routeHitNotifier,
                   polylines: [
                     Polyline(
                       points: _currentRoute!.polylinePoints,
                       color: _secondary.withValues(alpha: 0.9),
                       strokeWidth: 4.5,
+                      hitValue: _currentRoute,
                     ),
                   ],
                 ),

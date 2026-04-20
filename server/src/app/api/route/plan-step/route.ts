@@ -1,7 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { RoutePlanStepRequest, RoutePlanStepResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
-import { createRoute, planAvoidCamerasRoute } from '@/lib/route';
+import { createRoute, planAvoidCamerasRouteStep, AvoidRouteStepState } from '@/lib/route';
 import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
 
 export const dynamic = 'force-dynamic';
@@ -54,42 +54,64 @@ export async function POST(request: NextRequest) {
       indexMapping[filteredIdx++] = i;
     }
 
-    // 调用新版极速避免策略（只需调用一次内部自动循环完成）
-    const finalState = await planAvoidCamerasRoute(
+    let bestState: AvoidRouteStepState | undefined;
+    if (reqBody.bestRoute) {
+      // mapping route's global indices to filtered cameras list indices
+      const invertedMapping: Record<number, number> = {};
+      for (const [fIdx, gIdx] of Object.entries(indexMapping)) {
+        invertedMapping[gIdx] = Number(fIdx);
+      }
+      const filteredBestCameraIndices = reqBody.bestRoute.cameraIndicesOnRoute
+        .map((i) => invertedMapping[i])
+        .filter((i) => i !== undefined);
+
+      bestState = {
+        points: reqBody.bestRoute.polylinePoints,
+        cameraIndices: filteredBestCameraIndices,
+        distance: reqBody.bestRoute.distance,
+        duration: reqBody.bestRoute.duration,
+      };
+    }
+
+    const step = await planAvoidCamerasRouteStep(
       start,
       end,
-      cameras
+      cameras,
+      iteration,
+      bestState,
+      reqBody.anchorDistance
     );
 
-    const globalCameraIndices = finalState.cameraIndices.map((i) => indexMapping[i]);
+    const globalCurrentCameraIndices = step.current.cameraIndices.map((i) => indexMapping[i]);
+    const globalBestCameraIndices = step.best.cameraIndices.map((i) => indexMapping[i]);
 
     const currentRoute = createRoute(
       start,
       end,
-      finalState.points,
-      globalCameraIndices,
+      step.current.points,
+      globalCurrentCameraIndices,
       true,
-      finalState.distance,
-      finalState.duration
+      step.current.distance,
+      step.current.duration
     );
 
     const bestRoute = createRoute(
       start,
       end,
-      finalState.points,
-      globalCameraIndices,
+      step.best.points,
+      globalBestCameraIndices,
       true,
-      finalState.distance,
-      finalState.duration
+      step.best.distance,
+      step.best.duration
     );
 
     const response: RoutePlanStepResponse = {
       currentRoute,
       bestRoute,
-      iteration: maxIterations,
+      iteration,
       maxIterations,
-      done: true,
-      anchorDistance: 0,
+      done: step.done,
+      anchorDistance: step.anchorDistance,
     };
 
     return NextResponse.json(response);
