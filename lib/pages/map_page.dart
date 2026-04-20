@@ -88,7 +88,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   LatLng? _userPosition;
   StreamSubscription<Position>? _cruisePositionStream;
   bool _cruiseModeEnabled = false;
+  List<LatLng> _cruisePath = [];
 
+  DateTime? _lastRouteHitTime;
   final LayerHitNotifier<NavigationRoute> _routeHitNotifier = ValueNotifier(null);
 
   // 搜索状态
@@ -151,6 +153,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _routeHitNotifier.addListener(() {
       final hitValues = _routeHitNotifier.value?.hitValues ?? [];
       if (hitValues.isNotEmpty) {
+        _lastRouteHitTime = DateTime.now();
         final r = hitValues.first;
         // avoidCameras is inferred roughly from the planner if not stored.
         // Actually, if it's hit, it was drawn, so we can just show it.
@@ -232,6 +235,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         setState(() {
           _userPosition = pos;
           _locationResolved = true;
+          // 将走过的路标记为路线
+          if (_cruiseModeEnabled) {
+            _cruisePath.add(pos);
+          }
         });
 
         if (_activeTab == _BottomTab.explore && !_navMode) {
@@ -248,7 +255,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     await WakelockPlus.enable();
     if (!mounted) return;
-    setState(() => _cruiseModeEnabled = true);
+    setState(() {
+      _cruiseModeEnabled = true;
+      _cruisePath.clear(); // 开启时清空一次，防止残留
+      if (_userPosition != null) {
+        _cruisePath.add(_userPosition!);
+      }
+    });
     _showToast('巡航模式已开启');
   }
 
@@ -258,7 +271,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     await WakelockPlus.disable();
     if (!mounted) return;
     if (_cruiseModeEnabled) {
-      setState(() => _cruiseModeEnabled = false);
+      setState(() {
+        _cruiseModeEnabled = false;
+        _cruisePath.clear(); // 清除历史路线记录
+      });
     }
     if (!silent) {
       _showToast('巡航模式已关闭');
@@ -1866,6 +1882,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _stopPlanningRequested = false;
       _planningIteration = 0;
       _planningStatus = avoidCameras ? '准备路线规划...' : null;
+      _cruisePath.clear(); // 当开启下一个导航或者规划时，清除历史路线记录
     });
 
     try {
@@ -3989,7 +4006,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               minZoom: 5,
               maxZoom: 18,
               onTap: (tapPosition, point) {
-                _showMapPointActions(point);
+                Future.delayed(const Duration(milliseconds: 150), () {
+                  if (!mounted) return;
+                  if (_lastRouteHitTime != null && 
+                      DateTime.now().difference(_lastRouteHitTime!).inMilliseconds.abs() < 500) {
+                    // Ignore map tap if a route tap occurred around the same time
+                    return;
+                  }
+                  _showMapPointActions(point);
+                });
               },
               onLongPress: (tapPosition, point) {
                 _showMapPointActions(point);
@@ -4014,6 +4039,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       color: _secondary.withValues(alpha: 0.9),
                       strokeWidth: 4.5,
                       hitValue: _currentRoute,
+                    ),
+                  ],
+                ),
+              // 巡航轨迹图层
+              if (_cruisePath.length >= 2)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _cruisePath,
+                      color: Colors.blueAccent.withValues(alpha: 0.8),
+                      strokeWidth: 5.0,
                     ),
                   ],
                 ),
