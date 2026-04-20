@@ -31,20 +31,20 @@ run_test() {
     echo -e "${BLUE}[$(date '+%H:%M:%S')]${NC} Running: ${test_name}..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
-    local start_time=$(date +%s%N)
+    local start_time=$(date +%s)
     
-    if npx ts-node "$test_file"; then
-        local end_time=$(date +%s%N)
-        local duration=$(( (end_time - start_time) / 1000000 ))
+    if npx tsx "$test_file"; then
+        local end_time=$(date +%s)
+        local duration=$(( (end_time - start_time) ))
         echo ""
-        echo -e "${GREEN}✅ ${test_name} PASSED${NC} (${duration}ms)"
+        echo -e "${GREEN}✅ ${test_name} PASSED${NC} (${duration}s)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
         TOTAL_TIME=$((TOTAL_TIME + duration))
     else
-        local end_time=$(date +%s%N)
-        local duration=$(( (end_time - start_time) / 1000000 ))
+        local end_time=$(date +%s)
+        local duration=$(( (end_time - start_time) ))
         echo ""
-        echo -e "${RED}❌ ${test_name} FAILED${NC} (${duration}ms)"
+        echo -e "${RED}❌ ${test_name} FAILED${NC} (${duration}s)"
         TESTS_FAILED=$((TESTS_FAILED + 1))
         TOTAL_TIME=$((TOTAL_TIME + duration))
     fi
@@ -91,7 +91,7 @@ if [ $TESTS_FAILED -eq 0 ]; then
     echo -e "   Total Tests: ${TOTAL_TESTS}"
     echo -e "   Passed: ${TESTS_PASSED}"
     echo -e "   Failed: ${TESTS_FAILED}"
-    echo -e "   Total Time: ${TOTAL_TIME}ms"
+    echo -e "   Total Time: ${TOTAL_TIME}s"
     echo ""
     exit 0
 else
@@ -99,7 +99,7 @@ else
     echo -e "   Total Tests: ${TOTAL_TESTS}"
     echo -e "   Passed: ${TESTS_PASSED}"
     echo -e "   Failed: ${TESTS_FAILED}"
-    echo -e "   Total Time: ${TOTAL_TIME}ms"
+    echo -e "   Total Time: ${TOTAL_TIME}s"
     echo ""
     exit 1
 fi

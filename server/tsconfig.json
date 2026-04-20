@@ -37,7 +37,12 @@
   ],
   "exclude": [
     "node_modules",
-    "scripts",
-    "*.ts"
-  ]
+    "scripts"
+  ],
+  "ts-node": {
+    "esm": true,
+    "experimentalEsm": true,
+    "resolveJsonModule": true,
+    "moduleResolution": "bundler"
+  }
 }

@@ -8,8 +8,8 @@
     "build": "next build",
     "start": "next start",
     "test": "pnpm run test:regression && pnpm run test:route",
-    "test:regression": "npx ts-node test/regression.ts",
-    "test:route": "npx ts-node test/test-route.ts",
+    "test:regression": "npx tsx test/regression.ts",
+    "test:route": "npx tsx test/test-route.ts",
     "test:all": "bash test/run-tests.sh"
   },
   "keywords": [],
@@ -28,6 +28,9 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "@types/uuid": "^11.0.0"
+    "@types/uuid": "^11.0.0",
+    "dotenv": "^17.4.2",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0"
   }
 }
