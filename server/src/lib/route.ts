@@ -7,6 +7,15 @@ import { signTencentUrl, getTencentMapKey } from './tencent-sign';
 
 const MIN_TENCENT_REQUEST_INTERVAL_MS = 500;
 let lastTencentRequestAt = 0;
+const AVOID_ROUTE_MAX_TENCENT_API_CALLS = 48;
+const AVOID_ROUTE_MAX_RATE_LIMIT_RETRIES = 6;
+
+type TencentApiRequestContext = {
+  usedCalls: number;
+  maxCalls: number;
+  rateLimitRetries: number;
+  maxRateLimitRetries: number;
+};
 
 async function waitTencentRequestSlot(): Promise<void> {
   const elapsed = Date.now() - lastTencentRequestAt;
@@ -14,6 +23,25 @@ async function waitTencentRequestSlot(): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, MIN_TENCENT_REQUEST_INTERVAL_MS - elapsed));
   }
   lastTencentRequestAt = Date.now();
+}
+
+function createTencentApiRequestContext(): TencentApiRequestContext {
+  return {
+    usedCalls: 0,
+    maxCalls: AVOID_ROUTE_MAX_TENCENT_API_CALLS,
+    rateLimitRetries: 0,
+    maxRateLimitRetries: AVOID_ROUTE_MAX_RATE_LIMIT_RETRIES,
+  };
+}
+
+function consumeTencentApiQuota(context?: TencentApiRequestContext): void {
+  if (!context) {
+    return;
+  }
+  if (context.usedCalls >= context.maxCalls) {
+    throw new Error(`腾讯地图路线规划达到最大尝试次数(${context.maxCalls})`);
+  }
+  context.usedCalls += 1;
 }
 
 /**
@@ -221,7 +249,8 @@ async function callTencentDrivingAPI(
   end: Coordinate,
   alternatives = false,
   waypoints?: Coordinate[],
-  avoidPolygons?: string[]
+  avoidPolygons?: string[],
+  requestContext?: TencentApiRequestContext
 ): Promise<Array<{ points: RoutePoint[]; distance: number; duration: number }>> {
   if (!getTencentMapKey()) {
     throw new Error('未配置 TENCENT_MAP_KEY 环境变量');
@@ -238,6 +267,7 @@ async function callTencentDrivingAPI(
     baseUrl.searchParams.set('avoid_polygons', avoidPolygons.join('|'));
   }
 
+  consumeTencentApiQuota(requestContext);
   await waitTencentRequestSlot();
   const url = signTencentUrl(baseUrl);
   const res = await fetch(url);
@@ -513,7 +543,8 @@ async function tryGuidedHelperRoute(
   baseAvoidCameraIds: Set<number>,
   currentBest: AvoidRouteEvaluation,
   attempt: number,
-  polygonRadius: number
+  polygonRadius: number,
+  requestContext?: TencentApiRequestContext
 ): Promise<AvoidRouteEvaluation | null> {
   const helper = buildGuidedHelperWaypoint(currentBest, cameras, attempt);
   if (!helper) {
@@ -526,12 +557,46 @@ async function tryGuidedHelperRoute(
 
   let routes: Array<{ points: RoutePoint[]; distance: number; duration: number }> = [];
   try {
-    routes = await callTencentDrivingAPI(start, end, true, [helper.waypoint], avoidPolygons);
+    routes = await callTencentDrivingAPI(
+      start,
+      end,
+      true,
+      [helper.waypoint],
+      avoidPolygons,
+      requestContext
+    );
+    if (requestContext) {
+      requestContext.rateLimitRetries = 0;
+    }
   } catch (err) {
     const msg = String(err);
     if (msg.includes('每秒请求量')) {
+      if (requestContext) {
+        requestContext.rateLimitRetries += 1;
+        if (requestContext.rateLimitRetries > requestContext.maxRateLimitRetries) {
+          console.warn(
+            `[route] guided helper stopped: rate-limit retries exceeded (${requestContext.maxRateLimitRetries})`
+          );
+          return null;
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, 600));
-      routes = await callTencentDrivingAPI(start, end, true, [helper.waypoint], avoidPolygons);
+      try {
+        routes = await callTencentDrivingAPI(
+          start,
+          end,
+          true,
+          [helper.waypoint],
+          avoidPolygons,
+          requestContext
+        );
+        if (requestContext) {
+          requestContext.rateLimitRetries = 0;
+        }
+      } catch (retryErr) {
+        console.warn('[route] guided helper retry failed:', retryErr);
+        return null;
+      }
     } else {
       console.warn('[route] guided helper request failed:', err);
       return null;
@@ -704,8 +769,10 @@ export async function planAvoidCamerasRoute(
   start: Coordinate,
   end: Coordinate,
   cameras: Camera[],
-  splitAssistDepth = 0
+  splitAssistDepth = 0,
+  requestContext?: TencentApiRequestContext
 ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
+  const context = requestContext ?? createTencentApiRequestContext();
   const MAX_ITERATIONS = 24;
   let bestGlobalRoute: AvoidRouteEvaluation | null = null;
   let bestGlobalHits = 999999;
@@ -724,7 +791,15 @@ export async function planAvoidCamerasRoute(
         POLYGON_RADIUS
       );
 
-      const routes = await callTencentDrivingAPI(start, end, true, undefined, avoidPolygons);
+      const routes = await callTencentDrivingAPI(
+        start,
+        end,
+        true,
+        undefined,
+        avoidPolygons,
+        context
+      );
+      context.rateLimitRetries = 0;
       if (routes.length === 0) {
         throw new Error('腾讯地图路线规划失败: 未返回可用路线');
       }
@@ -813,6 +888,13 @@ export async function planAvoidCamerasRoute(
     } catch (err) {
       const message = String(err);
       if (message.includes('每秒请求量')) {
+        context.rateLimitRetries += 1;
+        if (context.rateLimitRetries > context.maxRateLimitRetries) {
+          console.warn(
+            `[route] stop retries on rate-limit: exceeded ${context.maxRateLimitRetries}`
+          );
+          break;
+        }
         await new Promise((resolve) => setTimeout(resolve, 600));
         i--; // 重试
         continue;
@@ -834,7 +916,8 @@ export async function planAvoidCamerasRoute(
         currentAvoidCamIds,
         bestGlobalRoute,
         attempt,
-        POLYGON_RADIUS
+        POLYGON_RADIUS,
+        context
       );
 
       if (!guided) {
@@ -880,8 +963,20 @@ export async function planAvoidCamerasRoute(
       }
 
       try {
-        const firstLeg = await planAvoidCamerasRoute(start, helper, cameras, splitAssistDepth + 1);
-        const secondLeg = await planAvoidCamerasRoute(helper, end, cameras, splitAssistDepth + 1);
+        const firstLeg = await planAvoidCamerasRoute(
+          start,
+          helper,
+          cameras,
+          splitAssistDepth + 1,
+          context
+        );
+        const secondLeg = await planAvoidCamerasRoute(
+          helper,
+          end,
+          cameras,
+          splitAssistDepth + 1,
+          context
+        );
         const merged = mergeSplitLegRoutes(firstLeg, secondLeg);
 
         const canAcceptByDistance =
