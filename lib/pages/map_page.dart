@@ -57,6 +57,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       'settings_hide_inside_fourth_markers';
   static const String _settingsHideInsideFifthMarkersKey =
       'settings_hide_inside_fifth_markers';
+    static const String _settingsAllowBackgroundOperationsKey =
+      'settings_allow_background_operations';
   static const double _fourthRingRadiusMeters = 10000;
   static const double _fifthRingRadiusMeters = 15000;
 
@@ -132,6 +134,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool _hideOutsideSixthMarkers = true;
   bool _hideInsideFourthMarkers = true;
   bool _hideInsideFifthMarkers = false;
+  bool _allowBackgroundOperations = true;
   bool _updatingCameras = false;
   bool _recrawlingCameras = false;
 
@@ -171,6 +174,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) return;
+
+    if (_allowBackgroundOperations) {
+      return;
+    }
+
     _requestStopPlanning('应用切到后台，正在停止...');
     if (_cruiseModeEnabled) {
       unawaited(_stopCruiseMode(silent: true));
@@ -392,6 +400,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             prefs.getBool(_settingsHideInsideFourthMarkersKey) ?? true;
         _hideInsideFifthMarkers =
             prefs.getBool(_settingsHideInsideFifthMarkersKey) ?? false;
+        _allowBackgroundOperations =
+            prefs.getBool(_settingsAllowBackgroundOperationsKey) ?? true;
       });
     } catch (e) {
       print('加载设置失败: $e');
@@ -416,6 +426,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       await prefs.setBool(
         _settingsHideInsideFifthMarkersKey,
         _hideInsideFifthMarkers,
+      );
+      await prefs.setBool(
+        _settingsAllowBackgroundOperationsKey,
+        _allowBackgroundOperations,
       );
     } catch (e) {
       print('保存设置失败: $e');
@@ -3147,6 +3161,23 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    SwitchListTile.adaptive(
+                      value: _allowBackgroundOperations,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '允许后台继续运行',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        '默认开启。开启后，应用切到后台不会自动停止路线规划和巡航。',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      onChanged: (value) {
+                        setState(() => _allowBackgroundOperations = value);
+                        unawaited(_saveUserSettings());
+                      },
+                    ),
+                    const Divider(height: 20),
                     SwitchListTile.adaptive(
                       value: _ignoreOutsideSixthOnAvoid,
                       contentPadding: EdgeInsets.zero,
