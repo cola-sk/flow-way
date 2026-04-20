@@ -6,7 +6,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "pnpm run test:regression && pnpm run test:route",
+    "test:regression": "npx ts-node test/regression.ts",
+    "test:route": "npx ts-node test/test-route.ts",
+    "test:all": "bash test/run-tests.sh"
   },
   "keywords": [],
   "author": "",
