@@ -9,6 +9,7 @@ const MIN_TENCENT_REQUEST_INTERVAL_MS = 500;
 let lastTencentRequestAt = 0;
 const AVOID_ROUTE_MAX_TENCENT_API_CALLS = 80;
 const AVOID_ROUTE_MAX_RATE_LIMIT_RETRIES = 6;
+const ROUTE_PLANNING_ABORTED_ERROR = 'ROUTE_PLANNING_ABORTED';
 
 type TencentApiRequestContext = {
   usedCalls: number;
@@ -17,11 +18,60 @@ type TencentApiRequestContext = {
   maxRateLimitRetries: number;
 };
 
-async function waitTencentRequestSlot(): Promise<void> {
+function createRoutePlanningAbortedError(): Error {
+  const error = new Error(ROUTE_PLANNING_ABORTED_ERROR);
+  error.name = 'AbortError';
+  return error;
+}
+
+export function isRoutePlanningAbortedError(error: unknown): boolean {
+  if (error instanceof Error) {
+    if (error.name === 'AbortError') {
+      return true;
+    }
+    return error.message.includes(ROUTE_PLANNING_ABORTED_ERROR);
+  }
+  return String(error).includes(ROUTE_PLANNING_ABORTED_ERROR);
+}
+
+function throwIfRoutePlanningAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw createRoutePlanningAbortedError();
+  }
+}
+
+async function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (ms <= 0) return;
+
+  if (!signal) {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    return;
+  }
+
+  throwIfRoutePlanningAborted(signal);
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(createRoutePlanningAbortedError());
+    };
+
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+async function waitTencentRequestSlot(signal?: AbortSignal): Promise<void> {
   const elapsed = Date.now() - lastTencentRequestAt;
   if (elapsed < MIN_TENCENT_REQUEST_INTERVAL_MS) {
-    await new Promise((resolve) => setTimeout(resolve, MIN_TENCENT_REQUEST_INTERVAL_MS - elapsed));
+    await delayWithAbort(MIN_TENCENT_REQUEST_INTERVAL_MS - elapsed, signal);
   }
+  throwIfRoutePlanningAborted(signal);
   lastTencentRequestAt = Date.now();
 }
 
@@ -250,11 +300,14 @@ async function callTencentDrivingAPI(
   alternatives = false,
   waypoints?: Coordinate[],
   avoidPolygons?: string[],
-  requestContext?: TencentApiRequestContext
+  requestContext?: TencentApiRequestContext,
+  signal?: AbortSignal
 ): Promise<Array<{ points: RoutePoint[]; distance: number; duration: number }>> {
   if (!getTencentMapKey()) {
     throw new Error('未配置 TENCENT_MAP_KEY 环境变量');
   }
+
+  throwIfRoutePlanningAborted(signal);
 
   const baseUrl = new URL('https://apis.map.qq.com/ws/direction/v1/driving/');
   baseUrl.searchParams.set('from', `${start.lat},${start.lng}`);
@@ -268,9 +321,10 @@ async function callTencentDrivingAPI(
   }
 
   consumeTencentApiQuota(requestContext);
-  await waitTencentRequestSlot();
+  await waitTencentRequestSlot(signal);
+  throwIfRoutePlanningAborted(signal);
   const url = signTencentUrl(baseUrl);
-  const res = await fetch(url);
+  const res = await fetch(url, { signal });
   if (!res.ok) throw new Error(`腾讯地图 HTTP 错误: ${res.status}`);
 
   const data = await res.json();
@@ -544,8 +598,11 @@ async function tryGuidedHelperRoute(
   currentBest: AvoidRouteEvaluation,
   attempt: number,
   polygonRadius: number,
-  requestContext?: TencentApiRequestContext
+  requestContext?: TencentApiRequestContext,
+  signal?: AbortSignal
 ): Promise<AvoidRouteEvaluation | null> {
+  throwIfRoutePlanningAborted(signal);
+
   const helper = buildGuidedHelperWaypoint(currentBest, cameras, attempt);
   if (!helper) {
     return null;
@@ -563,12 +620,17 @@ async function tryGuidedHelperRoute(
       true,
       [helper.waypoint],
       avoidPolygons,
-      requestContext
+      requestContext,
+      signal
     );
     if (requestContext) {
       requestContext.rateLimitRetries = 0;
     }
   } catch (err) {
+    if (isRoutePlanningAbortedError(err)) {
+      throw err;
+    }
+
     const msg = String(err);
     if (msg.includes('每秒请求量')) {
       if (requestContext) {
@@ -580,7 +642,7 @@ async function tryGuidedHelperRoute(
           return null;
         }
       }
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      await delayWithAbort(600, signal);
       try {
         routes = await callTencentDrivingAPI(
           start,
@@ -588,12 +650,16 @@ async function tryGuidedHelperRoute(
           true,
           [helper.waypoint],
           avoidPolygons,
-          requestContext
+          requestContext,
+          signal
         );
         if (requestContext) {
           requestContext.rateLimitRetries = 0;
         }
       } catch (retryErr) {
+        if (isRoutePlanningAbortedError(retryErr)) {
+          throw retryErr;
+        }
         console.warn('[route] guided helper retry failed:', retryErr);
         return null;
       }
@@ -699,14 +765,17 @@ export async function planAvoidCamerasRouteStep(
   cameras: Camera[],
   iteration: number,
   best?: AvoidRouteStepState,
-  anchorDistance?: number
+  anchorDistance?: number,
+  signal?: AbortSignal
 ): Promise<{ current: AvoidRouteStepState; best: AvoidRouteStepState; done: boolean; anchorDistance: number }> {
+  throwIfRoutePlanningAborted(signal);
+
   const waypoints =
     best && best.cameraIndices.length > 0
       ? buildAvoidWaypoints(best, cameras, iteration)
       : undefined;
 
-  const routes = await callTencentDrivingAPI(start, end, true, waypoints); // true for alternatives
+  const routes = await callTencentDrivingAPI(start, end, true, waypoints, undefined, undefined, signal); // true for alternatives
   if (routes.length === 0) {
     throw new Error('腾讯地图路线规划失败: 未返回可用路线');
   }
@@ -743,12 +812,16 @@ export async function planAvoidCamerasRouteStep(
  */
 export async function planRoute(
   start: Coordinate,
-  end: Coordinate
+  end: Coordinate,
+  signal?: AbortSignal
 ): Promise<{ points: RoutePoint[]; distance: number; duration: number }> {
   try {
-    const routes = await callTencentDrivingAPI(start, end);
+    const routes = await callTencentDrivingAPI(start, end, false, undefined, undefined, undefined, signal);
     return routes[0];
   } catch (err) {
+    if (isRoutePlanningAbortedError(err)) {
+      throw err;
+    }
     console.warn('腾讯路线规划失败，回退到直线:', err);
     const points = generateFallbackRoute(start, end);
     const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
@@ -770,8 +843,11 @@ export async function planAvoidCamerasRoute(
   end: Coordinate,
   cameras: Camera[],
   splitAssistDepth = 0,
-  requestContext?: TencentApiRequestContext
+  requestContext?: TencentApiRequestContext,
+  signal?: AbortSignal
 ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
+  throwIfRoutePlanningAborted(signal);
+
   const context = requestContext ?? createTencentApiRequestContext();
   const MAX_ITERATIONS = 24;
   let bestGlobalRoute: AvoidRouteEvaluation | null = null;
@@ -784,6 +860,8 @@ export async function planAvoidCamerasRoute(
   let noImprovementCount = 0;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
+    throwIfRoutePlanningAborted(signal);
+
     try {
       const avoidPolygons = buildAvoidPolygonsByCameraIndices(
         currentAvoidCamIds,
@@ -797,7 +875,8 @@ export async function planAvoidCamerasRoute(
         true,
         undefined,
         avoidPolygons,
-        context
+        context,
+        signal
       );
       context.rateLimitRetries = 0;
       if (routes.length === 0) {
@@ -886,6 +965,10 @@ export async function planAvoidCamerasRoute(
       }
       
     } catch (err) {
+      if (isRoutePlanningAbortedError(err)) {
+        throw err;
+      }
+
       const message = String(err);
       if (message.includes('每秒请求量')) {
         context.rateLimitRetries += 1;
@@ -895,7 +978,7 @@ export async function planAvoidCamerasRoute(
           );
           break;
         }
-        await new Promise((resolve) => setTimeout(resolve, 600));
+        await delayWithAbort(600, signal);
         i--; // 重试
         continue;
       }
@@ -909,6 +992,8 @@ export async function planAvoidCamerasRoute(
     console.log('[route] entering guided helper attempts...');
 
     for (let attempt = 0; attempt < AVOID_ROUTE_GUIDED_HELPER_ATTEMPTS; attempt++) {
+      throwIfRoutePlanningAborted(signal);
+
       const guided = await tryGuidedHelperRoute(
         start,
         end,
@@ -917,7 +1002,8 @@ export async function planAvoidCamerasRoute(
         bestGlobalRoute,
         attempt,
         POLYGON_RADIUS,
-        context
+        context,
+        signal
       );
 
       if (!guided) {
@@ -956,6 +1042,8 @@ export async function planAvoidCamerasRoute(
   ) {
     const helperWaypoints = buildSplitHelperWaypoints(bestGlobalRoute, cameras);
     for (const helper of helperWaypoints) {
+      throwIfRoutePlanningAborted(signal);
+
       const startToHelper = calculateDistance(start.lat, start.lng, helper.lat, helper.lng);
       const helperToEnd = calculateDistance(helper.lat, helper.lng, end.lat, end.lng);
       if (startToHelper < 500 || helperToEnd < 500) {
@@ -968,14 +1056,16 @@ export async function planAvoidCamerasRoute(
           helper,
           cameras,
           splitAssistDepth + 1,
-          context
+          context,
+          signal
         );
         const secondLeg = await planAvoidCamerasRoute(
           helper,
           end,
           cameras,
           splitAssistDepth + 1,
-          context
+          context,
+          signal
         );
         const merged = mergeSplitLegRoutes(firstLeg, secondLeg);
 
@@ -1001,12 +1091,16 @@ export async function planAvoidCamerasRoute(
           break;
         }
       } catch (err) {
+        if (isRoutePlanningAbortedError(err)) {
+          throw err;
+        }
         console.warn('[route] split helper attempt failed:', err);
       }
     }
   }
 
   if (!bestGlobalRoute) {
+    throwIfRoutePlanningAborted(signal);
     const points = generateFallbackRoute(start, end);
     const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
     bestGlobalRoute = {
@@ -1017,6 +1111,7 @@ export async function planAvoidCamerasRoute(
     };
   }
 
+  throwIfRoutePlanningAborted(signal);
   console.log(`[route] final: ${bestGlobalRoute.cameraIndices.length} cameras`);
   return bestGlobalRoute;
 }

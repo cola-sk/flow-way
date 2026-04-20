@@ -1,7 +1,11 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { RoutePlanStepRequest, RoutePlanStepResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
-import { createRoute, planAvoidCamerasRoute } from '@/lib/route';
+import {
+  createRoute,
+  planAvoidCamerasRoute,
+  isRoutePlanningAbortedError,
+} from '@/lib/route';
 import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +62,10 @@ export async function POST(request: NextRequest) {
     const finalState = await planAvoidCamerasRoute(
       start,
       end,
-      cameras
+      cameras,
+      0,
+      undefined,
+      request.signal
     );
 
     const globalCameraIndices = finalState.cameraIndices.map((i) => indexMapping[i]);
@@ -94,6 +101,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
+    if (request.signal.aborted || isRoutePlanningAbortedError(error)) {
+      const response: RoutePlanStepResponse = {
+        iteration: 0,
+        maxIterations: DEFAULT_MAX_ITERATIONS,
+        done: true,
+        anchorDistance: body?.anchorDistance,
+        errorMessage: '客户端已取消路线规划',
+      };
+      return NextResponse.json(response, { status: 499 });
+    }
+
     console.error('Failed to plan route step:', error);
     const response: RoutePlanStepResponse = {
       iteration: 0,

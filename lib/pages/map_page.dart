@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:ui';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -72,6 +73,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   NavigationRoute? _currentRoute;
   bool _isNavigating = false;
   bool _stopPlanningRequested = false;
+  CancelToken? _planningCancelToken;
   int _planningIteration = 0;
   static const int _planStepMaxIterations = 1000000000;
   static const int _minPlanStepIntervalMs = 500;
@@ -187,6 +189,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _cancelActivePlanningRequest('页面销毁，取消规划请求');
     WidgetsBinding.instance.removeObserver(this);
     _suggestDebounce?.cancel();
     _cruisePositionStream?.cancel();
@@ -955,6 +958,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _stopPlanningRequested = true;
       _planningStatus = status;
     });
+    _cancelActivePlanningRequest(status);
+  }
+
+  void _cancelActivePlanningRequest(String reason) {
+    final token = _planningCancelToken;
+    if (token == null || token.isCancelled) return;
+    token.cancel(reason);
+  }
+
+  bool _isRequestCancelled(Object error) {
+    return error is DioException && error.type == DioExceptionType.cancel;
   }
 
   String _saveNameTimestamp() {
@@ -1776,6 +1790,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     List<LatLng>? userWaypoints,
     int? legIndex,
     int? totalLegs,
+    CancelToken? cancelToken,
   }) async {
     NavigationRoute? bestRoute;
     NavigationRoute? currentRoute;
@@ -1811,6 +1826,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         waypoints: userWaypoints,
         legIndex: legIndex,
         totalLegs: totalLegs,
+        cancelToken: cancelToken,
       );
 
       if (step.errorMessage != null) {
@@ -1885,6 +1901,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   ) async {
     if (orderedStops.length < 2) return;
 
+    _cancelActivePlanningRequest('开始新的路线规划');
+    final planningToken = CancelToken();
+    _planningCancelToken = planningToken;
+
     final userWaypoints = orderedStops.length > 2
         ? orderedStops.sublist(1, orderedStops.length - 1)
         : <LatLng>[];
@@ -1922,6 +1942,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             userWaypoints: userWaypoints,
             legIndex: i + 1,
             totalLegs: totalLegs,
+            cancelToken: planningToken,
           );
           if (legRoute == null) {
             throw Exception('$legLabel 规划失败');
@@ -1933,6 +1954,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             end: end,
             avoidCameras: false,
             ignoreOutsideSixthRing: false,
+            cancelToken: planningToken,
           );
           if (response.route == null) {
             throw Exception(response.errorMessage ?? '$legLabel 规划失败');
@@ -1955,10 +1977,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         }
       }
     } catch (e) {
-      if (mounted) {
+      if (_isRequestCancelled(e)) {
+        if (mounted && _stopPlanningRequested) {
+          _showToast('已停止当前规划');
+        }
+      } else if (mounted) {
         _showToast('路线规划异常: $e');
       }
     } finally {
+      if (identical(_planningCancelToken, planningToken)) {
+        _planningCancelToken = null;
+      }
       if (mounted) {
         setState(() {
           _isNavigating = false;

@@ -6,6 +6,7 @@ import {
   planRoute,
   planAvoidCamerasRoute,
   createRoute,
+  isRoutePlanningAbortedError,
 } from '@/lib/route';
 
 export const dynamic = 'force-dynamic';
@@ -44,13 +45,20 @@ export async function POST(request: NextRequest) {
 
     if (avoidCameras) {
       // 规划避开摄像头的路线（腾讯地图备选路线）
-      const result = await planAvoidCamerasRoute(start, end, cameras as any);
+      const result = await planAvoidCamerasRoute(
+        start,
+        end,
+        cameras as any,
+        0,
+        undefined,
+        request.signal
+      );
       polylinePoints = result.points;
       routeDistance = result.distance;
       routeDuration = result.duration;
     } else {
       // 规划普通路线（腾讯地图真实路网）
-      const result = await planRoute(start, end);
+      const result = await planRoute(start, end, request.signal);
       polylinePoints = result.points;
       routeDistance = result.distance;
       routeDuration = result.duration;
@@ -124,6 +132,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(response);
   } catch (error) {
+    if (request.signal.aborted || isRoutePlanningAbortedError(error)) {
+      return NextResponse.json(
+        { errorMessage: '客户端已取消路线规划' },
+        { status: 499 }
+      );
+    }
+
     console.error('Failed to plan route:', error);
     return NextResponse.json(
       { errorMessage: '路线规划失败: ' + String(error) },

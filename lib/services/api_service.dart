@@ -212,6 +212,7 @@ class ApiService {
     required LatLng end,
     bool avoidCameras = false,
     bool ignoreOutsideSixthRing = false,
+    CancelToken? cancelToken,
   }) async {
     try {
       final response = await _dio.post('/api/route/plan', data: {
@@ -225,9 +226,12 @@ class ApiService {
         },
         'avoidCameras': avoidCameras,
         'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
-      });
+      }, cancelToken: cancelToken);
       return RouteResponse.fromJson(response.data);
     } catch (e) {
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        rethrow;
+      }
       final msg = '路线规划失败: ${_formatError(e)}';
       print(msg);
       return RouteResponse(errorMessage: msg);
@@ -246,6 +250,7 @@ class ApiService {
     List<LatLng>? waypoints,
     int? legIndex,
     int? totalLegs,
+    CancelToken? cancelToken,
   }) async {
     try {
       final response = await _dio.post('/api/route/plan-step', data: {
@@ -275,9 +280,12 @@ class ApiService {
           'duration': bestRoute.duration,
           'cameraIndicesOnRoute': bestRoute.cameraIndicesOnRoute,
         },
-      });
+      }, cancelToken: cancelToken);
       return RouteStepResponse.fromJson(response.data as Map<String, dynamic>);
     } catch (e) {
+      if (e is DioException && e.type == DioExceptionType.cancel) {
+        rethrow;
+      }
       final msg = '路线单步规划失败: ${_formatError(e)}';
       print(msg);
       return RouteStepResponse(

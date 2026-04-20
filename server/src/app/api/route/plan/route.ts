@@ -1,7 +1,13 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { RouteRequest, RouteResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
-import { planRoute, planAvoidCamerasRoute, findCamerasNearRoute, createRoute } from '@/lib/route';
+import {
+  planRoute,
+  planAvoidCamerasRoute,
+  findCamerasNearRoute,
+  createRoute,
+  isRoutePlanningAbortedError,
+} from '@/lib/route';
 import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
 
 export const dynamic = 'force-dynamic';
@@ -55,14 +61,21 @@ export async function POST(request: NextRequest) {
 
     if (avoidCameras) {
       // 规划避开摄像头的路线（腾讯地图备选路线中选摄像头最少的）
-      const result = await planAvoidCamerasRoute(start, end, cameras);
+      const result = await planAvoidCamerasRoute(
+        start,
+        end,
+        cameras,
+        0,
+        undefined,
+        request.signal
+      );
       polylinePoints = result.points;
       cameraIndices = result.cameraIndices.map((i) => indexMapping[i]);
       routeDistance = result.distance;
       routeDuration = result.duration;
     } else {
       // 规划普通路线（腾讯地图真实路网）
-      const result = await planRoute(start, end);
+      const result = await planRoute(start, end, request.signal);
       polylinePoints = result.points;
       const rawIndices = findCamerasNearRoute(polylinePoints, cameras);
       cameraIndices = rawIndices.map((i) => indexMapping[i]);
@@ -84,6 +97,13 @@ export async function POST(request: NextRequest) {
     const response: RouteResponse = { route };
     return NextResponse.json(response);
   } catch (error) {
+    if (request.signal.aborted || isRoutePlanningAbortedError(error)) {
+      return NextResponse.json(
+        { errorMessage: '客户端已取消路线规划' },
+        { status: 499 }
+      );
+    }
+
     console.error('Failed to plan route:', error);
     return NextResponse.json(
       { errorMessage: '路线规划失败: ' + String(error) },
