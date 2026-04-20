@@ -1,14 +1,15 @@
 #!/bin/bash
 
 # Test Runner Script for Flow Way Server
-# This script runs all tests and provides a summary
+# This script automatically discovers and runs all TypeScript test files in the test directory
+# Test files should follow the naming pattern: *.ts (excluding run-tests.sh)
 
 set -e
 
 echo ""
 echo "╔════════════════════════════════════════════════════════╗"
 echo "║       Flow Way Test Suite Runner                       ║"
-echo "║       Testing Camera Avoidance Routing Algorithm       ║"
+echo "║       Auto-discovering Tests                           ║"
 echo "╚════════════════════════════════════════════════════════╝"
 echo ""
 
@@ -17,12 +18,14 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Track test results
 TESTS_PASSED=0
 TESTS_FAILED=0
 TOTAL_TIME=0
+declare -a TEST_FILES
 
 run_test() {
     local test_name=$1
@@ -70,12 +73,46 @@ fi
 echo -e "${GREEN}✅ Prerequisites checked${NC}"
 echo ""
 
-# Run all tests
+# Auto-discover test files in the test directory
+echo -e "${CYAN}[Auto-discovering Test Files]${NC}"
+echo ""
+
+# Find all .ts files in test directory (same directory as this script)
+# Exclude .d.ts declaration files and run-tests.sh itself
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+for test_file in $(find "$SCRIPT_DIR" -maxdepth 1 -name "*.ts" -type f ! -name "*.d.ts" | sort); do
+    # Skip test runner script itself
+    if [[ "$(basename "$test_file")" == "run-tests.sh" ]]; then
+        continue
+    fi
+    
+    # Extract test name from file (remove path and .ts)
+    test_name=$(basename "$test_file" .ts)
+    # Convert snake_case/kebab-case to Title Case
+    test_name=$(echo "$test_name" | sed 's/_/ /g' | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
+    
+    TEST_FILES+=("$test_file|$test_name")
+    echo -e "${CYAN}  📝 Found: ${test_name}${NC}"
+done
+
+echo ""
+
+# Check if any tests were found
+if [ ${#TEST_FILES[@]} -eq 0 ]; then
+    echo -e "${YELLOW}⚠️  No test files found in test directory${NC}"
+    echo ""
+    exit 0
+fi
+
 echo -e "${BLUE}[Running Tests]${NC}"
 echo ""
 
-run_test "Regression Test: Camera Avoidance Algorithm" "test/regression.ts"
-run_test "Integration Test: Dynamic Route Planning" "test/test-route.ts"
+# Run all discovered tests
+for test_entry in "${TEST_FILES[@]}"; do
+    IFS='|' read -r test_file test_name <<< "$test_entry"
+    run_test "$test_name" "$test_file"
+done
 
 # Summary
 echo ""
@@ -86,7 +123,10 @@ echo ""
 
 TOTAL_TESTS=$((TESTS_PASSED + TESTS_FAILED))
 
-if [ $TESTS_FAILED -eq 0 ]; then
+if [ $TOTAL_TESTS -eq 0 ]; then
+    echo -e "${YELLOW}⚠️  No tests were executed${NC}"
+    exit 0
+elif [ $TESTS_FAILED -eq 0 ]; then
     echo -e "${GREEN}✅ All tests passed!${NC}"
     echo -e "   Total Tests: ${TOTAL_TESTS}"
     echo -e "   Passed: ${TESTS_PASSED}"
@@ -103,3 +143,4 @@ else
     echo ""
     exit 1
 fi
+

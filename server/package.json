@@ -7,9 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "pnpm run test:regression && pnpm run test:route",
-    "test:regression": "npx tsx test/regression.ts",
-    "test:route": "npx tsx test/test-route.ts",
+    "test": "bash test/run-tests.sh",
     "test:all": "bash test/run-tests.sh"
   },
   "keywords": [],

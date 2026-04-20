@@ -36,8 +36,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Load .env.local for Redis credentials
 config({ path: resolve(__dirname, '../.env.local') });
 
-import { planAvoidCamerasRoute } from '../src/lib/route.js';
-import { Camera } from '../src/types/camera.js';
+import { planAvoidCamerasRoute } from '../src/lib/route';
+import { Camera } from '../src/types/camera';
 
 /**
  * Fetches cameras within a geographic bounding box via the API.
