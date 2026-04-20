@@ -9,6 +9,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
+import '../utils/coordinate_transform.dart';
 import '../widgets/jinjing_marker.dart';
 import 'save_route_dialog.dart';
 
@@ -37,6 +38,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   StreamSubscription<Position>? _positionStream;
   Position? _currentPosition;
+  LatLng? _currentMapPosition;
   double _currentSpeed = 0.0; // m/s
   double _heading = 0.0;     // degrees
 
@@ -84,19 +86,24 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         distanceFilter: 2, // 2 meters to trigger update
       ),
     ).listen((Position position) {
+      final mapPos = CoordinateTransform.wgs84ToGcj02(
+        position.latitude,
+        position.longitude,
+      );
       if (!mounted) return;
       setState(() {
         _currentPosition = position;
+        _currentMapPosition = mapPos;
         _currentSpeed = position.speed; // m/s
         if (position.speed > 1.0) {
           _heading = position.heading; // degrees
         }
       });
-      _processNavigationLogic(position);
+      _processNavigationLogic(mapPos);
 
       if (_isFollowing) {
         _mapController.moveAndRotate(
-          LatLng(position.latitude, position.longitude),
+          mapPos,
           18.0, // zoom level
           360.0 - _heading, // map rotated inversely to heading for heading-up
         );
@@ -104,10 +111,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     });
   }
 
-  void _processNavigationLogic(Position position) {
+  void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
-
-    final currentLoc = LatLng(position.latitude, position.longitude);
 
     // 1. Off-Route Check (simple projection)
     double minDistanceToRoute = double.infinity;
@@ -221,10 +226,11 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                   // Current Position
                   if (_currentPosition != null)
                     Marker(
-                      point: LatLng(
-                        _currentPosition!.latitude,
-                        _currentPosition!.longitude,
-                      ),
+                      point: _currentMapPosition ??
+                          LatLng(
+                            _currentPosition!.latitude,
+                            _currentPosition!.longitude,
+                          ),
                       width: 40,
                       height: 40,
                       child: Transform.rotate(
@@ -351,9 +357,9 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
             backgroundColor: Colors.blue,
             onPressed: () {
               setState(() => _isFollowing = true);
-              if (_currentPosition != null) {
+              if (_currentMapPosition != null) {
                 _mapController.moveAndRotate(
-                  LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+                  _currentMapPosition!,
                   18.0,
                   360.0 - _heading,
                 );

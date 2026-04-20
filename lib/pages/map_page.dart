@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
+import '../utils/coordinate_transform.dart';
 import '../widgets/jinjing_marker.dart';
 import 'active_navigation_page.dart';
 import 'save_route_dialog.dart';
@@ -124,6 +125,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool _hideInsideFourthMarkers = true;
   bool _hideInsideFifthMarkers = false;
   bool _updatingCameras = false;
+  bool _recrawlingCameras = false;
 
   @override
   void initState() {
@@ -177,7 +179,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       if (!kIsWeb && !forceRefresh) {
         final lastKnown = await Geolocator.getLastKnownPosition();
         if (lastKnown != null && mounted) {
-          final pos = LatLng(lastKnown.latitude, lastKnown.longitude);
+          final pos = CoordinateTransform.wgs84ToGcj02(
+            lastKnown.latitude,
+            lastKnown.longitude,
+          );
           setState(() {
             _userPosition = pos;
             _locationResolved = true;
@@ -198,7 +203,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         locationSettings: locationSettings,
       );
       if (mounted) {
-        final pos = LatLng(position.latitude, position.longitude);
+        final pos = CoordinateTransform.wgs84ToGcj02(
+          position.latitude,
+          position.longitude,
+        );
         setState(() {
           _userPosition = pos;
           _locationResolved = true;
@@ -1447,6 +1455,28 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (mounted) {
       setState(() => _updatingCameras = false);
       _showToast(ok ? '摄像头数据已更新' : '手动更新失败');
+    }
+  }
+
+  Future<void> _recrawlCamerasManually() async {
+    if (_recrawlingCameras) return;
+    setState(() => _recrawlingCameras = true);
+    try {
+      final response = await _apiService.recrawlCameras();
+      if (!mounted) return;
+      setState(() {
+        _cameras = response.cameras;
+        _updatedAt = response.updatedAt;
+      });
+      _showToast('已重新爬取并更新摄像头数据');
+    } catch (e) {
+      if (mounted) {
+        _showToast('重新爬取失败: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _recrawlingCameras = false);
+      }
     }
   }
 
@@ -2962,8 +2992,34 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed:
+                            _recrawlingCameras ? null : _recrawlCamerasManually,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF7A4A00),
+                        ),
+                        icon: _recrawlingCameras
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.travel_explore_rounded, size: 18),
+                        label: Text(
+                          _recrawlingCameras
+                              ? '重新爬取中...'
+                              : '重新爬取并更新摄像头',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Text(
-                      '当前显示: ${_visibleCameraCount()}/${_cameras.length} · 数据时间 $_updatedAt',
+                      '当前显示: ${_visibleCameraCount()}/${_cameras.length} · 最后爬取 $_updatedAt',
                       style: const TextStyle(
                         fontSize: 12,
                         color: _onSurfaceVariant,
@@ -3988,7 +4044,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   vertical: 8,
                 ),
                 child: Text(
-                  '摄像头 ${_visibleCameraCount()}/${_cameras.length} · 标记点 ${_wayPoints.length} · $_updatedAt',
+                  '摄像头 ${_visibleCameraCount()}/${_cameras.length} · 标记点 ${_wayPoints.length} · 最后爬取 $_updatedAt',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
