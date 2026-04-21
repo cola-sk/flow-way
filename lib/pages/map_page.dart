@@ -2523,21 +2523,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.pop(ctx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ActiveNavigationPage( stops: _buildNavStopItems().map((e) => e.place).toList(),
-                            route: route,
-                            apiService: _apiService,
-                            camerasOnRoute: route.cameraIndicesOnRoute
-                                .where((i) => i < _cameras.length)
-                                .map((i) => _cameras[i])
-                                .toList(),
-                          ),
-                        ),
-                      );
+                      await _openActiveNavigation(route);
                     },
                     icon: const Icon(Icons.navigation, size: 18),
                     style: FilledButton.styleFrom(
@@ -2556,6 +2544,31 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           ],
         ),
       ),
+      ),
+    );
+  }
+
+  Future<void> _openActiveNavigation(
+    NavigationRoute route, {
+    List<PlaceResult>? stops,
+  }) async {
+    if (_cruiseModeEnabled) {
+      await _stopCruiseMode(silent: true);
+    }
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (ctx) => ActiveNavigationPage(
+          stops: stops ?? _buildNavStopItems().map((e) => e.place).toList(),
+          route: route,
+          apiService: _apiService,
+          camerasOnRoute: route.cameraIndicesOnRoute
+              .where((i) => i < _cameras.length)
+              .map((i) => _cameras[i])
+              .toList(),
+        ),
       ),
     );
   }
@@ -3200,19 +3213,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                       size: 15,
                                                       color: _primary,
                                                     ),
-                                                    onPressed: () {
-                                                      Navigator.push(
-                                                        context,
-                                                        MaterialPageRoute(
-                                                          builder: (ctx) => ActiveNavigationPage( stops: item.stops.map((s) => PlaceResult(name: s.name, address: '', location: s.location)).toList(),
-                                                            route: item.route,
-                                                            apiService: _apiService,
-                                                            camerasOnRoute: item.route.cameraIndicesOnRoute
-                                                                .where((i) => i < _cameras.length)
-                                                                .map((i) => _cameras[i])
-                                                                .toList(),
-                                                          ),
-                                                        ),
+                                                    onPressed: () async {
+                                                      await _openActiveNavigation(
+                                                        item.route,
+                                                        stops: item.stops
+                                                            .map(
+                                                              (s) => PlaceResult(
+                                                                name: s.name,
+                                                                address: '',
+                                                                location: s.location,
+                                                              ),
+                                                            )
+                                                            .toList(),
                                                       );
                                                     },
                                                   ),
@@ -4134,21 +4146,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         ? _requestStopPlanning
                         : (_navEndPlace != null
                             ? (_currentRoute != null
-                                ? () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (ctx) => ActiveNavigationPage( stops: _buildNavStopItems().map((e) => e.place).toList(),
-                                          route: _currentRoute!,
-                                          apiService: _apiService,
-                                          camerasOnRoute: _currentRoute!.cameraIndicesOnRoute
-                                              .where((i) => i < _cameras.length)
-                                              .map((i) => _cameras[i])
-                                              .toList(),
-                                        ),
-                                      ),
-                                    );
-                                  }
+                                ? () => _openActiveNavigation(_currentRoute!)
                                 : _startNavigation)
                             : null),
                     style: FilledButton.styleFrom(
@@ -4499,6 +4497,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final canShowCruiseButton =
+      (_activeTab == _BottomTab.explore && !_navMode) ||
+      (_navMode && _currentRoute != null && !_isNavigating);
     final isStandaloneTab =
         _activeTab == _BottomTab.saved ||
         _activeTab == _BottomTab.recent ||
@@ -4886,7 +4887,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
             ),
 
-          if (_activeTab == _BottomTab.explore && !_navMode)
+          if (canShowCruiseButton)
             Positioned(
               right: 16,
               bottom: navBarHeight + 60,

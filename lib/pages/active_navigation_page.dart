@@ -45,6 +45,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   bool _isFollowing = true;
   bool _isOffRoute = false;
+  bool _muteVoiceGuidance = false;
 
   // 记录已经播报过的摄像头 ID/名称，避免重复播报
   final Set<String> _alertedCameras = {};
@@ -69,7 +70,21 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   }
 
   Future<void> _speak(String text) async {
+    if (_muteVoiceGuidance) {
+      return;
+    }
     await _flutterTts.speak(text);
+  }
+
+  Future<void> _toggleVoiceMute() async {
+    final next = !_muteVoiceGuidance;
+    if (next) {
+      await _flutterTts.stop();
+    }
+    if (!mounted) return;
+    setState(() {
+      _muteVoiceGuidance = next;
+    });
   }
 
   void _startNavigation() async {
@@ -345,6 +360,62 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   }
 
   Widget _buildBottomPanel() {
+    final Widget trailingControl;
+    if (!_isFollowing) {
+      trailingControl = FloatingActionButton.extended(
+        heroTag: 'recenterNav',
+        backgroundColor: Colors.blue,
+        onPressed: () {
+          setState(() => _isFollowing = true);
+          if (_currentMapPosition != null) {
+            _mapController.moveAndRotate(
+              _currentMapPosition!,
+              18.0,
+              360.0 - _heading,
+            );
+          }
+        },
+        icon: const Icon(Icons.my_location, color: Colors.white),
+        label: const Text('恢复跟随'),
+      );
+    } else {
+      trailingControl = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: 'saveRoute',
+            backgroundColor: Colors.white,
+            onPressed: () {
+              showDialog(
+                context: context,
+                builder: (context) => SaveRouteDialog(
+                  route: widget.route,
+                  apiService: widget.apiService,
+                  stops: widget.stops,
+                ),
+              );
+            },
+            child: const Icon(Icons.bookmark_add_outlined, color: Colors.blue),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.navigation, color: Colors.white),
+                SizedBox(width: 8),
+                Text('导航中', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -354,59 +425,22 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
           onPressed: () => Navigator.of(context).pop(),
           child: const Icon(Icons.close, color: Colors.white),
         ),
-        if (!_isFollowing)
-          FloatingActionButton.extended(
-            heroTag: 'recenterNav',
-            backgroundColor: Colors.blue,
-            onPressed: () {
-              setState(() => _isFollowing = true);
-              if (_currentMapPosition != null) {
-                _mapController.moveAndRotate(
-                  _currentMapPosition!,
-                  18.0,
-                  360.0 - _heading,
-                );
-              }
-            },
-            icon: const Icon(Icons.my_location, color: Colors.white),
-            label: const Text('恢复跟随'),
-          )
-        else
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton(
-                heroTag: 'saveRoute',
-                backgroundColor: Colors.white,
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (context) => SaveRouteDialog(
-                      route: widget.route,
-                      apiService: widget.apiService,
-                      stops: widget.stops,
-                    ),
-                  );
-                },
-                child: const Icon(Icons.bookmark_add_outlined, color: Colors.blue),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FloatingActionButton(
+              heroTag: 'muteVoice',
+              backgroundColor: _muteVoiceGuidance ? const Color(0xFF546E7A) : Colors.white,
+              onPressed: _toggleVoiceMute,
+              child: Icon(
+                _muteVoiceGuidance ? Icons.volume_off_rounded : Icons.volume_up_rounded,
+                color: _muteVoiceGuidance ? Colors.white : Colors.blue,
               ),
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: Colors.blue,
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.navigation, color: Colors.white),
-                    SizedBox(width: 8),
-                    Text('导航中', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 12),
+            trailingControl,
+          ],
+        ),
       ],
     );
   }

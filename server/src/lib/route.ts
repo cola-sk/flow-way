@@ -465,6 +465,30 @@ type AvoidRouteEvaluation = {
   duration: number;
 };
 
+function pickBestRouteFromCandidates(
+  routes: Array<{ points: RoutePoint[]; distance: number; duration: number }>,
+  cameras: Camera[]
+): AvoidRouteEvaluation | null {
+  let best: AvoidRouteEvaluation | null = null;
+
+  for (const r of routes) {
+    const evaluated: AvoidRouteEvaluation = {
+      ...r,
+      cameraIndices: findCamerasNearRoute(r.points, cameras),
+    };
+
+    if (
+      !best ||
+      evaluated.cameraIndices.length < best.cameraIndices.length ||
+      (evaluated.cameraIndices.length === best.cameraIndices.length && evaluated.distance < best.distance)
+    ) {
+      best = evaluated;
+    }
+  }
+
+  return best;
+}
+
 function findNearestRoutePointIndex(points: RoutePoint[], lat: number, lng: number): number {
   let minDistance = Infinity;
   let nearestIdx = 0;
@@ -907,14 +931,11 @@ export async function planAvoidCamerasRoute(
       let newCamIdsThisIter: number[] = [];
       let bestRouteInIter: { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number } | null = null;
 
-      for (const r of routes) {
-        const hitCams = findCamerasNearRoute(r.points, cameras);
-        if (hitCams.length < bestHitsInIter || (hitCams.length === bestHitsInIter && r.distance < bestDistInIter)) {
-            bestHitsInIter = hitCams.length;
-            bestDistInIter = r.distance;
-            newCamIdsThisIter = hitCams;
-            bestRouteInIter = { ...r, cameraIndices: hitCams };
-        }
+      bestRouteInIter = pickBestRouteFromCandidates(routes, cameras);
+      if (bestRouteInIter) {
+        bestHitsInIter = bestRouteInIter.cameraIndices.length;
+        bestDistInIter = bestRouteInIter.distance;
+        newCamIdsThisIter = bestRouteInIter.cameraIndices;
       }
 
       if (!bestRouteInIter) break;
@@ -1115,6 +1136,33 @@ export async function planAvoidCamerasRoute(
         }
         console.warn('[route] split helper attempt failed:', err);
       }
+    }
+  }
+
+  if (!bestGlobalRoute) {
+    throwIfRoutePlanningAborted(signal);
+    console.warn('[route] avoid search exhausted without valid best route, fallback to best normal road route');
+
+    try {
+      const normalRoutes = await callTencentDrivingAPI(
+        start,
+        end,
+        true,
+        undefined,
+        undefined,
+        context,
+        signal
+      );
+      context.rateLimitRetries = 0;
+      const bestNormalRoute = pickBestRouteFromCandidates(normalRoutes, cameras);
+      if (bestNormalRoute) {
+        bestGlobalRoute = bestNormalRoute;
+      }
+    } catch (err) {
+      if (isRoutePlanningAbortedError(err)) {
+        throw err;
+      }
+      console.warn('[route] best normal route fallback failed, using linear fallback:', err);
     }
   }
 
