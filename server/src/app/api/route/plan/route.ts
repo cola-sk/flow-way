@@ -3,12 +3,14 @@ import { RouteRequest, RouteResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
 import {
   planRoute,
-  planAvoidCamerasRoute,
+  planAvoidCamerasRouteByVersion,
   findCamerasNearRoute,
   createRoute,
   isRoutePlanningAbortedError,
+  normalizeAvoidAlgorithmVersion,
 } from '@/lib/route';
 import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +18,16 @@ export async function POST(request: NextRequest) {
   try {
     const body: RouteRequest = await request.json();
     const { start, end, avoidCameras, ignoreOutsideSixthRing } = body;
+    const algorithmVersion = normalizeAvoidAlgorithmVersion(body?.avoidAlgorithmVersion);
+
+    const tokenGuard = await requireActiveUserTokenFromRequest(
+      request,
+      body as unknown as Record<string, unknown>
+    );
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+    const userToken = tokenGuard.userToken!;
 
     // 验证输入
     if (!start || !end || typeof start.lat !== 'number' || typeof start.lng !== 'number') {
@@ -33,7 +45,7 @@ export async function POST(request: NextRequest) {
 
     // 获取摄像头数据，过滤掉用户标记废弃的（Redis 持久化，60s 内存缓存）
     const { cameras: originalCameras } = await getCameras();
-    const dismissedSet = await getDismissedSet();
+    const dismissedSet = await getDismissedSet(userToken);
     const shouldIgnoreOutsideSixth =
       avoidCameras && ignoreOutsideSixthRing === true;
 
@@ -61,10 +73,11 @@ export async function POST(request: NextRequest) {
 
     if (avoidCameras) {
       // 规划避开摄像头的路线（腾讯地图备选路线中选摄像头最少的）
-      const result = await planAvoidCamerasRoute(
+      const result = await planAvoidCamerasRouteByVersion(
         start,
         end,
         cameras,
+        algorithmVersion,
         0,
         undefined,
         request.signal
@@ -91,7 +104,8 @@ export async function POST(request: NextRequest) {
       cameraIndices,
       avoidCameras,
       routeDistance,
-      routeDuration
+      routeDuration,
+      avoidCameras ? algorithmVersion : undefined
     );
 
     const response: RouteResponse = { route };

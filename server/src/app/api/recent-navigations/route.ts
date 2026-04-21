@@ -4,6 +4,7 @@ import {
   NamedCoordinate,
   saveRecentNavigationRecord,
 } from '@/lib/saved-navigation';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +17,14 @@ function isValidPoint(point: NamedCoordinate | undefined): point is NamedCoordin
   );
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const records = await listRecentNavigationRecords();
+    const tokenGuard = await requireActiveUserTokenFromRequest(request);
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+
+    const records = await listRecentNavigationRecords(tokenGuard.userToken!);
     return NextResponse.json({ records });
   } catch (error) {
     console.error('Failed to fetch recent navigations:', error);
@@ -36,11 +42,20 @@ export async function POST(request: NextRequest) {
     const avoidCameras = body?.avoidCameras as boolean | undefined;
     const source = body?.source as string | undefined;
 
+    const tokenGuard = await requireActiveUserTokenFromRequest(
+      request,
+      body as Record<string, unknown>
+    );
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+
     if (!isValidPoint(start) || !isValidPoint(end)) {
       return NextResponse.json({ error: '无效的起终点数据' }, { status: 400 });
     }
 
     const saved = await saveRecentNavigationRecord({
+      userToken: tokenGuard.userToken!,
       name,
       start,
       end,

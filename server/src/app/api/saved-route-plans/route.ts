@@ -4,6 +4,7 @@ import {
   NamedCoordinate,
   saveRoutePlanRecord,
 } from '@/lib/saved-navigation';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,9 +17,14 @@ function isValidPoint(point: NamedCoordinate | undefined): point is NamedCoordin
   );
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const plans = await listRoutePlanRecords();
+    const tokenGuard = await requireActiveUserTokenFromRequest(request);
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+
+    const plans = await listRoutePlanRecords(tokenGuard.userToken!);
     return NextResponse.json({ plans });
   } catch (error) {
     console.error('Failed to fetch saved route plans:', error);
@@ -35,12 +41,21 @@ export async function POST(request: NextRequest) {
     const name = body?.name as string | undefined;
     const avoidCameras = body?.avoidCameras as boolean | undefined;
 
+    const tokenGuard = await requireActiveUserTokenFromRequest(
+      request,
+      body as Record<string, unknown>
+    );
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+
     if (!isValidPoint(start) || !isValidPoint(end)) {
       return NextResponse.json({ error: '无效的起终点数据' }, { status: 400 });
     }
 
     const normalizedWaypoints = waypoints.filter(isValidPoint);
     const saved = await saveRoutePlanRecord({
+      userToken: tokenGuard.userToken!,
       name,
       start,
       end,

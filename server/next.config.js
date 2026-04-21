@@ -13,7 +13,8 @@ const nextConfig = {
           },
           {
             key: 'Access-Control-Allow-Headers',
-            value: 'Content-Type, Authorization, X-Requested-With',
+            value:
+              'Content-Type, Authorization, X-Requested-With, x-user-token, x-admin-secret',
           },
           { key: 'Access-Control-Max-Age', value: '86400' },
         ],

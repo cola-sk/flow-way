@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteRecentNavigationRecord } from '@/lib/saved-navigation';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,8 +9,13 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const tokenGuard = await requireActiveUserTokenFromRequest(request);
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+
     const { id } = await params;
-    const ok = await deleteRecentNavigationRecord(id);
+    const ok = await deleteRecentNavigationRecord(tokenGuard.userToken!, id);
     if (!ok) {
       return NextResponse.json({ error: '记录不存在' }, { status: 404 });
     }

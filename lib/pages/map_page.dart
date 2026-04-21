@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -58,8 +59,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       'settings_hide_inside_fourth_markers';
   static const String _settingsHideInsideFifthMarkersKey =
       'settings_hide_inside_fifth_markers';
-    static const String _settingsAllowBackgroundOperationsKey =
+  static const String _settingsAllowBackgroundOperationsKey =
       'settings_allow_background_operations';
+  static const String _settingsUserTokenKey = ApiService.userTokenPrefsKey;
+  static const String _settingsAvoidAlgorithmVersionKey =
+      ApiService.avoidAlgorithmVersionPrefsKey;
+  static const String _settingsScopedMigrationFlagPrefix =
+      'settings_scoped_migrated::';
   static const double _fourthRingRadiusMeters = 10000;
   static const double _fifthRingRadiusMeters = 15000;
 
@@ -137,6 +143,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool _hideInsideFourthMarkers = true;
   bool _hideInsideFifthMarkers = false;
   bool _allowBackgroundOperations = true;
+  String _userToken = '';
+  String _avoidAlgorithmVersion = ApiService.defaultAvoidAlgorithmVersion;
+  String? _userTokenInputError;
+  bool _savingUserToken = false;
+  bool _tokenAccessDialogVisible = false;
+  bool _loadingTokenProfile = false;
+  String _tokenAccessState = 'unknown';
+  String _tokenAccessReason = '';
+  String _tokenExpireAtText = '--';
+  String _tokenRemainingText = '--';
+  final TextEditingController _userTokenController = TextEditingController();
   bool _updatingCameras = false;
   bool _recrawlingCameras = false;
 
@@ -144,6 +161,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _apiService.onTokenAccessDenied = _handleTokenAccessDenied;
     
     _searchFocusNode.addListener(() {
       if (_searchFocusNode.hasFocus && _searchController.text.trim().isEmpty) {
@@ -190,6 +208,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _cancelActivePlanningRequest('页面销毁，取消规划请求');
+    _apiService.onTokenAccessDenied = null;
     WidgetsBinding.instance.removeObserver(this);
     _suggestDebounce?.cancel();
     _cruisePositionStream?.cancel();
@@ -199,7 +218,138 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _routeHitNotifier.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _userTokenController.dispose();
     super.dispose();
+  }
+
+  void _handleTokenAccessDenied(TokenAccessDeniedError error) {
+    if (!mounted || _tokenAccessDialogVisible) {
+      return;
+    }
+
+    _tokenAccessDialogVisible = true;
+    final isExpired = error.isExpired;
+    final detail = error.message.trim().isEmpty
+        ? (isExpired ? '用户标识有效期已到，请续费。' : '用户标识非法或未开通，请检查后重试。')
+        : error.message;
+    final currentToken = _userTokenController.text.trim().isNotEmpty
+      ? _userTokenController.text.trim()
+      : _userToken;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(isExpired ? '有效期已到' : '用户标识无效'),
+        content: Text(
+          '$detail\n\n你仍可查看地图和摄像头数据，其他功能需续费或更换有效用户标识。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: currentToken));
+              if (mounted) {
+                _showToast('当前 token 已复制');
+              }
+            },
+            child: const Text('复制当前 token'),
+          ),
+          TextButton(
+            onPressed: () async {
+              final contactText = '请协助续费，用户Token: $currentToken';
+              await Clipboard.setData(ClipboardData(text: contactText));
+              if (mounted) {
+                _showToast('续费信息已复制，请联系管理员');
+              }
+            },
+            child: const Text('联系续费'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('知道了'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              if (!mounted) return;
+              _switchTab(_BottomTab.settings);
+            },
+            style: FilledButton.styleFrom(backgroundColor: _primary),
+            child: const Text('去设置'),
+          ),
+        ],
+      ),
+    ).whenComplete(() {
+      _tokenAccessDialogVisible = false;
+    });
+  }
+
+  String _formatDateTimeDisplay(DateTime dt) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+  }
+
+  Future<void> _refreshTokenProfile() async {
+    if (!mounted) return;
+    setState(() {
+      _loadingTokenProfile = true;
+    });
+
+    try {
+      final profile = await _apiService.getCurrentUserTokenProfile();
+      if (!mounted) return;
+
+      if (profile == null) {
+        setState(() {
+          _tokenAccessState = 'unknown';
+          _tokenAccessReason = '未获取到 token 状态';
+          _tokenExpireAtText = '--';
+          _tokenRemainingText = '--';
+          _loadingTokenProfile = false;
+        });
+        return;
+      }
+
+      String expireAtText = '永久';
+      String remainingText = '--';
+
+      if (profile.validity == 'until' && profile.expiresAt != null) {
+        final expireAt = DateTime.tryParse(profile.expiresAt!);
+        if (expireAt != null) {
+          final now = DateTime.now().toUtc();
+          final expireUtc = expireAt.toUtc();
+          final diff = expireUtc.difference(now);
+          final remainingDays = diff.inSeconds <= 0
+              ? 0
+              : (diff.inSeconds / Duration.secondsPerDay).ceil();
+
+          expireAtText = _formatDateTimeDisplay(expireAt.toLocal());
+          remainingText = diff.inSeconds <= 0 ? '已过期' : '$remainingDays 天';
+        } else {
+          expireAtText = profile.expiresAt!;
+          remainingText = '未知';
+        }
+      }
+
+      setState(() {
+        _tokenAccessState = profile.accessState;
+        _tokenAccessReason = profile.accessReason;
+        _tokenExpireAtText = expireAtText;
+        _tokenRemainingText = remainingText;
+        _loadingTokenProfile = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _tokenAccessState = 'unknown';
+        _tokenAccessReason = '获取失败: $e';
+        _tokenExpireAtText = '--';
+        _tokenRemainingText = '--';
+        _loadingTokenProfile = false;
+      });
+    }
   }
 
   Future<void> _startCruiseMode() async {
@@ -392,50 +542,185 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   Future<void> _loadUserSettings() async {
     try {
+      final userToken = await _apiService.ensureUserToken();
       final prefs = await SharedPreferences.getInstance();
+      await _migrateLegacyScopedSettingsIfNeeded(prefs, userToken);
+
+      final avoidAlgorithmVersion = _normalizeAvoidAlgorithmVersion(
+        prefs.getString(_scopedSettingsKey(_settingsAvoidAlgorithmVersionKey, userToken)) ??
+            prefs.getString(_settingsAvoidAlgorithmVersionKey),
+      );
+
       if (!mounted) return;
+      _userTokenController.text = userToken;
       setState(() {
+        _userToken = userToken;
+        _userTokenInputError = null;
         _ignoreOutsideSixthOnAvoid =
-            prefs.getBool(_settingsIgnoreOutsideSixthOnAvoidKey) ?? true;
+            prefs.getBool(_scopedSettingsKey(_settingsIgnoreOutsideSixthOnAvoidKey, userToken)) ?? true;
         _hideOutsideSixthMarkers =
-            prefs.getBool(_settingsHideOutsideSixthMarkersKey) ?? true;
+            prefs.getBool(_scopedSettingsKey(_settingsHideOutsideSixthMarkersKey, userToken)) ?? true;
         _hideInsideFourthMarkers =
-            prefs.getBool(_settingsHideInsideFourthMarkersKey) ?? true;
+            prefs.getBool(_scopedSettingsKey(_settingsHideInsideFourthMarkersKey, userToken)) ?? true;
         _hideInsideFifthMarkers =
-            prefs.getBool(_settingsHideInsideFifthMarkersKey) ?? false;
+            prefs.getBool(_scopedSettingsKey(_settingsHideInsideFifthMarkersKey, userToken)) ?? false;
         _allowBackgroundOperations =
-            prefs.getBool(_settingsAllowBackgroundOperationsKey) ?? true;
+            prefs.getBool(_scopedSettingsKey(_settingsAllowBackgroundOperationsKey, userToken)) ?? true;
+        _avoidAlgorithmVersion = avoidAlgorithmVersion;
       });
+      await _refreshTokenProfile();
     } catch (e) {
       print('加载设置失败: $e');
     }
   }
 
+  String _scopedSettingsKey(String baseKey, [String? userToken]) {
+    final token = (userToken ?? _userToken).trim();
+    if (token.isEmpty) {
+      return baseKey;
+    }
+    return '$baseKey::$token';
+  }
+
+  bool _isValidUserToken(String value) {
+    return ApiService.isValidUserToken(value);
+  }
+
+  String _normalizeAvoidAlgorithmVersion(String? value) {
+    return ApiService.normalizeAvoidAlgorithmVersion(value);
+  }
+
+  Future<void> _migrateLegacyScopedSettingsIfNeeded(
+    SharedPreferences prefs,
+    String userToken,
+  ) async {
+    final migrationFlag = '$_settingsScopedMigrationFlagPrefix$userToken';
+    if (prefs.getBool(migrationFlag) == true) {
+      return;
+    }
+
+    Future<void> migrateBool(String baseKey) async {
+      final scopedKey = _scopedSettingsKey(baseKey, userToken);
+      if (!prefs.containsKey(scopedKey) && prefs.containsKey(baseKey)) {
+        final legacy = prefs.getBool(baseKey);
+        if (legacy != null) {
+          await prefs.setBool(scopedKey, legacy);
+        }
+      }
+    }
+
+    await migrateBool(_settingsIgnoreOutsideSixthOnAvoidKey);
+    await migrateBool(_settingsHideOutsideSixthMarkersKey);
+    await migrateBool(_settingsHideInsideFourthMarkersKey);
+    await migrateBool(_settingsHideInsideFifthMarkersKey);
+    await migrateBool(_settingsAllowBackgroundOperationsKey);
+
+    final scopedAvoidAlgorithmKey =
+        _scopedSettingsKey(_settingsAvoidAlgorithmVersionKey, userToken);
+    if (!prefs.containsKey(scopedAvoidAlgorithmKey) &&
+        prefs.containsKey(_settingsAvoidAlgorithmVersionKey)) {
+      final legacy = prefs.getString(_settingsAvoidAlgorithmVersionKey);
+      if (legacy != null) {
+        await prefs.setString(
+          scopedAvoidAlgorithmKey,
+          _normalizeAvoidAlgorithmVersion(legacy),
+        );
+      }
+    }
+
+    await prefs.setBool(migrationFlag, true);
+  }
+
   Future<void> _saveUserSettings() async {
     try {
+      if (_userToken.trim().isEmpty || !_isValidUserToken(_userToken)) {
+        return;
+      }
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(
-        _settingsIgnoreOutsideSixthOnAvoidKey,
+        _scopedSettingsKey(_settingsIgnoreOutsideSixthOnAvoidKey),
         _ignoreOutsideSixthOnAvoid,
       );
       await prefs.setBool(
-        _settingsHideOutsideSixthMarkersKey,
+        _scopedSettingsKey(_settingsHideOutsideSixthMarkersKey),
         _hideOutsideSixthMarkers,
       );
       await prefs.setBool(
-        _settingsHideInsideFourthMarkersKey,
+        _scopedSettingsKey(_settingsHideInsideFourthMarkersKey),
         _hideInsideFourthMarkers,
       );
       await prefs.setBool(
-        _settingsHideInsideFifthMarkersKey,
+        _scopedSettingsKey(_settingsHideInsideFifthMarkersKey),
         _hideInsideFifthMarkers,
       );
       await prefs.setBool(
-        _settingsAllowBackgroundOperationsKey,
+        _scopedSettingsKey(_settingsAllowBackgroundOperationsKey),
         _allowBackgroundOperations,
+      );
+      await prefs.setString(
+        _scopedSettingsKey(_settingsAvoidAlgorithmVersionKey),
+        _normalizeAvoidAlgorithmVersion(_avoidAlgorithmVersion),
+      );
+
+      await _apiService.setAvoidAlgorithmVersion(
+        _avoidAlgorithmVersion,
+        userToken: _userToken,
       );
     } catch (e) {
       print('保存设置失败: $e');
+    }
+  }
+
+  Future<void> _saveUserTokenFromInput() async {
+    final candidate = _userTokenController.text.trim();
+    if (!_isValidUserToken(candidate)) {
+      setState(() {
+        _userTokenInputError = '用户标识需为16位字母、数字或下划线';
+      });
+      return;
+    }
+
+    if (candidate == _userToken) {
+      setState(() {
+        _userTokenInputError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _savingUserToken = true;
+      _userTokenInputError = null;
+    });
+
+    try {
+      await _apiService.setUserToken(candidate);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_settingsUserTokenKey, candidate);
+
+      if (!mounted) return;
+      setState(() {
+        _userToken = candidate;
+      });
+
+      await _loadUserSettings();
+      await _loadDismissedCameras();
+      await _loadSavedData(silent: true);
+      await _loadRecentData(silent: true);
+      await _refreshTokenProfile();
+      _showToast('已切换到新用户配置');
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _userTokenInputError = '保存用户标识失败: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _savingUserToken = false;
+        });
+      }
     }
   }
 
@@ -1821,6 +2106,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         iteration: i,
         maxIterations: _planStepMaxIterations,
         ignoreOutsideSixthRing: _ignoreOutsideSixthOnAvoid,
+        avoidAlgorithmVersion: _avoidAlgorithmVersion,
         bestRoute: bestRoute,
         anchorDistance: anchorDistance,
         waypoints: userWaypoints,
@@ -1954,6 +2240,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             end: end,
             avoidCameras: false,
             ignoreOutsideSixthRing: false,
+            avoidAlgorithmVersion: _avoidAlgorithmVersion,
             cancelToken: planningToken,
           );
           if (response.route == null) {
@@ -3190,6 +3477,137 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    const Text(
+                      '用户标识（16位）',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _userTokenController,
+                      maxLength: 16,
+                      decoration: InputDecoration(
+                        hintText: '请输入16位字母、数字或下划线',
+                        counterText: '',
+                        errorText: _userTokenInputError,
+                        suffixIcon: _savingUserToken
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              )
+                            : null,
+                      ),
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _saveUserTokenFromInput(),
+                    ),
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _savingUserToken ? null : _saveUserTokenFromInput,
+                        icon: const Icon(Icons.verified_user_outlined, size: 18),
+                        label: const Text('保存并切换用户配置'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _surface.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _surfaceVariant.withValues(alpha: 0.9)),
+                      ),
+                      child: _loadingTokenProfile
+                          ? const SizedBox(
+                              height: 20,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '当前状态: ${_tokenAccessState == 'active' ? '有效' : (_tokenAccessState == 'expired' ? '已过期' : (_tokenAccessState == 'invalid' ? '无效' : '未知'))}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: _onSurface,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '到期时间: $_tokenExpireAtText',
+                                  style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '剩余天数: $_tokenRemainingText',
+                                  style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
+                                ),
+                                if (_tokenAccessReason.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '说明: $_tokenAccessReason',
+                                    style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
+                                  ),
+                                ],
+                              ],
+                            ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      '避让算法版本',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment<String>(
+                          value: ApiService.avoidAlgorithmVersionV1,
+                          label: Text('v1.0'),
+                        ),
+                        ButtonSegment<String>(
+                          value: ApiService.avoidAlgorithmVersionV1Beta1,
+                          label: Text('v1.0-beta.1'),
+                        ),
+                      ],
+                      selected: {_avoidAlgorithmVersion},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (values) {
+                        if (values.isEmpty) return;
+                        setState(() {
+                          _avoidAlgorithmVersion =
+                              _normalizeAvoidAlgorithmVersion(values.first);
+                        });
+                        unawaited(_saveUserSettings());
+                      },
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _avoidAlgorithmVersion == ApiService.avoidAlgorithmVersionV1
+                          ? 'v1.0：稳定基线版本'
+                          : 'v1.0-beta.1：当前实验版本',
+                      style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
+                    ),
+                    const Divider(height: 20),
                     SwitchListTile.adaptive(
                       value: _allowBackgroundOperations,
                       contentPadding: EdgeInsets.zero,

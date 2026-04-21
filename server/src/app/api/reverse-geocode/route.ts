@@ -1,9 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 import { signTencentUrl } from '@/lib/tencent-sign';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  const tokenGuard = await requireActiveUserTokenFromRequest(request);
+  if (!tokenGuard.ok) {
+    return tokenGuard.response!;
+  }
+
   const { searchParams } = new URL(request.url);
   const lat = Number(searchParams.get('lat'));
   const lng = Number(searchParams.get('lng'));

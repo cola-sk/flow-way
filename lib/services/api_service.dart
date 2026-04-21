@@ -10,7 +10,8 @@ import 'package:latlong2/latlong.dart';
 
 const String _cameraCacheKey = 'camera_response_v1';
 const int _cameraCacheTtlMs = 24 * 60 * 60 * 1000;
-const String _localRoutePlansKey = 'local_route_plans_v1';
+const String _legacyLocalRoutePlansKey = 'local_route_plans_v1';
+const String _localRoutePlansKeyPrefix = 'local_route_plans_v1::';
 
 String _resolveBaseUrl() {
   if (kIsWeb) {
@@ -36,15 +37,284 @@ String _formatError(Object e) {
   return e.toString();
 }
 
+class TokenAccessDeniedError {
+  final String code;
+  final String message;
+  final String? expiresAt;
+
+  const TokenAccessDeniedError({
+    required this.code,
+    required this.message,
+    this.expiresAt,
+  });
+
+  bool get isExpired => code == 'TOKEN_EXPIRED';
+}
+
+class UserTokenProfile {
+  final String token;
+  final String accessState;
+  final String accessReason;
+  final String? validity;
+  final String? expiresAt;
+
+  const UserTokenProfile({
+    required this.token,
+    required this.accessState,
+    required this.accessReason,
+    this.validity,
+    this.expiresAt,
+  });
+
+  bool get isExpired => accessState == 'expired';
+  bool get isActive => accessState == 'active';
+}
+
 class ApiService {
+  static const String userTokenPrefsKey = 'settings_user_token';
+  static const String avoidAlgorithmVersionPrefsKey =
+      'settings_avoid_algorithm_version';
+
+  static const String avoidAlgorithmVersionV1 = 'v1.0';
+  static const String avoidAlgorithmVersionV1Beta1 = 'v1.0-beta.1';
+  static const String defaultAvoidAlgorithmVersion = avoidAlgorithmVersionV1Beta1;
+  static const String firstLaunchDefaultUserToken = 'test_token_v2026';
+
+  static final RegExp _userTokenPattern = RegExp(r'^[A-Za-z0-9_]{16}$');
+
   final Dio _dio;
+  void Function(TokenAccessDeniedError error)? onTokenAccessDenied;
+  String? _cachedUserToken;
+  Future<String>? _resolvingUserToken;
+  final Map<String, String> _cachedAvoidAlgorithmByUser = {};
 
   ApiService()
       : _dio = Dio(BaseOptions(
           baseUrl: _resolveBaseUrl(),
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 60),
-        ));
+        )) {
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          if (_isUserScopedRequest(options)) {
+            final token = await ensureUserToken();
+            options.headers['x-user-token'] = token;
+          }
+          handler.next(options);
+        },
+        onError: (error, handler) {
+          final denied = _extractTokenAccessDenied(error);
+          if (denied != null) {
+            onTokenAccessDenied?.call(denied);
+          }
+          handler.next(error);
+        },
+      ),
+    );
+  }
+
+  bool _isUserScopedRequest(RequestOptions options) {
+    final path = options.path;
+    final method = options.method.toUpperCase();
+
+    if (path == '/api/cameras') {
+      return method != 'GET';
+    }
+
+    return path.startsWith('/api/route/plan') ||
+        path.startsWith('/api/route/plan-step') ||
+        path.startsWith('/api/route/plan-simple') ||
+        path.startsWith('/api/route/plan-advanced') ||
+      path.startsWith('/api/user-profile') ||
+        path.startsWith('/api/waypoints') ||
+        path.startsWith('/api/saved-routes') ||
+        path.startsWith('/api/saved-route-plans') ||
+        path.startsWith('/api/recent-navigations') ||
+        path.startsWith('/api/dismissed-cameras') ||
+        path.startsWith('/api/search') ||
+        path.startsWith('/api/suggest') ||
+        path.startsWith('/api/reverse-geocode');
+  }
+
+  TokenAccessDeniedError? _extractTokenAccessDenied(DioException error) {
+    final data = error.response?.data;
+    if (data is! Map) {
+      return null;
+    }
+
+    final code = data['errorCode'];
+    if (code != 'TOKEN_INVALID' && code != 'TOKEN_EXPIRED') {
+      return null;
+    }
+
+    final message = data['errorMessage'];
+    return TokenAccessDeniedError(
+      code: code as String,
+      message: message is String ? message : '用户标识无效或已过期',
+      expiresAt: data['expiresAt'] as String?,
+    );
+  }
+
+  static bool isValidUserToken(String value) {
+    return _userTokenPattern.hasMatch(value.trim());
+  }
+
+  static String normalizeAvoidAlgorithmVersion(String? value) {
+    if (value == avoidAlgorithmVersionV1) {
+      return avoidAlgorithmVersionV1;
+    }
+    if (value == avoidAlgorithmVersionV1Beta1) {
+      return avoidAlgorithmVersionV1Beta1;
+    }
+    return defaultAvoidAlgorithmVersion;
+  }
+
+  String _scopedPrefsKey(String baseKey, String userToken) {
+    return '$baseKey::$userToken';
+  }
+
+  String _localRoutePlansKeyFor(String userToken) {
+    return '$_localRoutePlansKeyPrefix$userToken';
+  }
+
+  String _generateUserToken() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    final random = Random();
+    return List.generate(16, (_) => chars[random.nextInt(chars.length)]).join();
+  }
+
+  Future<String> ensureUserToken({bool forceRefresh = false}) async {
+    if (forceRefresh) {
+      _cachedUserToken = null;
+      _resolvingUserToken = null;
+    }
+
+    final cached = _cachedUserToken;
+    if (cached != null && isValidUserToken(cached)) {
+      return cached;
+    }
+
+    final inflight = _resolvingUserToken;
+    if (inflight != null) {
+      return inflight;
+    }
+
+    _resolvingUserToken = () async {
+      final prefs = await SharedPreferences.getInstance();
+      final local = prefs.getString(userTokenPrefsKey);
+      if (local != null && isValidUserToken(local)) {
+        _cachedUserToken = local;
+        return local;
+      }
+
+      // First launch without local token should use the configured bootstrap token.
+      final token = firstLaunchDefaultUserToken;
+
+      await prefs.setString(userTokenPrefsKey, token);
+      _cachedUserToken = token;
+      return token;
+    }();
+
+    try {
+      return await _resolvingUserToken!;
+    } finally {
+      _resolvingUserToken = null;
+    }
+  }
+
+  Future<void> setUserToken(String userToken) async {
+    final token = userToken.trim();
+    if (!isValidUserToken(token)) {
+      throw ArgumentError('用户标识必须是16位字母、数字或下划线');
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(userTokenPrefsKey, token);
+    _cachedUserToken = token;
+  }
+
+  Future<void> _migrateLegacyLocalRoutePlansIfNeeded(String userToken) async {
+    final prefs = await SharedPreferences.getInstance();
+    final scopedKey = _localRoutePlansKeyFor(userToken);
+    if (prefs.containsKey(scopedKey)) {
+      return;
+    }
+
+    final legacy = prefs.getString(_legacyLocalRoutePlansKey);
+    if (legacy != null && legacy.isNotEmpty) {
+      await prefs.setString(scopedKey, legacy);
+    }
+  }
+
+  Future<String> _activeLocalRoutePlansKey() async {
+    final userToken = await ensureUserToken();
+    await _migrateLegacyLocalRoutePlansIfNeeded(userToken);
+    return _localRoutePlansKeyFor(userToken);
+  }
+
+  Future<String> getAvoidAlgorithmVersion({String? userToken}) async {
+    final token = userToken ?? await ensureUserToken();
+    final cached = _cachedAvoidAlgorithmByUser[token];
+    if (cached != null) {
+      return cached;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final scopedKey = _scopedPrefsKey(avoidAlgorithmVersionPrefsKey, token);
+    final resolved = normalizeAvoidAlgorithmVersion(
+      prefs.getString(scopedKey) ?? prefs.getString(avoidAlgorithmVersionPrefsKey),
+    );
+    _cachedAvoidAlgorithmByUser[token] = resolved;
+    return resolved;
+  }
+
+  Future<void> setAvoidAlgorithmVersion(String version, {String? userToken}) async {
+    final token = userToken ?? await ensureUserToken();
+    final normalized = normalizeAvoidAlgorithmVersion(version);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _scopedPrefsKey(avoidAlgorithmVersionPrefsKey, token),
+      normalized,
+    );
+    _cachedAvoidAlgorithmByUser[token] = normalized;
+  }
+
+  Future<UserTokenProfile?> getCurrentUserTokenProfile() async {
+    try {
+      final response = await _dio.get('/api/user-profile');
+      final data = response.data;
+      if (data is! Map) {
+        return null;
+      }
+
+      final token = data['userToken'];
+      if (token is! String || token.trim().isEmpty) {
+        return null;
+      }
+
+      String? validity;
+      String? expiresAt;
+      final tokenPolicy = data['tokenPolicy'];
+      if (tokenPolicy is Map) {
+        final v = tokenPolicy['validity'];
+        final e = tokenPolicy['expiresAt'];
+        if (v is String) validity = v;
+        if (e is String) expiresAt = e;
+      }
+
+      return UserTokenProfile(
+        token: token,
+        accessState: (data['accessState'] as String?) ?? 'invalid',
+        accessReason: (data['accessReason'] as String?) ?? '',
+        validity: validity,
+        expiresAt: expiresAt,
+      );
+    } catch (e) {
+      print('获取用户token状态失败: ${_formatError(e)}');
+      return null;
+    }
+  }
 
   String _makeLocalId(String prefix) {
     final now = DateTime.now().microsecondsSinceEpoch;
@@ -88,7 +358,8 @@ class ApiService {
             'lng': p.location.longitude,
           };
 
-      final list = await _readLocalList(_localRoutePlansKey);
+      final localRoutePlansKey = await _activeLocalRoutePlansKey();
+      final list = await _readLocalList(localRoutePlansKey);
       final item = <String, dynamic>{
         'id': _makeLocalId('plan'),
         'name': name,
@@ -100,7 +371,7 @@ class ApiService {
       };
 
       list.insert(0, item);
-      await _writeLocalList(_localRoutePlansKey, list);
+      await _writeLocalList(localRoutePlansKey, list);
       return true;
     } catch (_) {
       return false;
@@ -108,17 +379,19 @@ class ApiService {
   }
 
   Future<List<SavedRoutePlanRecord>> _getLocalRoutePlans() async {
-    final list = await _readLocalList(_localRoutePlansKey);
+    final localRoutePlansKey = await _activeLocalRoutePlansKey();
+    final list = await _readLocalList(localRoutePlansKey);
     return list.map(SavedRoutePlanRecord.fromJson).toList();
   }
 
   Future<bool> _deleteLocalRoutePlan(String id) async {
     try {
-      final list = await _readLocalList(_localRoutePlansKey);
+      final localRoutePlansKey = await _activeLocalRoutePlansKey();
+      final list = await _readLocalList(localRoutePlansKey);
       final before = list.length;
       list.removeWhere((e) => (e['id'] as String?) == id);
       if (list.length == before) return false;
-      await _writeLocalList(_localRoutePlansKey, list);
+      await _writeLocalList(localRoutePlansKey, list);
       return true;
     } catch (_) {
       return false;
@@ -212,9 +485,13 @@ class ApiService {
     required LatLng end,
     bool avoidCameras = false,
     bool ignoreOutsideSixthRing = false,
+    String? avoidAlgorithmVersion,
     CancelToken? cancelToken,
   }) async {
     try {
+      final resolvedAlgorithmVersion = normalizeAvoidAlgorithmVersion(
+        avoidAlgorithmVersion ?? await getAvoidAlgorithmVersion(),
+      );
       final response = await _dio.post('/api/route/plan', data: {
         'start': {
           'lat': start.latitude,
@@ -226,6 +503,7 @@ class ApiService {
         },
         'avoidCameras': avoidCameras,
         'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
+        'avoidAlgorithmVersion': resolvedAlgorithmVersion,
       }, cancelToken: cancelToken);
       return RouteResponse.fromJson(response.data);
     } catch (e) {
@@ -250,9 +528,13 @@ class ApiService {
     List<LatLng>? waypoints,
     int? legIndex,
     int? totalLegs,
+    String? avoidAlgorithmVersion,
     CancelToken? cancelToken,
   }) async {
     try {
+      final resolvedAlgorithmVersion = normalizeAvoidAlgorithmVersion(
+        avoidAlgorithmVersion ?? await getAvoidAlgorithmVersion(),
+      );
       final response = await _dio.post('/api/route/plan-step', data: {
         'start': {
           'lat': start.latitude,
@@ -272,6 +554,7 @@ class ApiService {
         if (totalLegs != null) 'totalLegs': totalLegs,
         if (anchorDistance != null) 'anchorDistance': anchorDistance,
         'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
+        'avoidAlgorithmVersion': resolvedAlgorithmVersion,
         if (bestRoute != null) 'bestRoute': {
           'polylinePoints': bestRoute.polylinePoints
               .map((p) => {'lat': p.latitude, 'lng': p.longitude})

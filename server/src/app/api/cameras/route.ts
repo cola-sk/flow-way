@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { getCameras, refreshCameras } from '@/lib/cache';
 import { CamerasResponse } from '@/types/camera';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,8 +35,13 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
+    const tokenGuard = await requireActiveUserTokenFromRequest(request);
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+
     const { cameras, updatedAt, fetchedAt } = await refreshCameras();
     const response: CamerasResponse = {
       cameras,

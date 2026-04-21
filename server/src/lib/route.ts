@@ -11,6 +11,25 @@ const AVOID_ROUTE_MAX_TENCENT_API_CALLS = 80;
 const AVOID_ROUTE_MAX_RATE_LIMIT_RETRIES = 6;
 const ROUTE_PLANNING_ABORTED_ERROR = 'ROUTE_PLANNING_ABORTED';
 
+export const AVOID_ALGORITHM_V1_0 = 'v1.0' as const;
+export const AVOID_ALGORITHM_V1_0_BETA_1 = 'v1.0-beta.1' as const;
+export const DEFAULT_AVOID_ALGORITHM_VERSION = AVOID_ALGORITHM_V1_0_BETA_1;
+export type AvoidAlgorithmVersion =
+  | typeof AVOID_ALGORITHM_V1_0
+  | typeof AVOID_ALGORITHM_V1_0_BETA_1;
+
+export function normalizeAvoidAlgorithmVersion(
+  value: unknown
+): AvoidAlgorithmVersion {
+  if (value === AVOID_ALGORITHM_V1_0) {
+    return AVOID_ALGORITHM_V1_0;
+  }
+  if (value === AVOID_ALGORITHM_V1_0_BETA_1) {
+    return AVOID_ALGORITHM_V1_0_BETA_1;
+  }
+  return DEFAULT_AVOID_ALGORITHM_VERSION;
+}
+
 type TencentApiRequestContext = {
   usedCalls: number;
   maxCalls: number;
@@ -1116,6 +1135,26 @@ export async function planAvoidCamerasRoute(
   return bestGlobalRoute;
 }
 
+export async function planAvoidCamerasRouteByVersion(
+  start: Coordinate,
+  end: Coordinate,
+  cameras: Camera[],
+  algorithmVersion: AvoidAlgorithmVersion,
+  splitAssistDepth = 0,
+  requestContext?: TencentApiRequestContext,
+  signal?: AbortSignal
+): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
+  // 当前 v1.0 与 v1.0-beta.1 都基于同一条成熟实现路径。
+  // 这里保留版本分发点，后续可以在不改 API 契约的前提下独立演进 beta 分支。
+  switch (algorithmVersion) {
+    case AVOID_ALGORITHM_V1_0:
+      return planAvoidCamerasRoute(start, end, cameras, splitAssistDepth, requestContext, signal);
+    case AVOID_ALGORITHM_V1_0_BETA_1:
+    default:
+      return planAvoidCamerasRoute(start, end, cameras, splitAssistDepth, requestContext, signal);
+  }
+}
+
 /**
  * 创建路线对象
  * distanceMeters / durationSeconds 优先使用腾讯 API 返回的实际值
@@ -1127,7 +1166,8 @@ export function createRoute(
   cameraIndices: number[],
   avoidCameras: boolean,
   distanceMeters?: number,
-  durationSeconds?: number
+  durationSeconds?: number,
+  avoidAlgorithmVersion?: AvoidAlgorithmVersion
 ): Route {
   const distance = distanceMeters ?? calculateDistance(start.lat, start.lng, end.lat, end.lng);
   const duration = durationSeconds ?? Math.round(distance / 13.33);
@@ -1141,6 +1181,7 @@ export function createRoute(
     duration,
     routeType: avoidCameras ? 'avoid_cameras' : 'normal',
     cameraIndicesOnRoute: cameraIndices,
+    avoidAlgorithmVersion,
     createdAt: new Date().toISOString(),
   };
 }

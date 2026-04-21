@@ -13,11 +13,17 @@ import {
   isRoutePlanningAbortedError,
 } from '@/lib/route';
 import { CameraDirection } from '@/types/camera-enhanced';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {
+    const tokenGuard = await requireActiveUserTokenFromRequest(request);
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+
     const body: RouteRequest = await request.json();
     const { start, end, avoidCameras } = body;
 

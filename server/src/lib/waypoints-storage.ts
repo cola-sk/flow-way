@@ -1,51 +1,69 @@
 import { WayPoint } from '@/types/route';
-import { Redis } from '@upstash/redis';
+import { requireRedis } from './redis';
+import {
+  getOrCreateDefaultUserToken,
+  USER_META_HASH_KEY,
+} from './user-token';
 
-const WAYPOINTS_HASH_KEY = 'waypoints';
+const LEGACY_WAYPOINTS_HASH_KEY = 'waypoints';
+const WAYPOINTS_HASH_PREFIX = 'waypoints:user:';
+const MIGRATION_FIELD = 'migrated-waypoints-default';
 
-let redis: Redis | null = null;
-
-function getRedis(): Redis | null {
-	if (redis) return redis;
-
-	const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
-	const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
-	if (!url || !token) {
-		return null;
-	}
-
-	redis = new Redis({ url, token });
-	return redis;
+function userWaypointsKey(userToken: string): string {
+  return `${WAYPOINTS_HASH_PREFIX}${userToken}`;
 }
 
 function sortByCreatedAtDesc(items: WayPoint[]): WayPoint[] {
-	return items.sort(
-		(a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-	);
+	return items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
-function requireRedis(): Redis {
-	const client = getRedis();
-	if (!client) {
-		throw new Error('waypoints storage is unavailable: Redis env is not configured');
-	}
-	return client;
+async function ensureLegacyMigrated(userToken: string): Promise<void> {
+  const redisClient = requireRedis('waypoints storage is unavailable: Redis env is not configured');
+  const defaultUserToken = await getOrCreateDefaultUserToken(redisClient);
+  if (userToken !== defaultUserToken) {
+    return;
+  }
+
+  const migrated = await redisClient.hget<string>(USER_META_HASH_KEY, MIGRATION_FIELD);
+  if (migrated === defaultUserToken) {
+    return;
+  }
+
+  const legacy = await redisClient.hgetall<Record<string, WayPoint>>(LEGACY_WAYPOINTS_HASH_KEY);
+  if (legacy && Object.keys(legacy).length > 0) {
+    const targetKey = userWaypointsKey(defaultUserToken);
+    const existing = await redisClient.hgetall<Record<string, WayPoint>>(targetKey);
+    const merged: Record<string, WayPoint> = {};
+    for (const [id, point] of Object.entries(legacy)) {
+      if (!existing || !(id in existing)) {
+        merged[id] = point;
+      }
+    }
+    if (Object.keys(merged).length > 0) {
+      await redisClient.hset(targetKey, merged);
+    }
+  }
+
+  await redisClient.hset(USER_META_HASH_KEY, { [MIGRATION_FIELD]: defaultUserToken });
 }
 
-export async function listWayPoints(): Promise<WayPoint[]> {
-	const redisClient = requireRedis();
-	const all = await redisClient.hgetall<Record<string, WayPoint>>(WAYPOINTS_HASH_KEY);
+export async function listWayPoints(userToken: string): Promise<WayPoint[]> {
+	await ensureLegacyMigrated(userToken);
+	const redisClient = requireRedis('waypoints storage is unavailable: Redis env is not configured');
+	const all = await redisClient.hgetall<Record<string, WayPoint>>(userWaypointsKey(userToken));
 	if (!all) return [];
 	return sortByCreatedAtDesc(Object.values(all));
 }
 
-export async function saveWayPoint(wayPoint: WayPoint): Promise<void> {
-	const redisClient = requireRedis();
-	await redisClient.hset(WAYPOINTS_HASH_KEY, { [wayPoint.id]: wayPoint });
+export async function saveWayPoint(userToken: string, wayPoint: WayPoint): Promise<void> {
+	await ensureLegacyMigrated(userToken);
+	const redisClient = requireRedis('waypoints storage is unavailable: Redis env is not configured');
+	await redisClient.hset(userWaypointsKey(userToken), { [wayPoint.id]: wayPoint });
 }
 
-export async function deleteWayPointById(id: string): Promise<boolean> {
-	const redisClient = requireRedis();
-	const deleted = await redisClient.hdel(WAYPOINTS_HASH_KEY, id);
+export async function deleteWayPointById(userToken: string, id: string): Promise<boolean> {
+	await ensureLegacyMigrated(userToken);
+	const redisClient = requireRedis('waypoints storage is unavailable: Redis env is not configured');
+	const deleted = await redisClient.hdel(userWaypointsKey(userToken), id);
 	return deleted > 0;
 }

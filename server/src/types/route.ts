@@ -8,6 +8,8 @@ export interface RouteRequest {
   end: Coordinate;
   avoidCameras: boolean;
   ignoreOutsideSixthRing?: boolean;
+  userToken?: string;
+  avoidAlgorithmVersion?: string;
 }
 
 export interface RouteStepState {
@@ -23,6 +25,8 @@ export interface RoutePlanStepRequest {
   iteration: number;
   ignoreOutsideSixthRing?: boolean;
   maxIterations?: number;
+  userToken?: string;
+  avoidAlgorithmVersion?: string;
   waypoints?: Coordinate[];
   legIndex?: number;
   totalLegs?: number;
@@ -44,6 +48,7 @@ export interface Route {
   duration: number;
   routeType: 'normal' | 'avoid_cameras';
   cameraIndicesOnRoute: number[];
+  avoidAlgorithmVersion?: string;
   createdAt: string;
 }
 

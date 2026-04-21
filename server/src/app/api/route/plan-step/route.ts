@@ -3,10 +3,12 @@ import { RoutePlanStepRequest, RoutePlanStepResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
 import {
   createRoute,
-  planAvoidCamerasRoute,
+  planAvoidCamerasRouteByVersion,
   isRoutePlanningAbortedError,
+  normalizeAvoidAlgorithmVersion,
 } from '@/lib/route';
 import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
+import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +24,17 @@ export async function POST(request: NextRequest) {
     }
 
     const { start, end, iteration } = reqBody;
+    const algorithmVersion = normalizeAvoidAlgorithmVersion(reqBody.avoidAlgorithmVersion);
+
+    const tokenGuard = await requireActiveUserTokenFromRequest(
+      request,
+      reqBody as unknown as Record<string, unknown>
+    );
+    if (!tokenGuard.ok) {
+      return tokenGuard.response!;
+    }
+    const userToken = tokenGuard.userToken!;
+
     const requestedMaxIterations =
       typeof reqBody.maxIterations === 'number' && Number.isFinite(reqBody.maxIterations)
         ? Math.floor(reqBody.maxIterations)
@@ -39,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     const { cameras: originalCameras } = await getCameras();
-    const dismissedSet = await getDismissedSet();
+    const dismissedSet = await getDismissedSet(userToken);
     const ignoreOutsideSixthRing = reqBody.ignoreOutsideSixthRing === true;
 
     const cameras: typeof originalCameras = [];
@@ -59,10 +72,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 沿用 4/17 高效策略：单次请求内完成完整避让搜索，避免前后端反复往返导致收敛变慢
-    const finalState = await planAvoidCamerasRoute(
+    const finalState = await planAvoidCamerasRouteByVersion(
       start,
       end,
       cameras,
+      algorithmVersion,
       0,
       undefined,
       request.signal
@@ -77,7 +91,8 @@ export async function POST(request: NextRequest) {
       globalCameraIndices,
       true,
       finalState.distance,
-      finalState.duration
+      finalState.duration,
+      algorithmVersion
     );
 
     const bestRoute = createRoute(
@@ -87,7 +102,8 @@ export async function POST(request: NextRequest) {
       globalCameraIndices,
       true,
       finalState.distance,
-      finalState.duration
+      finalState.duration,
+      algorithmVersion
     );
 
     const response: RoutePlanStepResponse = {
