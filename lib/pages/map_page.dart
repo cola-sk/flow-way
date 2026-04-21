@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -97,6 +98,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   StreamSubscription<Position>? _cruisePositionStream;
   bool _cruiseModeEnabled = false;
   List<LatLng> _cruisePath = [];
+  double _cruiseHeading = 0.0;
 
   DateTime? _lastRouteHitTime;
   final LayerHitNotifier<NavigationRoute> _routeHitNotifier = ValueNotifier(null);
@@ -394,6 +396,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         setState(() {
           _userPosition = pos;
           _locationResolved = true;
+          if (position.speed > 1.0 && position.heading.isFinite) {
+            _cruiseHeading = position.heading;
+          }
           // 将走过的路标记为路线
           if (_cruiseModeEnabled) {
             _cruisePath.add(pos);
@@ -432,6 +437,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (_cruiseModeEnabled) {
       setState(() {
         _cruiseModeEnabled = false;
+        _cruiseHeading = 0.0;
         _cruisePath.clear(); // 清除历史路线记录
       });
     }
@@ -4239,6 +4245,38 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildCruiseVehicleMarker() {
+    return Transform.rotate(
+      angle: _cruiseHeading * (math.pi / 180),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.3),
+              shape: BoxShape.circle,
+            ),
+          ),
+          Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.blue, width: 3),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            child: Icon(Icons.arrow_upward, size: 16, color: Colors.blue[800]),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildNavRow({
     required IconData icon,
     required Color iconColor,
@@ -4757,7 +4795,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       point: _userPosition!,
                       width: 48,
                       height: 48,
-                      child: const JinjingMarker(size: 48),
+                      child: _cruiseModeEnabled
+                          ? _buildCruiseVehicleMarker()
+                          : const JinjingMarker(size: 48),
                     ),
                   ],
                 ),

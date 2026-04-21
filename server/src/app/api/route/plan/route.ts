@@ -3,11 +3,10 @@ import { RouteRequest, RouteResponse } from '@/types/route';
 import { getCameras } from '@/lib/cache';
 import {
   planRoute,
-  planAvoidCamerasRouteByVersion,
+  planAvoidCamerasRoute,
   findCamerasNearRoute,
   createRoute,
   isRoutePlanningAbortedError,
-  normalizeAvoidAlgorithmVersion,
 } from '@/lib/route';
 import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
@@ -18,7 +17,6 @@ export async function POST(request: NextRequest) {
   try {
     const body: RouteRequest = await request.json();
     const { start, end, avoidCameras, ignoreOutsideSixthRing } = body;
-    const algorithmVersion = normalizeAvoidAlgorithmVersion(body?.avoidAlgorithmVersion);
 
     const tokenGuard = await requireActiveUserTokenFromRequest(
       request,
@@ -73,11 +71,10 @@ export async function POST(request: NextRequest) {
 
     if (avoidCameras) {
       // 规划避开摄像头的路线（腾讯地图备选路线中选摄像头最少的）
-      const result = await planAvoidCamerasRouteByVersion(
+      const result = await planAvoidCamerasRoute(
         start,
         end,
         cameras,
-        algorithmVersion,
         0,
         undefined,
         request.signal
@@ -105,7 +102,7 @@ export async function POST(request: NextRequest) {
       avoidCameras,
       routeDistance,
       routeDuration,
-      avoidCameras ? algorithmVersion : undefined
+      undefined
     );
 
     const response: RouteResponse = { route };
