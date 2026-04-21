@@ -76,8 +76,9 @@ class ApiService {
       'settings_avoid_algorithm_version';
 
   static const String avoidAlgorithmVersionV1 = 'v1.0';
-  static const String avoidAlgorithmVersionV1Beta1 = 'v1.0-beta.1';
-  static const String defaultAvoidAlgorithmVersion = avoidAlgorithmVersionV1Beta1;
+  static const String avoidAlgorithmVersionV1_1Beta1 = 'v1.1-beta.1';
+  static const String _legacyAvoidAlgorithmVersionV1Beta1 = 'v1.0-beta.1';
+  static const String defaultAvoidAlgorithmVersion = avoidAlgorithmVersionV1_1Beta1;
   static const String firstLaunchDefaultUserToken = 'test_token_v2026';
 
   static final RegExp _userTokenPattern = RegExp(r'^[A-Za-z0-9_]{16}$');
@@ -164,8 +165,8 @@ class ApiService {
     if (value == avoidAlgorithmVersionV1) {
       return avoidAlgorithmVersionV1;
     }
-    if (value == avoidAlgorithmVersionV1Beta1) {
-      return avoidAlgorithmVersionV1Beta1;
+    if (value == avoidAlgorithmVersionV1_1Beta1 || value == _legacyAvoidAlgorithmVersionV1Beta1) {
+      return avoidAlgorithmVersionV1_1Beta1;
     }
     return defaultAvoidAlgorithmVersion;
   }

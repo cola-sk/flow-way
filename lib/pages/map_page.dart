@@ -3585,8 +3585,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           label: Text('v1.0'),
                         ),
                         ButtonSegment<String>(
-                          value: ApiService.avoidAlgorithmVersionV1Beta1,
-                          label: Text('v1.0-beta.1'),
+                          value: ApiService.avoidAlgorithmVersionV1_1Beta1,
+                          label: Text('v1.1-beta.1'),
                         ),
                       ],
                       selected: {_avoidAlgorithmVersion},
@@ -3604,7 +3604,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     Text(
                       _avoidAlgorithmVersion == ApiService.avoidAlgorithmVersionV1
                           ? 'v1.0：稳定基线版本'
-                          : 'v1.0-beta.1：当前实验版本',
+                          : 'v1.1-beta.1：当前实验版本',
                       style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
                     ),
                     const Divider(height: 20),

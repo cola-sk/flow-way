@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { resolveUserTokenFromRequest } from '@/lib/user-context';
 import {
   AVOID_ALGORITHM_V1_0,
-  AVOID_ALGORITHM_V1_0_BETA_1,
+  AVOID_ALGORITHM_V1_1_BETA_1,
   DEFAULT_AVOID_ALGORITHM_VERSION,
 } from '@/lib/route';
 import {
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       accessReason: reason,
       tokenPolicy: policy,
       userTokenLength: USER_TOKEN_LENGTH,
-      avoidAlgorithmVersions: [AVOID_ALGORITHM_V1_0, AVOID_ALGORITHM_V1_0_BETA_1],
+      avoidAlgorithmVersions: [AVOID_ALGORITHM_V1_0, AVOID_ALGORITHM_V1_1_BETA_1],
       defaultAvoidAlgorithmVersion: DEFAULT_AVOID_ALGORITHM_VERSION,
     });
   } catch (error) {
