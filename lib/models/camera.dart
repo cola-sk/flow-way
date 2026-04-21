@@ -38,6 +38,18 @@ class Camera {
     };
   }
 
+  /// 抓取时间按当前设备时区显示
+  String get localDateDisplay {
+    if (date.isEmpty) return '-';
+    final parsed = DateTime.tryParse(date);
+    if (parsed == null) return date;
+
+    final local = parsed.toLocal();
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
+  }
+
   /// 是否为最近 7 天新增（date 字段距今 < 7 天）
   bool get isNewlyAdded {
     if (date.isEmpty) return false;

@@ -720,6 +720,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void _fetchSuggestions(String keyword) {
     _suggestDebounce?.cancel();
     if (keyword.trim().isEmpty) {
+      final myLocationSuggestion = _buildMyLocationSuggestion();
       final historySuggestions = _searchHistoryPlaces
           .map((place) => PlaceResult(
                 name: place.name,
@@ -739,7 +740,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
       final seen = <String>{};
       final merged = <PlaceResult>[];
-      for (final item in [...historySuggestions, ...favoriteSuggestions]) {
+      for (final item in [
+        myLocationSuggestion,
+        ...historySuggestions,
+        ...favoriteSuggestions,
+      ]) {
         final key =
             '${item.name}_${item.location.latitude.toStringAsFixed(6)}_${item.location.longitude.toStringAsFixed(6)}';
         if (seen.add(key)) {
@@ -766,6 +771,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ))
           .toList();
 
+        final myLocationMatches =
+            '我的位置'.contains(keyword.trim()) || keyword.trim().contains('我')
+                ? <PlaceResult>[_buildMyLocationSuggestion()]
+                : <PlaceResult>[];
+
         final historyMatches = _searchHistoryPlaces
           .where((p) =>
             p.name.toLowerCase().contains(keyword.toLowerCase()) ||
@@ -787,7 +797,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       if (mounted) {
         final seen = <String>{};
         final merged = <PlaceResult>[];
-        for (final item in [...historyMatches, ...localMatches, ...results]) {
+        for (final item in [
+          ...myLocationMatches,
+          ...historyMatches,
+          ...localMatches,
+          ...results,
+        ]) {
           final key =
               '${item.name}_${item.location.latitude.toStringAsFixed(6)}_${item.location.longitude.toStringAsFixed(6)}';
           if (seen.add(key)) {
@@ -818,7 +833,132 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     await _loadRecentData(silent: true);
   }
 
+  PlaceResult _buildMyLocationSuggestion() {
+    final pos = _userPosition ?? _beijingCenter;
+    return PlaceResult(
+      name: '我的位置',
+      address: '📍 我的位置 · ${_formatLatLng(pos)}',
+      location: pos,
+    );
+  }
+
+  bool _isMyLocationSuggestion(PlaceResult place) {
+    return place.name == '我的位置' && place.address.startsWith('📍 我的位置');
+  }
+
+  PlaceResult _buildMyLocationPlace(LatLng pos) {
+    return PlaceResult(
+      name: '我的位置',
+      address: _formatLatLng(pos),
+      location: pos,
+    );
+  }
+
+  Future<PlaceResult?> _refreshMyLocationPlace() async {
+    await _locateUser(forceRefresh: true);
+    if (!mounted) return null;
+    final pos = _userPosition;
+    if (pos == null) {
+      _showToast('定位失败，请稍后重试');
+      return null;
+    }
+    return _buildMyLocationPlace(pos);
+  }
+
+  Future<void> _selectMyLocationSuggestion() async {
+    _searchFocusNode.unfocus();
+    setState(() {
+      _showSuggestions = false;
+      _suggestions = [];
+    });
+
+    final place = await _refreshMyLocationPlace();
+    if (!mounted || place == null) return;
+
+    if (_navSearchTarget == 'start') {
+      setState(() {
+        _loadedSavedRouteId = null;
+        _currentRoute = null;
+        _loadedSavedPlanId = null;
+        _navStartIsMyLocation = true;
+        _navStartPlace = null;
+        _navSearchTarget = null;
+        _selectedPlace = null;
+        _searchController.clear();
+      });
+      _mapController.move(place.location, 15);
+      return;
+    }
+
+    if (_navSearchTarget == 'end') {
+      setState(() {
+        _loadedSavedRouteId = null;
+        _currentRoute = null;
+        _loadedSavedPlanId = null;
+        _navEndPlace = place;
+        _navSearchTarget = null;
+        _selectedPlace = null;
+        _searchController.clear();
+      });
+      _mapController.move(place.location, 15);
+      return;
+    }
+
+    if (_navSearchTarget == 'waypoint') {
+      setState(() {
+        _loadedSavedRouteId = null;
+        _currentRoute = null;
+        _loadedSavedPlanId = null;
+        _navWaypoints.add(place);
+        _navSearchTarget = null;
+        _selectedPlace = null;
+        _searchController.clear();
+      });
+      _showToast('已添加途径点: ${place.name}');
+      return;
+    }
+
+    _searchController.text = place.name;
+    setState(() => _selectedPlace = place);
+    _mapController.move(place.location, 16);
+  }
+
+  Future<void> _refreshMyLocationInInput() async {
+    final place = await _refreshMyLocationPlace();
+    if (!mounted || place == null) return;
+
+    setState(() {
+      if (_selectedPlace?.name == '我的位置') {
+        _selectedPlace = place;
+      }
+      if (_navEndPlace?.name == '我的位置') {
+        _loadedSavedRouteId = null;
+        _currentRoute = null;
+        _loadedSavedPlanId = null;
+        _navEndPlace = place;
+      }
+      for (var i = 0; i < _navWaypoints.length; i++) {
+        if (_navWaypoints[i].name == '我的位置') {
+          _loadedSavedRouteId = null;
+          _currentRoute = null;
+          _loadedSavedPlanId = null;
+          _navWaypoints[i] = place;
+        }
+      }
+      if (_searchController.text.trim() == '我的位置') {
+        _showSuggestions = false;
+        _suggestions = [];
+      }
+    });
+    _showToast('已刷新我的位置坐标');
+  }
+
   Future<void> _selectSuggestion(PlaceResult suggestion) async {
+    if (_isMyLocationSuggestion(suggestion)) {
+      await _selectMyLocationSuggestion();
+      return;
+    }
+
     _searchFocusNode.unfocus();
     setState(() {
       _showSuggestions = false;
@@ -882,23 +1022,40 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   PlaceResult _buildMapPointPlace(LatLng point) {
+    final coordName = _formatLatLng(point);
     return PlaceResult(
-      name: '地图选点',
-      address: _formatLatLng(point),
+      name: coordName,
+      address: '地图选点',
       location: point,
     );
   }
 
-  Future<void> _addNavWaypointFromPlace(PlaceResult place) async {
-    var waypoint = place;
+  bool _isMapPointLikePlace(PlaceResult place) {
+    final coordName = _formatLatLng(place.location);
+    return place.name == '地图选点' ||
+        place.name == coordName ||
+        place.address == '地图选点' ||
+        place.address == coordName;
+  }
 
-    // 地图点选默认名称较泛化，先尝试反查真实地点名；失败则保留现有兜底文案。
-    if (place.name == '地图选点') {
-      final resolved = await _apiService.reverseGeocode(point: place.location);
-      if (resolved != null) {
-        waypoint = resolved;
-      }
+  PlaceResult _normalizeMapPointPlaceholder(PlaceResult place) {
+    if (!_isMapPointLikePlace(place)) {
+      return place;
     }
+    final coordName = _formatLatLng(place.location);
+    return PlaceResult(
+      name: coordName,
+      address: '地图选点',
+      location: place.location,
+    );
+  }
+
+  bool _samePlaceLocation(PlaceResult a, PlaceResult b) {
+    return _formatLatLng(a.location) == _formatLatLng(b.location);
+  }
+
+  Future<void> _addNavWaypointFromPlace(PlaceResult place) async {
+    final waypoint = _normalizeMapPointPlaceholder(place);
 
     if (!mounted) return;
 
@@ -916,6 +1073,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
 
     _showToast('已添加途径点: ${waypoint.name}');
+    unawaited(_backfillWaypointPlaceName(waypoint));
   }
 
   void _showMapPointActions(LatLng point) {
@@ -923,23 +1081,91 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   Future<PlaceResult> _resolveMapPointPlaceName(PlaceResult place) async {
-    if (place.name != '地图选点') {
-      return place;
+    final normalized = _normalizeMapPointPlaceholder(place);
+    if (!_isMapPointLikePlace(normalized)) {
+      return normalized;
     }
 
-    final resolved = await _apiService.reverseGeocode(point: place.location);
+    final resolved = await _apiService.reverseGeocode(point: normalized.location);
     if (resolved == null || resolved.name.trim().isEmpty) {
-      return place;
+      return normalized;
     }
     return resolved;
   }
 
+  Future<void> _backfillEndPlaceName(PlaceResult placeholder) async {
+    final resolved = await _resolveMapPointPlaceName(placeholder);
+    if (!mounted) return;
+    if (_samePlaceLocation(resolved, placeholder) && resolved.name == placeholder.name) {
+      return;
+    }
+
+    final currentEnd = _navEndPlace;
+    if (currentEnd == null || !_samePlaceLocation(currentEnd, placeholder)) {
+      return;
+    }
+    if (!_isMapPointLikePlace(currentEnd)) {
+      return;
+    }
+
+    setState(() {
+      _navEndPlace = resolved;
+      if (_searchController.text == placeholder.name) {
+        _searchController.text = resolved.name;
+      }
+    });
+  }
+
+  Future<void> _backfillStartPlaceName(PlaceResult placeholder) async {
+    final resolved = await _resolveMapPointPlaceName(placeholder);
+    if (!mounted) return;
+    if (_samePlaceLocation(resolved, placeholder) && resolved.name == placeholder.name) {
+      return;
+    }
+
+    final currentStart = _navStartPlace;
+    if (currentStart == null || !_samePlaceLocation(currentStart, placeholder)) {
+      return;
+    }
+    if (!_isMapPointLikePlace(currentStart)) {
+      return;
+    }
+
+    setState(() {
+      _navStartPlace = resolved;
+      if (_searchController.text == placeholder.name) {
+        _searchController.text = resolved.name;
+      }
+    });
+  }
+
+  Future<void> _backfillWaypointPlaceName(PlaceResult placeholder) async {
+    final resolved = await _resolveMapPointPlaceName(placeholder);
+    if (!mounted) return;
+    if (_samePlaceLocation(resolved, placeholder) && resolved.name == placeholder.name) {
+      return;
+    }
+
+    final index = _navWaypoints.indexWhere((wp) =>
+      _samePlaceLocation(wp, placeholder) && _isMapPointLikePlace(wp));
+    if (index < 0) {
+      return;
+    }
+
+    setState(() {
+      _navWaypoints[index] = resolved;
+      if (_searchController.text == placeholder.name) {
+        _searchController.text = resolved.name;
+      }
+    });
+  }
+
   Future<void> _setEndPlaceFromAction(PlaceResult place) async {
-    final resolvedPlace = await _resolveMapPointPlaceName(place);
+    final immediatePlace = _normalizeMapPointPlaceholder(place);
     if (!mounted) return;
 
     final wasNavMode = _navMode;
-    _searchController.text = resolvedPlace.name;
+    _searchController.text = immediatePlace.name;
     _searchFocusNode.unfocus();
 
     setState(() {
@@ -948,7 +1174,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _loadedSavedPlanId = null;
       _navMode = true;
       _activeTab = _BottomTab.plan;
-      _navEndPlace = resolvedPlace;
+      _navEndPlace = immediatePlace;
       _navSearchTarget = null;
 
       if (!wasNavMode) {
@@ -961,14 +1187,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _showSuggestions = false;
       _suggestions = [];
     });
+
+    unawaited(_backfillEndPlaceName(immediatePlace));
   }
 
   Future<void> _setStartPlaceFromAction(PlaceResult place) async {
-    final resolvedPlace = await _resolveMapPointPlaceName(place);
+    final immediatePlace = _normalizeMapPointPlaceholder(place);
     if (!mounted) return;
 
     final wasNavMode = _navMode;
-    _searchController.text = resolvedPlace.name;
+    _searchController.text = immediatePlace.name;
     _searchFocusNode.unfocus();
 
     setState(() {
@@ -978,7 +1206,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _navMode = true;
       _activeTab = _BottomTab.plan;
       _navStartIsMyLocation = false;
-      _navStartPlace = resolvedPlace;
+      _navStartPlace = immediatePlace;
       _navSearchTarget = null;
 
       if (!wasNavMode) {
@@ -990,6 +1218,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _showSuggestions = false;
       _suggestions = [];
     });
+
+    unawaited(_backfillStartPlaceName(immediatePlace));
   }
 
   void _showPlaceActions(PlaceResult place) {
@@ -2846,7 +3076,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               const SizedBox(height: 12),
               _infoRow('类型', camera.typeLabel),
               _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
-              _infoRow('更新日期', camera.date),
+              _infoRow('更新日期', camera.localDateDisplay),
               if (isMarked) _infoRow('标记类型', '${mark.type}'),
               if (isMarked)
                 _infoRow('备注', noteText.isEmpty ? '-' : noteText),
@@ -3172,7 +3402,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             child: TextField(
               controller: _searchController,
               focusNode: _searchFocusNode,
-              onChanged: _fetchSuggestions,
+              onChanged: (value) {
+                _fetchSuggestions(value);
+                setState(() {});
+              },
               style: const TextStyle(
                 color: _onSurface,
                 fontWeight: FontWeight.w600,
@@ -3185,25 +3418,50 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   color: _primary,
                   size: 22,
                 ),
-                suffixIcon: _showSuggestions || _selectedPlace != null
-                    ? IconButton(
-                        icon: const Icon(Icons.close_rounded, size: 18),
-                        color: _onSurfaceVariant,
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {
-                            _showSuggestions = false;
-                            _suggestions = [];
-                            _selectedPlace = null;
-                          });
-                          _searchFocusNode.unfocus();
-                        },
+                suffixIcon: _searchController.text.trim() == '我的位置'
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.my_location_rounded, size: 18),
+                            color: _primary,
+                            onPressed: _refreshMyLocationInInput,
+                            tooltip: '刷新定位',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            color: _onSurfaceVariant,
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _showSuggestions = false;
+                                _suggestions = [];
+                                _selectedPlace = null;
+                              });
+                              _searchFocusNode.unfocus();
+                            },
+                          ),
+                        ],
                       )
-                    : IconButton(
-                        onPressed: () {},
-                        icon: const Icon(Icons.mic_none_rounded, size: 18),
-                        color: _onSurfaceVariant.withValues(alpha: 0.5),
-                      ),
+                    : (_showSuggestions || _selectedPlace != null
+                        ? IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18),
+                            color: _onSurfaceVariant,
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _showSuggestions = false;
+                                _suggestions = [];
+                                _selectedPlace = null;
+                              });
+                              _searchFocusNode.unfocus();
+                            },
+                          )
+                        : IconButton(
+                            onPressed: () {},
+                            icon: const Icon(Icons.mic_none_rounded, size: 18),
+                            color: _onSurfaceVariant.withValues(alpha: 0.5),
+                          )),
                 border: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -3708,6 +3966,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     standalone ? MediaQuery.of(context).size.height - 140 : 430,
               ),
               child: SingleChildScrollView(
+                padding: EdgeInsets.only(
+                  bottom: standalone ? 76 : 16,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -4358,7 +4619,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               controller: _searchController,
               focusNode: _searchFocusNode,
               autofocus: true,
-              onChanged: _fetchSuggestions,
+              onChanged: (value) {
+                _fetchSuggestions(value);
+                setState(() {});
+              },
               style: const TextStyle(
                 fontSize: 14,
                 color: _onSurface,
@@ -4380,6 +4644,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
             ),
           ),
+          if (_searchController.text.trim() == '我的位置')
+            IconButton(
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              icon: const Icon(Icons.my_location_rounded, size: 16),
+              color: _primary,
+              tooltip: '刷新定位',
+              onPressed: _refreshMyLocationInInput,
+            ),
+          if (_searchController.text.trim() == '我的位置')
+            const SizedBox(width: 6),
           IconButton(
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -4527,6 +4802,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ),
                   itemBuilder: (context, index) {
                     final suggestion = _suggestions[index];
+                    final isMyLocation = _isMyLocationSuggestion(suggestion);
                     final isSearchHistory = suggestion.address.startsWith('🕘 搜索历史');
                     final isFavorite = suggestion.address.startsWith('⭐ 保存的点位');
                     return ListTile(
@@ -4535,25 +4811,31 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: isSearchHistory
-                              ? const Color(0xFFE8F0FE)
-                              : (isFavorite
+                            color: isMyLocation
+                              ? const Color(0xFFE8F5E9)
+                              : (isSearchHistory
+                                ? const Color(0xFFE8F0FE)
+                                : (isFavorite
                                   ? const Color(0xFFFFF3CD)
-                                  : _primaryContainer.withValues(alpha: 0.7)),
+                                  : _primaryContainer.withValues(alpha: 0.7))),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Icon(
-                          isSearchHistory
-                              ? Icons.history_rounded
-                              : (isFavorite
+                            isMyLocation
+                              ? Icons.my_location_rounded
+                              : (isSearchHistory
+                                ? Icons.history_rounded
+                                : (isFavorite
                                   ? Icons.bookmark_rounded
-                                  : Icons.place_outlined),
+                                  : Icons.place_outlined)),
                           size: 16,
-                          color: isSearchHistory
-                              ? const Color(0xFF1A73E8)
-                              : (isFavorite
+                            color: isMyLocation
+                              ? const Color(0xFF2E7D32)
+                              : (isSearchHistory
+                                ? const Color(0xFF1A73E8)
+                                : (isFavorite
                                   ? const Color(0xFFB96A00)
-                                  : _primary),
+                                  : _primary)),
                         ),
                       ),
                       title: Text(
