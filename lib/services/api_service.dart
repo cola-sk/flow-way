@@ -990,13 +990,37 @@ class ApiService {
     required double lat,
     required double lng,
     required String name,
+    int type = 6,
+    String? note,
   }) async {
     try {
       await _dio.post('/api/dismissed-cameras',
-          data: {'lat': lat, 'lng': lng, 'name': name});
+          data: {
+            'lat': lat,
+            'lng': lng,
+            'name': name,
+            'type': type,
+            if (note != null) 'note': note,
+          });
       return true;
     } catch (e) {
       print('标记废弃失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 更新摄像头标记备注（传空字符串表示清空备注）
+  Future<bool> updateCameraDismissedNote({
+    required double lat,
+    required double lng,
+    required String note,
+  }) async {
+    try {
+      await _dio.patch('/api/dismissed-cameras',
+          data: {'lat': lat, 'lng': lng, 'note': note});
+      return true;
+    } catch (e) {
+      print('更新标记备注失败: ${_formatError(e)}');
       return false;
     }
   }
@@ -1178,20 +1202,30 @@ class DismissedCamera {
   final double lng;
   final String name;
   final String markedAt;
+  final int type;
+  final String note;
 
   DismissedCamera({
     required this.lat,
     required this.lng,
     required this.name,
     required this.markedAt,
+    required this.type,
+    required this.note,
   });
 
   factory DismissedCamera.fromJson(Map<String, dynamic> json) {
+    final rawType = json['type'];
+    final parsedType = rawType is num
+        ? rawType.toInt()
+        : int.tryParse('${rawType ?? ''}') ?? 6;
     return DismissedCamera(
       lat: (json['lat'] as num).toDouble(),
       lng: (json['lng'] as num).toDouble(),
       name: json['name'] as String,
       markedAt: json['markedAt'] as String? ?? '',
+      type: parsedType == 12 ? 12 : 6,
+      note: json['note'] as String? ?? '',
     );
   }
 }

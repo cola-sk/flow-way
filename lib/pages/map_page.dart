@@ -87,8 +87,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   // 路线上无法绕开的摄像头索引（仅 avoidCameras=true 时有效）
   Set<int> _unavoidableCameraIndices = {};
 
-  // 从服务端加载的废弃摄像头坐标集合（格式 "lat.toFixed6,lng.toFixed6"）
-  final Set<String> _dismissedCoords = {};
+  // 从服务端加载的摄像头标记集合（按坐标键索引，支持类型与备注）
+  final Map<String, DismissedCamera> _cameraMarksByCoord = {};
 
   // 北京中心坐标 (GCJ-02)
   static const _beijingCenter = LatLng(39.9042, 116.4074);
@@ -2069,11 +2069,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     try {
       final list = await _apiService.getDismissedCameras();
       setState(() {
-        _dismissedCoords.clear();
+        _cameraMarksByCoord.clear();
         for (final c in list) {
-          _dismissedCoords.add(
-            '${c.lat.toStringAsFixed(6)},${c.lng.toStringAsFixed(6)}',
-          );
+          _cameraMarksByCoord[_cameraCoordKey(c.lat, c.lng)] = c;
         }
       });
     } catch (e) {
@@ -2081,10 +2079,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
   }
 
-  bool _isCameraDismissed(Camera camera) {
-    final key =
-        '${camera.lat.toStringAsFixed(6)},${camera.lng.toStringAsFixed(6)}';
-    return _dismissedCoords.contains(key);
+  String _cameraCoordKey(double lat, double lng) {
+    return '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+  }
+
+  DismissedCamera? _cameraMarkOf(Camera camera) {
+    return _cameraMarksByCoord[_cameraCoordKey(camera.lat, camera.lng)];
   }
 
   Uri? _cameraDetailUri(String href) {
@@ -2708,6 +2708,75 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildType12MarkedCameraMarker() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFE8F5E9),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFF81C784), width: 1.6),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF81C784).withValues(alpha: 0.28),
+            blurRadius: 6,
+            spreadRadius: 0.8,
+          ),
+        ],
+      ),
+      child: const Icon(
+        Icons.videocam_rounded,
+        color: Color(0xFF2E7D32),
+        size: 16,
+      ),
+    );
+  }
+
+  Future<bool> _promptEditCameraMarkNote({
+    required Camera camera,
+    required String initialNote,
+  }) async {
+    final controller = TextEditingController(text: initialNote);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑摄像头备注'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: '输入备注（留空表示删除备注）',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            style: FilledButton.styleFrom(backgroundColor: _primary),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    if (result == null) {
+      return false;
+    }
+
+    final ok = await _apiService.updateCameraDismissedNote(
+      lat: camera.lat,
+      lng: camera.lng,
+      note: result.trim(),
+    );
+    if (ok && mounted) {
+      await _loadDismissedCameras();
+    }
+    return ok;
+  }
+
   void _showCameraInfo(Camera camera) {
     showModalBottomSheet(
       context: context,
@@ -2716,7 +2785,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
-        final isDismissed = _isCameraDismissed(camera);
+        final mark = _cameraMarkOf(camera);
+        final isMarked = mark != null;
+        final isDismissed = mark?.type == 6;
+        final isType12 = mark?.type == 12;
+        final tagText = isDismissed
+            ? '已废弃'
+          : (isType12 ? '低风险可尝试' : '已标记');
+        final tagColor = isDismissed
+            ? Colors.grey
+            : const Color(0xFF2E7D32);
+        final noteText = mark?.note.trim() ?? '';
         final sourceUri = _cameraDetailUri(camera.href);
         final bottomInset = MediaQuery.of(ctx).padding.bottom;
         return Padding(
@@ -2729,8 +2808,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 children: [
                   Icon(
                     Icons.videocam,
-                    color: isDismissed
-                        ? Colors.grey
+                    color: isMarked
+                        ? tagColor
                         : _cameraColor(camera.type),
                   ),
                   const SizedBox(width: 8),
@@ -2740,26 +2819,26 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: isDismissed ? Colors.grey : null,
+                        color: isMarked ? tagColor : null,
                         decoration: isDismissed
                             ? TextDecoration.lineThrough
                             : null,
                       ),
                     ),
                   ),
-                  if (isDismissed)
+                  if (isMarked)
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 6,
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
+                        color: tagColor.withValues(alpha: 0.14),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text(
-                        '已废弃',
-                        style: TextStyle(color: Colors.grey, fontSize: 11),
+                      child: Text(
+                        tagText,
+                        style: TextStyle(color: tagColor, fontSize: 11),
                       ),
                     ),
                 ],
@@ -2768,6 +2847,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               _infoRow('类型', camera.typeLabel),
               _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
               _infoRow('更新日期', camera.date),
+              if (isMarked) _infoRow('标记类型', '${mark.type}'),
+              if (isMarked)
+                _infoRow('备注', noteText.isEmpty ? '-' : noteText),
               const SizedBox(height: 12),
               if (sourceUri != null)
                 SizedBox(
@@ -2782,12 +2864,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ),
                 ),
               if (sourceUri != null) const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: isDismissed
-                    ? OutlinedButton.icon(
+              if (isMarked) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
                         icon: const Icon(Icons.restore),
-                        label: const Text('取消废弃'),
+                        label: const Text('取消标记'),
                         onPressed: () async {
                           Navigator.pop(ctx);
                           final ok = await _apiService.unmarkCameraDismissed(
@@ -2796,30 +2879,102 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           );
                           if (ok && mounted) {
                             await _loadDismissedCameras();
-                            _showToast('已取消废弃标记');
-                          }
-                        },
-                      )
-                    : FilledButton.icon(
-                        icon: const Icon(Icons.delete_outline),
-                        label: const Text('标记为废弃'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.grey.shade600,
-                        ),
-                        onPressed: () async {
-                          Navigator.pop(ctx);
-                          final ok = await _apiService.markCameraDismissed(
-                            lat: camera.lat,
-                            lng: camera.lng,
-                            name: camera.name,
-                          );
-                          if (ok && mounted) {
-                            await _loadDismissedCameras();
-                            _showToast('已标记为废弃，路线规划将自动排除此摄像头');
+                            _showToast('已取消摄像头标记');
                           }
                         },
                       ),
-              ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        icon: const Icon(Icons.edit_note_rounded),
+                        label: const Text('编辑备注'),
+                        style: FilledButton.styleFrom(backgroundColor: _primary),
+                        onPressed: () async {
+                          Navigator.pop(ctx);
+                          final ok = await _promptEditCameraMarkNote(
+                            camera: camera,
+                            initialNote: noteText,
+                          );
+                          if (ok && mounted) {
+                            _showToast('备注已更新');
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                if (noteText.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.backspace_outlined),
+                      label: const Text('删除备注'),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final ok = await _apiService.updateCameraDismissedNote(
+                          lat: camera.lat,
+                          lng: camera.lng,
+                          note: '',
+                        );
+                        if (ok && mounted) {
+                          await _loadDismissedCameras();
+                          _showToast('备注已删除');
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ] else ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('标记为废弃'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.grey.shade600,
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final ok = await _apiService.markCameraDismissed(
+                        lat: camera.lat,
+                        lng: camera.lng,
+                        name: camera.name,
+                        type: 6,
+                      );
+                      if (ok && mounted) {
+                        await _loadDismissedCameras();
+                        _showToast('已标记为废弃，路线规划将自动排除此摄像头');
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.eco_outlined),
+                    label: const Text('标记为低风险可尝试'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF81C784),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final ok = await _apiService.markCameraDismissed(
+                        lat: camera.lat,
+                        lng: camera.lng,
+                        name: camera.name,
+                        type: 12,
+                      );
+                      if (ok && mounted) {
+                        await _loadDismissedCameras();
+                        _showToast('已标记为低风险可尝试，路线规划将自动排除此摄像头');
+                      }
+                    },
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
             ],
           ),
@@ -4654,7 +4809,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     final isUnavoidable = _unavoidableCameraIndices.contains(
                       idx,
                     );
-                    final isDismissed = _isCameraDismissed(cam);
+                    final mark = _cameraMarkOf(cam);
+                    final isDismissed = mark?.type == 6;
+                    final isType12 = mark?.type == 12;
                     return Marker(
                       point: LatLng(cam.lat, cam.lng),
                       width: isUnavoidable ? 38 : (cam.isNewlyAdded ? 36 : 30),
@@ -4688,6 +4845,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                   ),
                                 ),
                               )
+                            : isType12
+                            ? _buildType12MarkedCameraMarker()
                             : isUnavoidable
                             ? _buildUnavoidableCameraMarker(cam)
                             : cam.isNewlyAdded
