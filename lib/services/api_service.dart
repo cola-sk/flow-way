@@ -12,6 +12,9 @@ const String _cameraCacheKey = 'camera_response_v1';
 const int _cameraCacheTtlMs = 24 * 60 * 60 * 1000;
 const String _legacyLocalRoutePlansKey = 'local_route_plans_v1';
 const String _localRoutePlansKeyPrefix = 'local_route_plans_v1::';
+const String _localRecentNavigationsKeyPrefix = 'local_recent_navigations_v1::';
+const int _localRecentKeepLimit = 10;
+const int _localSearchHistoryKeepLimit = 5;
 
 String _resolveBaseUrl() {
   if (kIsWeb) {
@@ -76,9 +79,9 @@ class ApiService {
       'settings_avoid_algorithm_version';
 
   static const String avoidAlgorithmVersionV1 = 'v1.0';
-  static const String avoidAlgorithmVersionV1_1Beta1 = 'v1.1-beta.1';
-  static const String _legacyAvoidAlgorithmVersionV1Beta1 = 'v1.0-beta.1';
-  static const String defaultAvoidAlgorithmVersion = avoidAlgorithmVersionV1_1Beta1;
+  static const String avoidAlgorithmVersionV1Beta1 = 'v1.0-beta.1';
+  static const String _legacyAvoidAlgorithmVersionV1_1Beta1 = 'v1.1-beta.1';
+  static const String defaultAvoidAlgorithmVersion = avoidAlgorithmVersionV1Beta1;
   static const String firstLaunchDefaultUserToken = 'test_token_v2026';
 
   static final RegExp _userTokenPattern = RegExp(r'^[A-Za-z0-9_]{16}$');
@@ -165,8 +168,8 @@ class ApiService {
     if (value == avoidAlgorithmVersionV1) {
       return avoidAlgorithmVersionV1;
     }
-    if (value == avoidAlgorithmVersionV1_1Beta1 || value == _legacyAvoidAlgorithmVersionV1Beta1) {
-      return avoidAlgorithmVersionV1_1Beta1;
+    if (value == avoidAlgorithmVersionV1Beta1 || value == _legacyAvoidAlgorithmVersionV1_1Beta1) {
+      return avoidAlgorithmVersionV1Beta1;
     }
     return defaultAvoidAlgorithmVersion;
   }
@@ -177,6 +180,10 @@ class ApiService {
 
   String _localRoutePlansKeyFor(String userToken) {
     return '$_localRoutePlansKeyPrefix$userToken';
+  }
+
+  String _localRecentNavigationsKeyFor(String userToken) {
+    return '$_localRecentNavigationsKeyPrefix$userToken';
   }
 
   String _generateUserToken() {
@@ -252,6 +259,11 @@ class ApiService {
     final userToken = await ensureUserToken();
     await _migrateLegacyLocalRoutePlansIfNeeded(userToken);
     return _localRoutePlansKeyFor(userToken);
+  }
+
+  Future<String> _activeLocalRecentNavigationsKey() async {
+    final userToken = await ensureUserToken();
+    return _localRecentNavigationsKeyFor(userToken);
   }
 
   Future<String> getAvoidAlgorithmVersion({String? userToken}) async {
@@ -399,6 +411,59 @@ class ApiService {
     }
   }
 
+  Map<String, dynamic> _placeToPoint(PlaceResult p) => {
+        'name': p.name,
+        'address': p.address,
+        'lat': p.location.latitude,
+        'lng': p.location.longitude,
+      };
+
+  DateTime _safeParseCreatedAt(Object? value) {
+    if (value is String) {
+      return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  bool _isSamePlace(PlaceResult a, PlaceResult b) {
+    return a.location.latitude.toStringAsFixed(6) == b.location.latitude.toStringAsFixed(6) &&
+        a.location.longitude.toStringAsFixed(6) == b.location.longitude.toStringAsFixed(6) &&
+        a.name.trim() == b.name.trim();
+  }
+
+  Future<List<Map<String, dynamic>>> _readLocalRecentRaw() async {
+    final key = await _activeLocalRecentNavigationsKey();
+    return _readLocalList(key);
+  }
+
+  Future<void> _writeLocalRecentRaw(List<Map<String, dynamic>> items) async {
+    final key = await _activeLocalRecentNavigationsKey();
+    await _writeLocalList(key, items);
+  }
+
+  Future<void> _saveLocalRecentRecord(Map<String, dynamic> item) async {
+    final list = await _readLocalRecentRaw();
+    list.insert(0, item);
+
+    list.sort((a, b) => _safeParseCreatedAt(b['createdAt']).compareTo(_safeParseCreatedAt(a['createdAt'])));
+
+    int searchHistoryCount = 0;
+    for (int i = list.length - 1; i >= 0; i--) {
+      if ((list[i]['source'] as String?) == 'search_history') {
+        searchHistoryCount += 1;
+        if (searchHistoryCount > _localSearchHistoryKeepLimit) {
+          list.removeAt(i);
+        }
+      }
+    }
+
+    if (list.length > _localRecentKeepLimit) {
+      list.removeRange(_localRecentKeepLimit, list.length);
+    }
+
+    await _writeLocalRecentRaw(list);
+  }
+
   Future<CamerasResponse?> _readCachedCameras({
     required bool allowExpired,
   }) async {
@@ -490,9 +555,6 @@ class ApiService {
     CancelToken? cancelToken,
   }) async {
     try {
-      final resolvedAlgorithmVersion = normalizeAvoidAlgorithmVersion(
-        avoidAlgorithmVersion ?? await getAvoidAlgorithmVersion(),
-      );
       final response = await _dio.post('/api/route/plan', data: {
         'start': {
           'lat': start.latitude,
@@ -504,7 +566,6 @@ class ApiService {
         },
         'avoidCameras': avoidCameras,
         'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
-        'avoidAlgorithmVersion': resolvedAlgorithmVersion,
       }, cancelToken: cancelToken);
       return RouteResponse.fromJson(response.data);
     } catch (e) {
@@ -533,9 +594,6 @@ class ApiService {
     CancelToken? cancelToken,
   }) async {
     try {
-      final resolvedAlgorithmVersion = normalizeAvoidAlgorithmVersion(
-        avoidAlgorithmVersion ?? await getAvoidAlgorithmVersion(),
-      );
       final response = await _dio.post('/api/route/plan-step', data: {
         'start': {
           'lat': start.latitude,
@@ -555,7 +613,6 @@ class ApiService {
         if (totalLegs != null) 'totalLegs': totalLegs,
         if (anchorDistance != null) 'anchorDistance': anchorDistance,
         'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
-        'avoidAlgorithmVersion': resolvedAlgorithmVersion,
         if (bestRoute != null) 'bestRoute': {
           'polylinePoints': bestRoute.polylinePoints
               .map((p) => {'lat': p.latitude, 'lng': p.longitude})
@@ -835,38 +892,115 @@ class ApiService {
     String? source,
   }) async {
     try {
-      Map<String, dynamic> toPoint(PlaceResult p) => {
-            'name': p.name,
-            'address': p.address,
-            'lat': p.location.latitude,
-            'lng': p.location.longitude,
-          };
-
-      await _dio.post('/api/recent-navigations', data: {
+      await _saveLocalRecentRecord({
+        'id': _makeLocalId('recent'),
         'name': name,
-        'start': toPoint(start),
-        'end': toPoint(end),
-        'waypoints': waypoints.map(toPoint).toList(),
+        'start': _placeToPoint(start),
+        'end': _placeToPoint(end),
+        'waypoints': waypoints.map(_placeToPoint).toList(),
         'avoidCameras': avoidCameras,
-        if (source != null) 'source': source,
+        'source': source ?? 'manual',
+        'createdAt': DateTime.now().toIso8601String(),
       });
       return true;
     } catch (e) {
-      print('保存最近导航失败: ${_formatError(e)}');
+      print('保存最近导航失败: $e');
       return false;
+    }
+  }
+
+  Future<bool> saveSearchHistoryPlace(PlaceResult place) async {
+    try {
+      final list = await _readLocalRecentRaw();
+      list.removeWhere((item) {
+        if ((item['source'] as String?) != 'search_history') {
+          return false;
+        }
+        final start = item['start'];
+        if (start is! Map) {
+          return false;
+        }
+        final existing = PlaceResult.fromJson(Map<String, dynamic>.from(start));
+        return _isSamePlace(existing, place);
+      });
+      await _writeLocalRecentRaw(list);
+
+      await _saveLocalRecentRecord({
+        'id': _makeLocalId('search'),
+        'name': place.name,
+        'start': _placeToPoint(place),
+        'end': _placeToPoint(place),
+        'waypoints': <Map<String, dynamic>>[],
+        'avoidCameras': false,
+        'source': 'search_history',
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+      return true;
+    } catch (e) {
+      print('保存搜索历史失败: $e');
+      return false;
+    }
+  }
+
+  Future<List<PlaceResult>> getSearchHistoryPlaces({int limit = _localSearchHistoryKeepLimit}) async {
+    try {
+      final records = await getRecentNavigations();
+      final places = records
+          .where((item) => item.source == 'search_history')
+          .map((item) => item.end.toPlaceResult())
+          .toList();
+      if (places.length <= limit) {
+        return places;
+      }
+      return places.take(limit).toList();
+    } catch (_) {
+      return [];
     }
   }
 
   /// 获取最近导航记录
   Future<List<RecentNavigationRecord>> getRecentNavigations() async {
     try {
-      final response = await _dio.get('/api/recent-navigations');
-      final List<dynamic> data = response.data['records'] ?? [];
-      return data
-          .map((e) => RecentNavigationRecord.fromJson(e as Map<String, dynamic>))
-          .toList();
+      final list = await _readLocalRecentRaw();
+      final records = list
+          .map((e) => RecentNavigationRecord.fromJson(e))
+          .toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      final trimmed = records.take(_localRecentKeepLimit).toList();
+
+      // Keep local storage compact and ordered.
+      if (trimmed.length != list.length) {
+        await _writeLocalRecentRaw(trimmed.map((e) => {
+          'id': e.id,
+          'name': e.name,
+          'start': {
+            'name': e.start.name,
+            'address': e.start.address,
+            'lat': e.start.location.latitude,
+            'lng': e.start.location.longitude,
+          },
+          'end': {
+            'name': e.end.name,
+            'address': e.end.address,
+            'lat': e.end.location.latitude,
+            'lng': e.end.location.longitude,
+          },
+          'waypoints': e.waypoints.map((w) => {
+            'name': w.name,
+            'address': w.address,
+            'lat': w.location.latitude,
+            'lng': w.location.longitude,
+          }).toList(),
+          'avoidCameras': e.avoidCameras,
+          'source': e.source,
+          'createdAt': e.createdAt.toIso8601String(),
+        }).toList());
+      }
+
+      return trimmed;
     } catch (e) {
-      print('获取最近导航失败: ${_formatError(e)}');
+      print('获取最近导航失败: $e');
       return [];
     }
   }
@@ -874,10 +1008,16 @@ class ApiService {
   /// 删除最近导航记录
   Future<bool> deleteRecentNavigation(String id) async {
     try {
-      await _dio.delete('/api/recent-navigations/$id');
+      final list = await _readLocalRecentRaw();
+      final before = list.length;
+      list.removeWhere((e) => (e['id'] as String?) == id);
+      if (before == list.length) {
+        return false;
+      }
+      await _writeLocalRecentRaw(list);
       return true;
     } catch (e) {
-      print('删除最近导航失败: ${_formatError(e)}');
+      print('删除最近导航失败: $e');
       return false;
     }
   }

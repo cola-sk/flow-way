@@ -62,8 +62,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   static const String _settingsAllowBackgroundOperationsKey =
       'settings_allow_background_operations';
   static const String _settingsUserTokenKey = ApiService.userTokenPrefsKey;
-  static const String _settingsAvoidAlgorithmVersionKey =
-      ApiService.avoidAlgorithmVersionPrefsKey;
   static const String _settingsScopedMigrationFlagPrefix =
       'settings_scoped_migrated::';
   static const double _fourthRingRadiusMeters = 10000;
@@ -108,6 +106,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   final FocusNode _searchFocusNode = FocusNode();
   Timer? _suggestDebounce;
   List<PlaceResult> _suggestions = [];
+  List<PlaceResult> _searchHistoryPlaces = [];
   bool _isSuggesting = false;
   bool _showSuggestions = false;
   PlaceResult? _selectedPlace;
@@ -144,7 +143,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool _hideInsideFifthMarkers = false;
   bool _allowBackgroundOperations = true;
   String _userToken = '';
-  String _avoidAlgorithmVersion = ApiService.defaultAvoidAlgorithmVersion;
   String? _userTokenInputError;
   bool _savingUserToken = false;
   bool _tokenAccessDialogVisible = false;
@@ -546,11 +544,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       final prefs = await SharedPreferences.getInstance();
       await _migrateLegacyScopedSettingsIfNeeded(prefs, userToken);
 
-      final avoidAlgorithmVersion = _normalizeAvoidAlgorithmVersion(
-        prefs.getString(_scopedSettingsKey(_settingsAvoidAlgorithmVersionKey, userToken)) ??
-            prefs.getString(_settingsAvoidAlgorithmVersionKey),
-      );
-
       if (!mounted) return;
       _userTokenController.text = userToken;
       setState(() {
@@ -566,8 +559,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             prefs.getBool(_scopedSettingsKey(_settingsHideInsideFifthMarkersKey, userToken)) ?? false;
         _allowBackgroundOperations =
             prefs.getBool(_scopedSettingsKey(_settingsAllowBackgroundOperationsKey, userToken)) ?? true;
-        _avoidAlgorithmVersion = avoidAlgorithmVersion;
       });
+      await _loadSearchHistoryPlaces();
       await _refreshTokenProfile();
     } catch (e) {
       print('加载设置失败: $e');
@@ -584,10 +577,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   bool _isValidUserToken(String value) {
     return ApiService.isValidUserToken(value);
-  }
-
-  String _normalizeAvoidAlgorithmVersion(String? value) {
-    return ApiService.normalizeAvoidAlgorithmVersion(value);
   }
 
   Future<void> _migrateLegacyScopedSettingsIfNeeded(
@@ -614,19 +603,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     await migrateBool(_settingsHideInsideFourthMarkersKey);
     await migrateBool(_settingsHideInsideFifthMarkersKey);
     await migrateBool(_settingsAllowBackgroundOperationsKey);
-
-    final scopedAvoidAlgorithmKey =
-        _scopedSettingsKey(_settingsAvoidAlgorithmVersionKey, userToken);
-    if (!prefs.containsKey(scopedAvoidAlgorithmKey) &&
-        prefs.containsKey(_settingsAvoidAlgorithmVersionKey)) {
-      final legacy = prefs.getString(_settingsAvoidAlgorithmVersionKey);
-      if (legacy != null) {
-        await prefs.setString(
-          scopedAvoidAlgorithmKey,
-          _normalizeAvoidAlgorithmVersion(legacy),
-        );
-      }
-    }
 
     await prefs.setBool(migrationFlag, true);
   }
@@ -657,15 +633,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       await prefs.setBool(
         _scopedSettingsKey(_settingsAllowBackgroundOperationsKey),
         _allowBackgroundOperations,
-      );
-      await prefs.setString(
-        _scopedSettingsKey(_settingsAvoidAlgorithmVersionKey),
-        _normalizeAvoidAlgorithmVersion(_avoidAlgorithmVersion),
-      );
-
-      await _apiService.setAvoidAlgorithmVersion(
-        _avoidAlgorithmVersion,
-        userToken: _userToken,
       );
     } catch (e) {
       print('保存设置失败: $e');
@@ -707,6 +674,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       await _loadDismissedCameras();
       await _loadSavedData(silent: true);
       await _loadRecentData(silent: true);
+      await _loadSearchHistoryPlaces();
       await _refreshTokenProfile();
       _showToast('已切换到新用户配置');
     } catch (e) {
@@ -746,14 +714,35 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   void _fetchSuggestions(String keyword) {
     _suggestDebounce?.cancel();
     if (keyword.trim().isEmpty) {
+      final historySuggestions = _searchHistoryPlaces
+          .map((place) => PlaceResult(
+                name: place.name,
+                address: place.address.isEmpty
+                    ? '🕘 搜索历史'
+                    : '🕘 搜索历史 · ${place.address}',
+                location: place.location,
+              ))
+          .toList();
+      final favoriteSuggestions = _wayPoints
+          .map((wp) => PlaceResult(
+                name: wp.name,
+                address: '⭐ 保存的点位',
+                location: wp.location,
+              ))
+          .toList();
+
+      final seen = <String>{};
+      final merged = <PlaceResult>[];
+      for (final item in [...historySuggestions, ...favoriteSuggestions]) {
+        final key =
+            '${item.name}_${item.location.latitude.toStringAsFixed(6)}_${item.location.longitude.toStringAsFixed(6)}';
+        if (seen.add(key)) {
+          merged.add(item);
+        }
+      }
+
       setState(() {
-        _suggestions = _wayPoints
-            .map((wp) => PlaceResult(
-                  name: wp.name,
-                  address: '⭐ 保存的点位',
-                  location: wp.location,
-                ))
-            .toList();
+        _suggestions = merged;
         _showSuggestions = _suggestions.isNotEmpty;
       });
       return;
@@ -770,6 +759,19 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 location: wp.location,
               ))
           .toList();
+
+        final historyMatches = _searchHistoryPlaces
+          .where((p) =>
+            p.name.toLowerCase().contains(keyword.toLowerCase()) ||
+            p.address.toLowerCase().contains(keyword.toLowerCase()))
+          .map((p) => PlaceResult(
+            name: p.name,
+            address: p.address.isEmpty
+              ? '🕘 搜索历史'
+              : '🕘 搜索历史 · ${p.address}',
+            location: p.location,
+            ))
+          .toList();
           
       final results = await _apiService.suggestPlaces(
         keyword,
@@ -777,13 +779,37 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       );
       
       if (mounted) {
+        final seen = <String>{};
+        final merged = <PlaceResult>[];
+        for (final item in [...historyMatches, ...localMatches, ...results]) {
+          final key =
+              '${item.name}_${item.location.latitude.toStringAsFixed(6)}_${item.location.longitude.toStringAsFixed(6)}';
+          if (seen.add(key)) {
+            merged.add(item);
+          }
+        }
+
         setState(() {
-          _suggestions = [...localMatches, ...results];
+          _suggestions = merged;
           _isSuggesting = false;
           _showSuggestions = true;
         });
       }
     });
+  }
+
+  Future<void> _loadSearchHistoryPlaces() async {
+    final list = await _apiService.getSearchHistoryPlaces();
+    if (!mounted) return;
+    setState(() {
+      _searchHistoryPlaces = list;
+    });
+  }
+
+  Future<void> _recordSearchHistoryPlace(PlaceResult place) async {
+    await _apiService.saveSearchHistoryPlace(place);
+    await _loadSearchHistoryPlaces();
+    await _loadRecentData(silent: true);
   }
 
   Future<void> _selectSuggestion(PlaceResult suggestion) async {
@@ -798,6 +824,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       nearBy: _userPosition,
     );
     final place = results.isNotEmpty ? results.first : suggestion;
+    await _recordSearchHistoryPlace(place);
     if (!mounted) return;
 
     if (_navSearchTarget == 'start') {
@@ -1663,6 +1690,22 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   void _applyRecentNavigationToNavigation(RecentNavigationRecord record) {
+    if (record.source == 'search_history') {
+      final place = _placeFromSavedCoordinate(record.end);
+      setState(() {
+        _navMode = false;
+        _activeTab = _BottomTab.explore;
+        _navPanelCollapsed = false;
+        _selectedPlace = place;
+        _showSuggestions = false;
+        _suggestions = [];
+        _searchController.text = place.name;
+      });
+      _mapController.move(place.location, 16);
+      _showToast('已恢复搜索地点');
+      return;
+    }
+
     setState(() {
       _navMode = true;
       _activeTab = _BottomTab.plan;
@@ -1687,6 +1730,35 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   void _showRecentNavigationDetail(RecentNavigationRecord record) {
+    if (record.source == 'search_history') {
+      final place = record.end;
+      showModalBottomSheet(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+        ),
+        builder: (ctx) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                record.name,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              _infoRow('类型', '搜索历史'),
+              _infoRow('地点', place.name),
+              _infoRow('地址', place.address.isEmpty ? '-' : place.address),
+              _infoRow('记录时间', _formatRecentCreatedAt(record.createdAt)),
+            ],
+          ),
+        ),
+      );
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -2106,7 +2178,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         iteration: i,
         maxIterations: _planStepMaxIterations,
         ignoreOutsideSixthRing: _ignoreOutsideSixthOnAvoid,
-        avoidAlgorithmVersion: _avoidAlgorithmVersion,
         bestRoute: bestRoute,
         anchorDistance: anchorDistance,
         waypoints: userWaypoints,
@@ -2240,7 +2311,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             end: end,
             avoidCameras: false,
             ignoreOutsideSixthRing: false,
-            avoidAlgorithmVersion: _avoidAlgorithmVersion,
             cancelToken: planningToken,
           );
           if (response.route == null) {
@@ -3568,45 +3638,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                               ],
                             ),
                     ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      '避让算法版本',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    SegmentedButton<String>(
-                      segments: const [
-                        ButtonSegment<String>(
-                          value: ApiService.avoidAlgorithmVersionV1,
-                          label: Text('v1.0'),
-                        ),
-                        ButtonSegment<String>(
-                          value: ApiService.avoidAlgorithmVersionV1_1Beta1,
-                          label: Text('v1.1-beta.1'),
-                        ),
-                      ],
-                      selected: {_avoidAlgorithmVersion},
-                      showSelectedIcon: false,
-                      onSelectionChanged: (values) {
-                        if (values.isEmpty) return;
-                        setState(() {
-                          _avoidAlgorithmVersion =
-                              _normalizeAvoidAlgorithmVersion(values.first);
-                        });
-                        unawaited(_saveUserSettings());
-                      },
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _avoidAlgorithmVersion == ApiService.avoidAlgorithmVersionV1
-                          ? 'v1.0：稳定基线版本'
-                          : 'v1.1-beta.1：当前实验版本',
-                      style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
-                    ),
                     const Divider(height: 20),
                     SwitchListTile.adaptive(
                       value: _allowBackgroundOperations,
@@ -4305,19 +4336,33 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ),
                   itemBuilder: (context, index) {
                     final suggestion = _suggestions[index];
+                    final isSearchHistory = suggestion.address.startsWith('🕘 搜索历史');
+                    final isFavorite = suggestion.address.startsWith('⭐ 保存的点位');
                     return ListTile(
                       dense: true,
                       leading: Container(
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: _primaryContainer.withValues(alpha: 0.7),
+                          color: isSearchHistory
+                              ? const Color(0xFFE8F0FE)
+                              : (isFavorite
+                                  ? const Color(0xFFFFF3CD)
+                                  : _primaryContainer.withValues(alpha: 0.7)),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: const Icon(
-                          Icons.place_outlined,
+                        child: Icon(
+                          isSearchHistory
+                              ? Icons.history_rounded
+                              : (isFavorite
+                                  ? Icons.bookmark_rounded
+                                  : Icons.place_outlined),
                           size: 16,
-                          color: _primary,
+                          color: isSearchHistory
+                              ? const Color(0xFF1A73E8)
+                              : (isFavorite
+                                  ? const Color(0xFFB96A00)
+                                  : _primary),
                         ),
                       ),
                       title: Text(
