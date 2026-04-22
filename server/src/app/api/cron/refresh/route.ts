@@ -12,18 +12,23 @@ export async function GET(request: Request) {
     process.env.CRON_SECRET &&
     authHeader !== `Bearer ${process.env.CRON_SECRET}`
   ) {
+    console.warn('[camera-cron] unauthorized request rejected');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
+    console.info('[camera-cron] refresh job started');
     const { cameras, updatedAt } = await refreshCameras();
+    console.info(
+      `[camera-cron] refresh job succeeded: total=${cameras.length}, sourceUpdatedAt=${updatedAt}`
+    );
     return NextResponse.json({
       ok: true,
       total: cameras.length,
       updatedAt,
     });
   } catch (error) {
-    console.error('Cron refresh failed:', error);
+    console.error('[camera-cron] refresh job failed', error);
     return NextResponse.json(
       { error: 'Refresh failed' },
       { status: 500 }

@@ -481,18 +481,6 @@ class ApiService {
     }
   }
 
-  /// 强制重新爬取摄像头并更新缓存
-  Future<CamerasResponse> recrawlCameras() async {
-    try {
-      final response = await _dio.post('/api/cameras');
-      final parsed = CamerasResponse.fromJson(response.data as Map<String, dynamic>);
-      await _writeCachedCameras(parsed);
-      return parsed;
-    } catch (e) {
-      throw Exception('重新爬取摄像头失败: ${_formatError(e)}');
-    }
-  }
-
   /// 规划路线（支持避开摄像头的智能路由）
   /// [start] 起点坐标
   /// [end] 终点坐标
@@ -1229,4 +1217,3 @@ class DismissedCamera {
     );
   }
 }
-

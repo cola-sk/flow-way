@@ -20,58 +20,71 @@ export async function scrapeCameras(): Promise<{
   cameras: Camera[];
   updatedAt: string;
 }> {
-  const res = await fetch(SOURCE_URL, {
-    agent,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
-  });
-
-  const html = await res.text();
-
-  // 提取更新时间
-  const timeMatch = html.match(
-    /(\d{4}-\d{2}-\d{2}-\d{2}[：:]\d{2}[：:]\d{2})/
-  );
-  const updatedAt = timeMatch
-    ? timeMatch[1].replace(/：/g, ':')
-    : new Date().toISOString();
-
-  // 提取 LabelsData 数组中的每一项
-  // 每项格式: { name: '...', position: [lng, lat], aa: '1', time: '...', href: '...' }
-  const cameras: Camera[] = [];
-
-  const entryRegex =
-    /name:\s*'([^']*)',\s*position:\s*\[([0-9.]+),([0-9.]+)\],\s*aa:\s*'(\d+)',\s*time:\s*'([^']*)',\s*edittime:\s*'([^']*)'/g;
-
-  let match: RegExpExecArray | null;
-  while ((match = entryRegex.exec(html)) !== null) {
-    cameras.push({
-      name: match[1],
-      lng: parseFloat(match[2]),
-      lat: parseFloat(match[3]),
-      type: parseInt(match[4], 10),
-      date: match[5],
-      edittime: match[6] || undefined,
-      href: '', // href 由单独的正则获取，简化处理
+  console.info(`[camera-scraper] crawl start: url=${SOURCE_URL}`);
+  try {
+    const res = await fetch(SOURCE_URL, {
+      agent,
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
     });
-  }
 
-  // 尝试提取 href（可选，结构较复杂时跳过）
-  const hrefRegex =
-    /name:\s*'([^']*)'[\s\S]*?href:\s*'([^']*)'/g;
-  const hrefMap = new Map<string, string>();
-  while ((match = hrefRegex.exec(html)) !== null) {
-    hrefMap.set(match[1], match[2]);
-  }
+    if (!res.ok) {
+      throw new Error(`source request failed: status=${res.status}`);
+    }
 
-  for (const cam of cameras) {
-    const href = hrefMap.get(cam.name);
-    if (href) cam.href = href;
-  }
+    const html = await res.text();
 
-  return { cameras, updatedAt };
+    // 提取更新时间
+    const timeMatch = html.match(
+      /(\d{4}-\d{2}-\d{2}-\d{2}[：:]\d{2}[：:]\d{2})/
+    );
+    const updatedAt = timeMatch
+      ? timeMatch[1].replace(/：/g, ':')
+      : new Date().toISOString();
+
+    // 提取 LabelsData 数组中的每一项
+    // 每项格式: { name: '...', position: [lng, lat], aa: '1', time: '...', href: '...' }
+    const cameras: Camera[] = [];
+
+    const entryRegex =
+      /name:\s*'([^']*)',\s*position:\s*\[([0-9.]+),([0-9.]+)\],\s*aa:\s*'(\d+)',\s*time:\s*'([^']*)',\s*edittime:\s*'([^']*)'/g;
+
+    let match: RegExpExecArray | null;
+    while ((match = entryRegex.exec(html)) !== null) {
+      cameras.push({
+        name: match[1],
+        lng: parseFloat(match[2]),
+        lat: parseFloat(match[3]),
+        type: parseInt(match[4], 10),
+        date: match[5],
+        edittime: match[6] || undefined,
+        href: '', // href 由单独的正则获取，简化处理
+      });
+    }
+
+    // 尝试提取 href（可选，结构较复杂时跳过）
+    const hrefRegex =
+      /name:\s*'([^']*)'[\s\S]*?href:\s*'([^']*)'/g;
+    const hrefMap = new Map<string, string>();
+    while ((match = hrefRegex.exec(html)) !== null) {
+      hrefMap.set(match[1], match[2]);
+    }
+
+    for (const cam of cameras) {
+      const href = hrefMap.get(cam.name);
+      if (href) cam.href = href;
+    }
+
+    console.info(
+      `[camera-scraper] crawl success: total=${cameras.length}, sourceUpdatedAt=${updatedAt}`
+    );
+    return { cameras, updatedAt };
+  } catch (error) {
+    console.error('[camera-scraper] crawl failed', error);
+    throw error;
+  }
 }
 
 /**

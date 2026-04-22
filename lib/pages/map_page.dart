@@ -155,7 +155,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   String _tokenRemainingText = '--';
   final TextEditingController _userTokenController = TextEditingController();
   bool _updatingCameras = false;
-  bool _recrawlingCameras = false;
 
   @override
   void initState() {
@@ -405,7 +404,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           }
         });
 
-        if (_activeTab == _BottomTab.explore && !_navMode) {
+        if (_cruiseModeEnabled) {
           _mapController.move(pos, 17);
         }
       },
@@ -2259,28 +2258,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (mounted) {
       setState(() => _updatingCameras = false);
       _showToast(ok ? '摄像头数据已更新' : '手动更新失败');
-    }
-  }
-
-  Future<void> _recrawlCamerasManually() async {
-    if (_recrawlingCameras) return;
-    setState(() => _recrawlingCameras = true);
-    try {
-      final response = await _apiService.recrawlCameras();
-      if (!mounted) return;
-      setState(() {
-        _cameras = response.cameras;
-        _updatedAt = response.updatedAt;
-      });
-      _showToast('已重新爬取并更新摄像头数据');
-    } catch (e) {
-      if (mounted) {
-        _showToast('重新爬取失败: $e');
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _recrawlingCameras = false);
-      }
     }
   }
 
@@ -4166,33 +4143,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 ),
                               )
                             : const Icon(Icons.sync_rounded, size: 18),
-                        label: Text(_updatingCameras ? '更新中...' : '手动更新摄像头'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed:
-                            _recrawlingCameras ? null : _recrawlCamerasManually,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF7A4A00),
-                        ),
-                        icon: _recrawlingCameras
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.travel_explore_rounded, size: 18),
-                        label: Text(
-                          _recrawlingCameras
-                              ? '重新爬取中...'
-                              : '重新爬取并更新摄像头',
-                        ),
+                        label: Text(_updatingCameras ? '刷新中...' : '刷新摄像头显示'),
                       ),
                     ),
                     const SizedBox(height: 8),
