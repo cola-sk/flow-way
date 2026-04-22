@@ -17,37 +17,46 @@ interface EnhancedCacheData {
 let cache: CacheData | null = null;
 let enhancedCache: EnhancedCacheData | null = null;
 
-// 缓存有效期: 1 小时
-const CACHE_TTL = 60 * 60 * 1000;
-
 /**
  * 获取摄像头数据（带内存级缓存）
  */
 export async function getCameras(): Promise<CacheData> {
-  const now = Date.now();
-
-  if (cache && now - cache.fetchedAt < CACHE_TTL) {
+  if (cache) {
     return cache;
   }
 
-  const { cameras, updatedAt } = await scrapeCameras();
-  cache = { cameras, updatedAt, fetchedAt: now };
-  return cache;
+  try {
+    const { cameras, updatedAt } = await scrapeCameras();
+    cache = { cameras, updatedAt, fetchedAt: Date.now() };
+    return cache;
+  } catch (err) {
+    if (cache) {
+      console.warn('[cache] scrapeCameras failed, using stale cache', err);
+      return cache;
+    }
+    throw err;
+  }
 }
 
 /**
  * 获取增强的摄像头数据（包含方向、状态等信息）
  */
 export async function getCamerasEnhanced(): Promise<EnhancedCacheData> {
-  const now = Date.now();
-
-  if (enhancedCache && now - enhancedCache.fetchedAt < CACHE_TTL) {
+  if (enhancedCache) {
     return enhancedCache;
   }
 
-  const { cameras, updatedAt } = await scrapeCamerasEnhanced();
-  enhancedCache = { cameras, updatedAt, fetchedAt: now };
-  return enhancedCache;
+  try {
+    const { cameras, updatedAt } = await scrapeCamerasEnhanced();
+    enhancedCache = { cameras, updatedAt, fetchedAt: Date.now() };
+    return enhancedCache;
+  } catch (err) {
+    if (enhancedCache) {
+      console.warn('[cache] scrapeCamerasEnhanced failed, using stale enhanced cache', err);
+      return enhancedCache;
+    }
+    throw err;
+  }
 }
 
 /**
