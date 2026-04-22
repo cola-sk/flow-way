@@ -517,6 +517,7 @@ class ApiService {
   }
 
   /// 单步路线规划（每次只请求一轮，便于前端逐轮绘制）
+  /// [excludePolylines] 之前已探索的路线折线，用于"再次尝试"时排除
   Future<RouteStepResponse> planRouteStep({
     required LatLng start,
     required LatLng end,
@@ -528,6 +529,7 @@ class ApiService {
     List<LatLng>? waypoints,
     int? legIndex,
     int? totalLegs,
+    List<List<LatLng>>? excludePolylines,
     CancelToken? cancelToken,
   }) async {
     try {
@@ -558,6 +560,10 @@ class ApiService {
           'duration': bestRoute.duration,
           'cameraIndicesOnRoute': bestRoute.cameraIndicesOnRoute,
         },
+        if (excludePolylines != null && excludePolylines.isNotEmpty)
+          'excludePolylines': excludePolylines
+              .map((pl) => pl.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList())
+              .toList(),
       }, cancelToken: cancelToken);
       return RouteStepResponse.fromJson(response.data as Map<String, dynamic>);
     } catch (e) {

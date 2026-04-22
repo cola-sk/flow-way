@@ -32,6 +32,8 @@ export interface RoutePlanStepRequest {
   totalLegs?: number;
   bestRoute?: RouteStepState;
   anchorDistance?: number;
+  /** 之前规划过的路线折线，用于"再次尝试"时排除已探索路径 */
+  excludePolylines?: RoutePoint[][];
 }
 
 export interface RoutePoint {

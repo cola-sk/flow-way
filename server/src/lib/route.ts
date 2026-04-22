@@ -888,13 +888,70 @@ export async function planRoute(
  *   3. 前期贪心加入所有雷区；
  *   4. 如果陷入局部最优（连续两次无法改善），则随机解除部分多边形限制，进行更多路径抖动尝试，总计不超过 20 次。
  */
+/**
+ * 从一条折线中均匀采样 N 个关键点（不含首尾）
+ * 用于把"上一次路线"转化为 avoid_polygons，强制腾讯 API 探索不同走廊
+ */
+function sampleKeyPointsFromPolyline(polyline: RoutePoint[], count: number): RoutePoint[] {
+  if (polyline.length <= 2) return [];
+  const interior = polyline.slice(1, -1);
+  if (interior.length <= count) return interior;
+
+  const step = interior.length / (count + 1);
+  const samples: RoutePoint[] = [];
+  for (let i = 1; i <= count; i++) {
+    const idx = Math.min(Math.round(step * i), interior.length - 1);
+    samples.push(interior[idx]);
+  }
+  return samples;
+}
+
+/**
+ * 将坐标点转化为避让多边形字符串（半径单位：度）
+ */
+function buildAvoidPolygonAroundPoint(lat: number, lng: number, radius: number): string {
+  return `${lat - radius},${lng - radius};${lat + radius},${lng - radius};${lat + radius},${lng + radius};${lat - radius},${lng + radius}`;
+}
+
+/**
+ * 生成路线中段的随机偏移 waypoint，用于强制改变搜索方向
+ */
+function generateDiversificationWaypoint(
+  start: Coordinate,
+  end: Coordinate,
+  attempt: number
+): Coordinate {
+  const midLat = (start.lat + end.lat) / 2;
+  const midLng = (start.lng + end.lng) / 2;
+
+  const dLat = end.lat - start.lat;
+  const dLng = end.lng - start.lng;
+  const len = Math.sqrt(dLat * dLat + dLng * dLng);
+
+  if (len < 1e-10) return { lat: midLat, lng: midLng };
+
+  // 垂直方向偏移（大约 500~1500 米随机）
+  const perpLat = -dLng / len;
+  const perpLng = dLat / len;
+  const offsetDeg = (0.005 + Math.random() * 0.01) * (attempt % 2 === 0 ? 1 : -1);
+
+  // 沿路线方向也做 20%~80% 的位置抖动
+  const along = 0.2 + Math.random() * 0.6;
+
+  return {
+    lat: start.lat + dLat * along + perpLat * offsetDeg,
+    lng: start.lng + dLng * along + perpLng * offsetDeg,
+  };
+}
+
 export async function planAvoidCamerasRoute(
   start: Coordinate,
   end: Coordinate,
   cameras: Camera[],
   splitAssistDepth = 0,
   requestContext?: TencentApiRequestContext,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  excludePolylines?: RoutePoint[][]
 ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
   throwIfRoutePlanningAborted(signal);
 
@@ -907,24 +964,49 @@ export async function planAvoidCamerasRoute(
   let currentAvoidCamIds = new Set<number>();
   
   // 约 35 米的微型避让区半径 (0.00035度)
-  const POLYGON_RADIUS = 0.00035; 
+  const POLYGON_RADIUS = 0.00035;
+
+  // 从上次路线中采样关键点，生成排除多边形，使搜索走不同走廊
+  const excludePolygons: string[] = [];
+  if (excludePolylines && excludePolylines.length > 0) {
+    // 采样半径较大（约 80 米），确保新路线走完全不同的走廊
+    const EXCLUDE_RADIUS = 0.0008;
+    for (const polyline of excludePolylines) {
+      // 每条历史路线采样 6 个关键点
+      const keyPoints = sampleKeyPointsFromPolyline(polyline, 6);
+      for (const p of keyPoints) {
+        excludePolygons.push(buildAvoidPolygonAroundPoint(p.lat, p.lng, EXCLUDE_RADIUS));
+      }
+    }
+    console.log(`[route] retry mode: excluding ${excludePolygons.length} corridor polygons from ${excludePolylines.length} previous route(s)`);
+  }
+
   let noImprovementCount = 0;
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     throwIfRoutePlanningAborted(signal);
 
     try {
-      const avoidPolygons = buildAvoidPolygonsByCameraIndices(
+      const cameraPolygons = buildAvoidPolygonsByCameraIndices(
         currentAvoidCamIds,
         cameras,
         POLYGON_RADIUS
       );
 
+      // 合并摄像头禁区 + 上次路线排除区（腾讯 API 最多 32 个多边形）
+      const avoidPolygons = [...cameraPolygons, ...excludePolygons].slice(0, 32);
+
+      // 在 retry 模式下，前几轮注入随机偏移 waypoint 以打破腾讯 API 的默认路线偏好
+      let diversificationWaypoints: Coordinate[] | undefined;
+      if (excludePolylines && excludePolylines.length > 0 && i < 4) {
+        diversificationWaypoints = [generateDiversificationWaypoint(start, end, i)];
+      }
+
       const routes = await callTencentDrivingAPI(
         start,
         end,
         true,
-        undefined,
+        diversificationWaypoints,
         avoidPolygons,
         context,
         signal

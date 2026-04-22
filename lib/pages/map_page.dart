@@ -86,6 +86,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   String? _planningStatus;
   // 路线上无法绕开的摄像头索引（仅 avoidCameras=true 时有效）
   Set<int> _unavoidableCameraIndices = {};
+  // 之前已探索过的路线折线，用于"再尝试一次"时排除已知走廊
+  List<List<LatLng>> _previousRoutePolylines = [];
 
   // 从服务端加载的摄像头标记集合（按坐标键索引，支持类型与备注）
   final Map<String, DismissedCamera> _cameraMarksByCoord = {};
@@ -2360,6 +2362,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     List<LatLng>? userWaypoints,
     int? legIndex,
     int? totalLegs,
+    List<List<LatLng>>? excludePolylines,
     CancelToken? cancelToken,
   }) async {
     NavigationRoute? bestRoute;
@@ -2396,6 +2399,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         waypoints: userWaypoints,
         legIndex: legIndex,
         totalLegs: totalLegs,
+        excludePolylines: excludePolylines,
         cancelToken: cancelToken,
       );
 
@@ -2467,8 +2471,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   Future<void> _planRouteWithStops(
     List<LatLng> orderedStops,
-    bool avoidCameras,
-  ) async {
+    bool avoidCameras, {
+    List<List<LatLng>>? excludePolylines,
+  }) async {
     if (orderedStops.length < 2) return;
 
     _cancelActivePlanningRequest('开始新的路线规划');
@@ -2481,11 +2486,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     final totalLegs = orderedStops.length - 1;
 
+    // 首次规划时清空历史路线；重试时保留
+    if (excludePolylines == null) {
+      _previousRoutePolylines = [];
+    }
+
     setState(() {
       _isNavigating = true;
       _stopPlanningRequested = false;
       _planningIteration = 0;
-      _planningStatus = avoidCameras ? '准备路线规划...' : null;
+      _planningStatus = avoidCameras
+          ? (excludePolylines != null ? '再尝试一次...' : '准备路线规划...')
+          : null;
       _cruisePath.clear(); // 当开启下一个导航或者规划时，清除历史路线记录
     });
 
@@ -2512,6 +2524,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             userWaypoints: userWaypoints,
             legIndex: i + 1,
             totalLegs: totalLegs,
+            excludePolylines: excludePolylines,
             cancelToken: planningToken,
           );
           if (legRoute == null) {
@@ -2535,6 +2548,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
       if (segmentRoutes.isNotEmpty && mounted) {
         final merged = _mergeRoutes(segmentRoutes, avoidCameras);
+
+        // 将本次规划结果加入历史，供下次重试排除
+        if (avoidCameras && merged.polylinePoints.isNotEmpty) {
+          _previousRoutePolylines = [
+            ..._previousRoutePolylines,
+            merged.polylinePoints,
+          ];
+        }
+
         setState(() {
           _currentRoute = merged;
           _unavoidableCameraIndices = merged.cameraIndicesOnRoute.toSet();
@@ -2567,6 +2589,21 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         });
       }
     }
+  }
+
+  /// 没找到避让路线？再尝试一次：使用之前规划过的路线作为排除项，搜索全新走廊
+  void _retryRouteWithDifferentCorridor() {
+    final stops = _buildNavStopItems();
+    if (stops.length < 2) return;
+
+    final orderedStops = stops.map((e) => e.place.location).toList();
+    _planRouteWithStops(
+      orderedStops,
+      true,
+      excludePolylines: _previousRoutePolylines.isNotEmpty
+          ? _previousRoutePolylines
+          : null,
+    );
   }
 
   /// 路线规划结果弹窗：告知用户绕开了几个摄像头、哪些无法绕开
@@ -2710,6 +2747,33 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
 
             const SizedBox(height: 16),
+
+            // "再尝试一次"按钮：当有无法绕开的摄像头时显示
+            if (avoidCameras && onRouteCount > 0) ...[
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _retryRouteWithDifferentCorridor();
+                  },
+                  icon: const Icon(Icons.alt_route_rounded, size: 18),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF1565C0),
+                    side: const BorderSide(color: Color(0xFF1565C0), width: 1.2),
+                    minimumSize: const Size.fromHeight(42),
+                  ),
+                  label: Text(
+                    _previousRoutePolylines.length > 1
+                        ? '没找到避让路线？再尝试一次（第${_previousRoutePolylines.length}次）'
+                        : '没找到避让路线？再尝试一次',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+
             Row(
               children: [
                 Expanded(
@@ -5029,9 +5093,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
-              // 摄像头标记层（定位完成后才显示）
-              if (_locationResolved)
-                MarkerLayer(
+              // 摄像头标记层
+              MarkerLayer(
                   markers: _cameras
                       .asMap()
                       .entries

@@ -69,6 +69,13 @@ export async function POST(request: NextRequest) {
       indexMapping[filteredIdx++] = i;
     }
 
+    // 解析"排除已知路线"参数，用于"再次尝试"时走不同走廊
+    const excludePolylines = Array.isArray(reqBody.excludePolylines)
+      ? reqBody.excludePolylines
+          .filter((pl): pl is Array<{ lat: number; lng: number }> => Array.isArray(pl))
+          .map((pl) => pl.map((p) => ({ lat: p.lat, lng: p.lng })))
+      : undefined;
+
     // 沿用 4/17 高效策略：单次请求内完成完整避让搜索，避免前后端反复往返导致收敛变慢
     const finalState = await planAvoidCamerasRoute(
       start,
@@ -76,7 +83,8 @@ export async function POST(request: NextRequest) {
       cameras,
       0,
       undefined,
-      request.signal
+      request.signal,
+      excludePolylines
     );
 
     const globalCameraIndices = finalState.cameraIndices.map((i) => indexMapping[i]);
