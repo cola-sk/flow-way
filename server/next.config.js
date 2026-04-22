@@ -1,3 +1,5 @@
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // 允许 Flutter 客户端跨域访问
