@@ -2,6 +2,13 @@ import { Camera } from '@/types/camera';
 import { EnhancedCamera } from '@/types/camera-enhanced';
 import { createEnhancedCamera } from '@/lib/camera-parser';
 import { v4 as uuidv4 } from 'uuid';
+import fetch from 'node-fetch';
+import https from 'https';
+
+// 创建一个忽略证书错误的 agent
+const agent = new https.Agent({
+  rejectUnauthorized: false
+});
 
 const SOURCE_URL = 'https://www.jinjing365.com/index.asp';
 
@@ -14,6 +21,7 @@ export async function scrapeCameras(): Promise<{
   updatedAt: string;
 }> {
   const res = await fetch(SOURCE_URL, {
+    agent,
     headers: {
       'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
