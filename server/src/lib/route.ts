@@ -4,6 +4,7 @@ import { extractDirection } from './camera-parser';
 import { CAMERA_DIRECTION_VECTORS, CameraDirection } from '@/types/camera-enhanced';
 import { v4 as uuidv4 } from 'uuid';
 import { signTencentUrl, getTencentMapKey } from './tencent-sign';
+import { checkCameraOnSegment } from './camera-detection-simple';
 
 const MIN_TENCENT_REQUEST_INTERVAL_MS = 500;
 let lastTencentRequestAt = 0;
@@ -188,99 +189,105 @@ function getCameraBearingsFromName(name: string): number[] | null {
   return null;
 }
 
-/**
- * 检查摄像头是否在路线附近（距离阈值：100 米）
- * 且路线通过方向与摄像头拍摄方向一致（方向未知时保守计入）
- */
-function distanceToSegment(pLat: number, pLng: number, aLat: number, aLng: number, bLat: number, bLng: number): number {
-  const R = 6371000;
-  
-  // Convert inputs to radians
-  const lat1 = (aLat * Math.PI) / 180;
-  const lng1 = (aLng * Math.PI) / 180;
-  const lat2 = (bLat * Math.PI) / 180;
-  const lng2 = (bLng * Math.PI) / 180;
-  const lat3 = (pLat * Math.PI) / 180;
-  const lng3 = (pLng * Math.PI) / 180;
-
-  // Haversine formula for distance between points
-  const dLat_ab = lat2 - lat1;
-  const dLng_ab = lng2 - lng1;
-  
-  if (dLat_ab === 0 && dLng_ab === 0) {
-    return calculateDistance(pLat, pLng, aLat, aLng);
-  }
-
-  // Equirectangular approximation for small distances
-  const x = (lng2 - lng1) * Math.cos((lat1 + lat2) / 2);
-  const y = lat2 - lat1;
-  const len2 = x * x + y * y;
-
-  const dx_pa = (lng3 - lng1) * Math.cos((lat1 + lat3) / 2);
-  const dy_pa = lat3 - lat1;
-
-  // Projection of p-a onto b-a
-  let t = (dx_pa * x + dy_pa * y) / len2;
-  t = Math.max(0, Math.min(1, t));
-
-  const projLng = aLng + t * (bLng - aLng);
-  const projLat = aLat + t * (bLat - aLat);
-
-  return calculateDistance(pLat, pLng, projLat, projLng);
-}
-
 export function findCamerasNearRoute(
   polylinePoints: RoutePoint[],
   cameras: Camera[],
   threshold: number = 40
 ): number[] {
   const cameraIndices: number[] = [];
-  const DIRECTION_TOLERANCE_DEG = 50;
+  const DIRECTION_TOLERANCE_DEG = 60;
 
   if (polylinePoints.length === 0) return cameraIndices;
 
   cameras.forEach((camera, index) => {
     if (camera.type === 4) return;
 
-    let minDistance = Infinity;
-    let matchingSegIdx = 0;
-    
-    // Check distance to all segments instead of just vertices
-    for (let i = 0; i < polylinePoints.length - 1; i++) {
-        const p1 = polylinePoints[i];
-        const p2 = polylinePoints[i+1];
-        const dist = distanceToSegment(camera.lat, camera.lng, p1.lat, p1.lng, p2.lat, p2.lng);
-        if (dist < minDistance) {
-            minDistance = dist;
-            matchingSegIdx = i;
-        }
-    }
-    
-    // Also check the very last point
-    const lastPointDist = calculateDistance(
-      camera.lat, camera.lng,
-      polylinePoints[polylinePoints.length-1].lat, polylinePoints[polylinePoints.length-1].lng
-    );
-    if (lastPointDist < minDistance) {
-      minDistance = lastPointDist;
-      matchingSegIdx = Math.max(0, polylinePoints.length - 2);
-    }
-
-    if (minDistance >= threshold) return;
-
+    let isMatched = false;
     const cameraBearings = getCameraBearingsFromName(camera.name);
-    if (cameraBearings === null) {
-      cameraIndices.push(index);
-      return;
+
+    for (let i = 0; i < polylinePoints.length - 1; i++) {
+      const p1 = polylinePoints[i];
+      const p2 = polylinePoints[i+1];
+
+      // 快速边界检查，提高性能 (0.001 度大约 111 米)
+      const latMin = Math.min(p1.lat, p2.lat) - 0.001;
+      const latMax = Math.max(p1.lat, p2.lat) + 0.001;
+      const lngMin = Math.min(p1.lng, p2.lng) - 0.001;
+      const lngMax = Math.max(p1.lng, p2.lng) + 0.001;
+      
+      if (camera.lat < latMin || camera.lat > latMax || camera.lng < lngMin || camera.lng > lngMax) {
+        continue;
+      }
+
+      // 使用高级算法检查摄像头是否真实位于这小段路线上
+      if (checkCameraOnSegment(p1.lat, p1.lng, p2.lat, p2.lng, camera.lat, camera.lng, threshold, 5)) {
+        
+        // 关键修复：如果摄像头在路口附近（距离当前线段起点<40米），
+        // 我们需要判断车辆是不是从其他方向“拐弯”汇入的。
+        // 寻找一个有效的前置点（过滤掉由于腾讯地图可能返回的重叠点）
+        let validPrevIdx = i - 1;
+        while (validPrevIdx >= 0) {
+          if (calculateDistance(polylinePoints[validPrevIdx].lat, polylinePoints[validPrevIdx].lng, p1.lat, p1.lng) > 1) {
+            break;
+          }
+          validPrevIdx--;
+        }
+
+        if (validPrevIdx >= 0) {
+          const distToStart = calculateDistance(p1.lat, p1.lng, camera.lat, camera.lng);
+          if (distToStart < 40 && cameraBearings !== null) {
+            const prevP1 = polylinePoints[validPrevIdx];
+            const prevBearing = calculateBearing(prevP1, p1);
+            // 放宽一点点角度（+10度）以容忍路口弯道的曲线
+            const prevDirMatched = cameraBearings.some(cb => angleGapDeg(prevBearing, cb) <= DIRECTION_TOLERANCE_DEG + 10);
+            if (!prevDirMatched) {
+              // 车辆是从侧面拐进来的，不会被拍到，跳过此路段的匹配
+              continue;
+            }
+          }
+        }
+
+        if (cameraBearings === null) {
+          isMatched = true;
+          break;
+        }
+
+        // 匹配方向
+        const routeBearing = getRouteBearingNearIndex(polylinePoints, i);
+        if (routeBearing === null) {
+          isMatched = true;
+          break;
+        }
+
+        const dirMatched = cameraBearings.some(cb => angleGapDeg(routeBearing, cb) <= DIRECTION_TOLERANCE_DEG);
+        if (dirMatched) {
+          isMatched = true;
+          break;
+        }
+      }
+    }
+    
+    // 单独检查最后一个点（避免终点正好就在摄像头跟前而被漏掉）
+    if (!isMatched && polylinePoints.length > 0) {
+      const lastPointDist = calculateDistance(
+        camera.lat, camera.lng,
+        polylinePoints[polylinePoints.length-1].lat, polylinePoints[polylinePoints.length-1].lng
+      );
+      if (lastPointDist < threshold) {
+        if (cameraBearings === null) {
+          isMatched = true;
+        } else {
+          const routeBearing = getRouteBearingNearIndex(polylinePoints, Math.max(0, polylinePoints.length - 2));
+          if (routeBearing !== null) {
+             const dirMatched = cameraBearings.some(cb => angleGapDeg(routeBearing, cb) <= DIRECTION_TOLERANCE_DEG);
+             if (dirMatched) isMatched = true;
+          } else {
+             isMatched = true;
+          }
+        }
+      }
     }
 
-    const routeBearing = getRouteBearingNearIndex(polylinePoints, matchingSegIdx);
-    if (routeBearing === null) {
-      cameraIndices.push(index);
-      return;
-    }
-
-    const isMatched = cameraBearings.some(cb => angleGapDeg(routeBearing, cb) <= DIRECTION_TOLERANCE_DEG);
     if (isMatched) {
       cameraIndices.push(index);
     }

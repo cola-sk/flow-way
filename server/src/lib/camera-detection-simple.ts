@@ -154,14 +154,76 @@ export function isRouteDetected(
         segmentEnd.lng
       );
 
-      // 判断这一段是否会被拍到
-      if (isDetectedByCamera(segmentBearing, cameraBearing)) {
-        return true; // 只要有一段会被拍到，就返回 true
+      // 判断方向是否匹配 (使用更严格的45度容差，避免垂直或大角度交叉的误判)
+      if (isDetectedByCamera(segmentBearing, cameraBearing, 45)) {
+        // 判断摄像头是否真的在路线上，而非仅仅在路口附近但实际上未经过
+        if (checkCameraOnSegment(
+          segmentStart.lat, segmentStart.lng,
+          segmentEnd.lat, segmentEnd.lng,
+          cameraLat, cameraLng
+        )) {
+          return true; // 只要有一段会被拍到，就返回 true
+        }
       }
     }
   }
 
   return false; // 所有接近的路线段都不会被拍到
+}
+
+/**
+ * 高级检查：判断摄像头是否确实在路段的行进轨迹上
+ * 通过计算相机的投影点，判断投影点是否在路段上（或非常接近），且相机到路段的垂直距离较小
+ */
+export function checkCameraOnSegment(
+  latA: number, lngA: number,
+  latB: number, lngB: number,
+  latC: number, lngC: number,
+  maxCrossTrackDist: number = 40,
+  maxLongitudinalDist: number = 5
+): boolean {
+  // 将经纬度近似转换为局部平面坐标（单位：米），以A点为原点
+  const R = 6371000;
+  const latRad = latA * Math.PI / 180;
+  const mPerLat = (Math.PI / 180) * R;
+  const mPerLng = (Math.PI / 180) * R * Math.cos(latRad);
+
+  const xB = (lngB - lngA) * mPerLng;
+  const yB = (latB - latA) * mPerLat;
+  const xC = (lngC - lngA) * mPerLng;
+  const yC = (latC - latA) * mPerLat;
+
+  const dot = xC * xB + yC * yB;
+  const lenSq = xB * xB + yB * yB;
+  
+  let t = -1;
+  if (lenSq !== 0) {
+    t = dot / lenSq;
+  }
+
+  // 垂直距离（即路宽误差和定位误差）
+  let projX = t * xB;
+  let projY = t * yB;
+  if (lenSq === 0) {
+    projX = 0;
+    projY = 0;
+  }
+  const crossTrackDist = Math.sqrt(Math.pow(xC - projX, 2) + Math.pow(yC - projY, 2));
+
+  if (crossTrackDist > maxCrossTrackDist) {
+    return false;
+  }
+
+  // 计算沿路段方向在起点前或终点后的距离
+  const len = Math.sqrt(lenSq);
+  let longitudinalDistOutside = 0;
+  if (t < 0) {
+    longitudinalDistOutside = -t * len;
+  } else if (t > 1) {
+    longitudinalDistOutside = (t - 1) * len;
+  }
+
+  return longitudinalDistOutside <= maxLongitudinalDist;
 }
 
 /**
