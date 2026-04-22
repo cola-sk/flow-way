@@ -234,11 +234,28 @@ export async function getDismissedSet(userToken: string): Promise<Set<string>> {
   return nextSet;
 }
 
+const dismissedMapCacheByUser = new Map<string, { map: Map<string, CameraMarkType>; cachedAt: number }>();
+
+export async function getDismissedMap(userToken: string): Promise<Map<string, CameraMarkType>> {
+  await ensureLegacyMigrated(userToken);
+  const now = Date.now();
+  const cached = dismissedMapCacheByUser.get(userToken);
+  if (cached && now - cached.cachedAt < DISMISSED_CACHE_TTL) {
+    return cached.map;
+  }
+  const list = await getDismissedList(userToken);
+  const nextMap = new Map<string, CameraMarkType>(list.map((c) => [coordKey(c.lat, c.lng), c.type]));
+  dismissedMapCacheByUser.set(userToken, { map: nextMap, cachedAt: now });
+  return nextMap;
+}
+
 /** 标记/取消标记后立即失效缓存 */
 export function invalidateDismissedCache(userToken?: string): void {
   if (userToken) {
     dismissedSetCacheByUser.delete(userToken);
+    dismissedMapCacheByUser.delete(userToken);
     return;
   }
   dismissedSetCacheByUser.clear();
+  dismissedMapCacheByUser.clear();
 }

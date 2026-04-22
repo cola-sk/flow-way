@@ -10,6 +10,7 @@ export interface RouteRequest {
   ignoreOutsideSixthRing?: boolean;
   userToken?: string;
   avoidAlgorithmVersion?: string;
+  ignoreLowRiskCameras?: boolean;
 }
 
 export interface RouteStepState {
@@ -34,6 +35,8 @@ export interface RoutePlanStepRequest {
   anchorDistance?: number;
   /** 之前规划过的路线折线，用于"再次尝试"时排除已探索路径 */
   excludePolylines?: RoutePoint[][];
+  /** 是否忽略标记为低风险（type=12）的摄像头 */
+  ignoreLowRiskCameras?: boolean;
 }
 
 export interface RoutePoint {

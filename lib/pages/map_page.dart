@@ -62,6 +62,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       'settings_hide_inside_fifth_markers';
   static const String _settingsAllowBackgroundOperationsKey =
       'settings_allow_background_operations';
+  static const String _settingsIgnoreLowRiskOnAvoidKey =
+      'settings_ignore_low_risk_on_avoid';
   static const String _settingsUserTokenKey = ApiService.userTokenPrefsKey;
   static const String _settingsScopedMigrationFlagPrefix =
       'settings_scoped_migrated::';
@@ -142,6 +144,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   String? _recentError;
 
   bool _ignoreOutsideSixthOnAvoid = true;
+  bool _ignoreLowRiskOnAvoid = true;
   bool _hideOutsideSixthMarkers = true;
   bool _hideInsideFourthMarkers = true;
   bool _hideInsideFifthMarkers = false;
@@ -558,6 +561,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         _userTokenInputError = null;
         _ignoreOutsideSixthOnAvoid =
             prefs.getBool(_scopedSettingsKey(_settingsIgnoreOutsideSixthOnAvoidKey, userToken)) ?? true;
+        _ignoreLowRiskOnAvoid =
+            prefs.getBool(_scopedSettingsKey(_settingsIgnoreLowRiskOnAvoidKey, userToken)) ?? true;
         _hideOutsideSixthMarkers =
             prefs.getBool(_scopedSettingsKey(_settingsHideOutsideSixthMarkersKey, userToken)) ?? true;
         _hideInsideFourthMarkers =
@@ -606,6 +611,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
 
     await migrateBool(_settingsIgnoreOutsideSixthOnAvoidKey);
+    await migrateBool(_settingsIgnoreLowRiskOnAvoidKey);
     await migrateBool(_settingsHideOutsideSixthMarkersKey);
     await migrateBool(_settingsHideInsideFourthMarkersKey);
     await migrateBool(_settingsHideInsideFifthMarkersKey);
@@ -624,6 +630,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       await prefs.setBool(
         _scopedSettingsKey(_settingsIgnoreOutsideSixthOnAvoidKey),
         _ignoreOutsideSixthOnAvoid,
+      );
+      await prefs.setBool(
+        _scopedSettingsKey(_settingsIgnoreLowRiskOnAvoidKey),
+        _ignoreLowRiskOnAvoid,
       );
       await prefs.setBool(
         _scopedSettingsKey(_settingsHideOutsideSixthMarkersKey),
@@ -2394,6 +2404,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         iteration: i,
         maxIterations: _planStepMaxIterations,
         ignoreOutsideSixthRing: _ignoreOutsideSixthOnAvoid,
+        ignoreLowRiskCameras: _ignoreLowRiskOnAvoid,
         bestRoute: bestRoute,
         anchorDistance: anchorDistance,
         waypoints: userWaypoints,
@@ -4144,6 +4155,23 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       ),
                       onChanged: (value) {
                         setState(() => _ignoreOutsideSixthOnAvoid = value);
+                        unawaited(_saveUserSettings());
+                      },
+                    ),
+                    const Divider(height: 20),
+                    SwitchListTile.adaptive(
+                      value: _ignoreLowRiskOnAvoid,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        '避让导航时忽略标记为低风险摄像头',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: const Text(
+                        '默认开启。开启后，避让算法不会把标记为“低风险可尝试”的摄像头作为避让目标。',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      onChanged: (value) {
+                        setState(() => _ignoreLowRiskOnAvoid = value);
                         unawaited(_saveUserSettings());
                       },
                     ),

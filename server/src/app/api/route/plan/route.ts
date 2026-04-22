@@ -8,7 +8,7 @@ import {
   createRoute,
   isRoutePlanningAbortedError,
 } from '@/lib/route';
-import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
+import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body: RouteRequest = await request.json();
-    const { start, end, avoidCameras, ignoreOutsideSixthRing } = body;
+    const { start, end, avoidCameras, ignoreOutsideSixthRing, ignoreLowRiskCameras } = body;
 
     const tokenGuard = await requireActiveUserTokenFromRequest(
       request,
@@ -43,9 +43,11 @@ export async function POST(request: NextRequest) {
 
     // 获取摄像头数据，过滤掉用户标记废弃的（Redis 持久化，60s 内存缓存）
     const { cameras: originalCameras } = await getCameras();
-    const dismissedSet = await getDismissedSet(userToken);
+    const dismissedMap = await getDismissedMap(userToken);
     const shouldIgnoreOutsideSixth =
       avoidCameras && ignoreOutsideSixthRing === true;
+    const shouldIgnoreLowRisk =
+      avoidCameras && ignoreLowRiskCameras === true;
 
     const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
@@ -53,9 +55,16 @@ export async function POST(request: NextRequest) {
     let filteredIdx = 0;
     for (let i = 0; i < originalCameras.length; i++) {
       const cam = originalCameras[i];
-      if (dismissedSet.has(coordKey(cam.lat, cam.lng))) {
-        continue;
+      const markType = dismissedMap.get(coordKey(cam.lat, cam.lng));
+
+      if (markType !== undefined) {
+        if (markType === 12 && !shouldIgnoreLowRisk) {
+          // 不忽略低风险，作为有效摄像头保留
+        } else {
+          continue;
+        }
       }
+
       if (shouldIgnoreOutsideSixth && cam.type === 6) {
         continue;
       }

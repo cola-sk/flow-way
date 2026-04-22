@@ -6,7 +6,7 @@ import {
   planAvoidCamerasRoute,
   isRoutePlanningAbortedError,
 } from '@/lib/route';
-import { getDismissedSet, coordKey } from '@/lib/dismissed-cameras';
+import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
@@ -50,8 +50,9 @@ export async function POST(request: NextRequest) {
     }
 
     const { cameras: originalCameras } = await getCameras();
-    const dismissedSet = await getDismissedSet(userToken);
+    const dismissedMap = await getDismissedMap(userToken);
     const ignoreOutsideSixthRing = reqBody.ignoreOutsideSixthRing === true;
+    const ignoreLowRiskCameras = reqBody.ignoreLowRiskCameras === true;
 
     const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
@@ -59,9 +60,18 @@ export async function POST(request: NextRequest) {
     let filteredIdx = 0;
     for (let i = 0; i < originalCameras.length; i++) {
       const cam = originalCameras[i];
-      if (dismissedSet.has(coordKey(cam.lat, cam.lng))) {
-        continue;
+      const markType = dismissedMap.get(coordKey(cam.lat, cam.lng));
+
+      if (markType !== undefined) {
+        // 如果标记为低风险 (type=12)，且用户选择不忽略低风险，则将其视为有效摄像头进行避让
+        if (markType === 12 && !ignoreLowRiskCameras) {
+          // 继续执行，将其加入待避让列表
+        } else {
+          // 否则（普通标记，或已标记低风险且用户选择忽略），跳过此摄像头
+          continue;
+        }
       }
+
       if (ignoreOutsideSixthRing && cam.type === 6) {
         continue;
       }

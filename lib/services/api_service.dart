@@ -488,8 +488,10 @@ class ApiService {
   Future<RouteResponse> planRoute({
     required LatLng start,
     required LatLng end,
-    bool avoidCameras = false,
-    bool ignoreOutsideSixthRing = false,
+    bool avoidCameras = true,
+    bool ignoreOutsideSixthRing = true,
+    bool ignoreLowRiskCameras = true,
+    List<LatLng>? waypoints,
     CancelToken? cancelToken,
   }) async {
     try {
@@ -504,6 +506,7 @@ class ApiService {
         },
         'avoidCameras': avoidCameras,
         'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
+        'ignoreLowRiskCameras': ignoreLowRiskCameras,
       }, cancelToken: cancelToken);
       return RouteResponse.fromJson(response.data);
     } catch (e) {
@@ -524,6 +527,7 @@ class ApiService {
     required int iteration,
     required int maxIterations,
     bool ignoreOutsideSixthRing = false,
+    bool ignoreLowRiskCameras = false,
     NavigationRoute? bestRoute,
     double? anchorDistance,
     List<LatLng>? waypoints,
@@ -552,6 +556,7 @@ class ApiService {
         if (totalLegs != null) 'totalLegs': totalLegs,
         if (anchorDistance != null) 'anchorDistance': anchorDistance,
         'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
+        'ignoreLowRiskCameras': ignoreLowRiskCameras,
         if (bestRoute != null) 'bestRoute': {
           'polylinePoints': bestRoute.polylinePoints
               .map((p) => {'lat': p.latitude, 'lng': p.longitude})
