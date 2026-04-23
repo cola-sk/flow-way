@@ -160,6 +160,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   String _tokenRemainingText = '--';
   final TextEditingController _userTokenController = TextEditingController();
   bool _updatingCameras = false;
+  DateTime? _cruiseStartTime;
+
 
   @override
   void initState() {
@@ -193,7 +195,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _loadWayPoints();
     _loadDismissedCameras();
     _locateUser(forceRefresh: true);
+    _apiService.checkAndReportFirstLaunch();
   }
+
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -430,8 +434,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         _cruisePath.add(_userPosition!);
       }
     });
+    
+    _cruiseStartTime = DateTime.now();
+    _apiService.reportEvent('cruise_start', {
+      'timestamp': _cruiseStartTime!.toIso8601String(),
+    });
+    
     _showToast('巡航模式已开启');
   }
+
 
   Future<void> _stopCruiseMode({bool silent = false}) async {
     await _cruisePositionStream?.cancel();
@@ -448,7 +459,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (!silent) {
       _showToast('巡航模式已关闭');
     }
+    
+    if (_cruiseStartTime != null) {
+      final duration = DateTime.now().difference(_cruiseStartTime!);
+      _apiService.reportEvent('cruise_end', {
+        'duration_seconds': duration.inSeconds,
+        'start_time': _cruiseStartTime!.toIso8601String(),
+        'end_time': DateTime.now().toIso8601String(),
+      });
+      _cruiseStartTime = null;
+    }
   }
+
 
   Future<void> _toggleCruiseMode() async {
     if (_cruiseModeEnabled) {
@@ -1485,8 +1507,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     });
 
     _stopPlanningRequested = false;
+    
+    _apiService.reportEvent('route_plan_click', {
+      'avoid_cameras': _avoidCameras,
+      'has_waypoints': waypoints.isNotEmpty,
+      'waypoint_count': waypoints.length,
+    });
+    
     await _planRouteWithStops(orderedPoints, _avoidCameras);
   }
+
 
   void _toggleNavPanelCollapsed() {
     final next = !_navPanelCollapsed;
@@ -2576,11 +2606,25 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         if (_stopPlanningRequested) {
           _showToast('已暂停/停止重试');
         } else {
+          _apiService.reportEvent('route_plan_result', {
+            'success': true,
+            'avoid_cameras': avoidCameras,
+            'camera_count': merged.cameraIndicesOnRoute.length,
+            'distance': merged.distance,
+            'duration': merged.duration,
+            'is_retry': excludePolylines != null,
+          });
           _showRouteResult(merged, avoidCameras);
         }
       }
     } catch (e) {
+      _apiService.reportEvent('route_plan_result', {
+        'success': false,
+        'error': e.toString(),
+        'is_retry': excludePolylines != null,
+      });
       if (_isRequestCancelled(e)) {
+
         if (mounted && _stopPlanningRequested) {
           _showToast('已停止当前规划');
         }
@@ -2607,6 +2651,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final stops = _buildNavStopItems();
     if (stops.length < 2) return;
 
+    _apiService.reportEvent('route_retry_click', {
+      'previous_attempt_count': _previousRoutePolylines.length,
+    });
+
     final orderedStops = stops.map((e) => e.place.location).toList();
     _planRouteWithStops(
       orderedStops,
@@ -2616,6 +2664,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           : null,
     );
   }
+
 
   /// 路线规划结果弹窗：告知用户绕开了几个摄像头、哪些无法绕开
   void _showRouteResult(NavigationRoute route, bool avoidCameras) {

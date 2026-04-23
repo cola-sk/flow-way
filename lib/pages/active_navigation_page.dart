@@ -42,6 +42,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   LatLng? _currentMapPosition;
   double _currentSpeed = 0.0; // m/s
   double _heading = 0.0;     // degrees
+  DateTime? _navStartTime;
+
 
   bool _isFollowing = true;
   bool _isOffRoute = false;
@@ -59,7 +61,15 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     unawaited(WakelockPlus.enable());
     _initTts();
     _startNavigation();
+    _navStartTime = DateTime.now();
+    widget.apiService.reportEvent('navigation_start', {
+      'timestamp': _navStartTime!.toIso8601String(),
+      'camera_count': widget.camerasOnRoute.length,
+      'route_distance': widget.route.distance,
+      'route_duration': widget.route.duration,
+    });
   }
+
 
   Future<void> _initTts() async {
     await _flutterTts.setLanguage("zh-CN");
@@ -188,8 +198,20 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     _positionStream?.cancel();
     _flutterTts.stop();
     unawaited(WakelockPlus.disable());
+    
+    if (_navStartTime != null) {
+      final duration = DateTime.now().difference(_navStartTime!);
+      widget.apiService.reportEvent('navigation_end', {
+        'duration_seconds': duration.inSeconds,
+        'start_time': _navStartTime!.toIso8601String(),
+        'end_time': DateTime.now().toIso8601String(),
+      });
+      _navStartTime = null;
+    }
+    
     super.dispose();
   }
+
 
   @override
   Widget build(BuildContext context) {

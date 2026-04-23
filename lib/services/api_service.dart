@@ -15,6 +15,8 @@ const String _localRoutePlansKeyPrefix = 'local_route_plans_v1::';
 const String _localRecentNavigationsKeyPrefix = 'local_recent_navigations_v1::';
 const int _localRecentKeepLimit = 10;
 const int _localSearchHistoryKeepLimit = 5;
+const String _firstLaunchReportedKey = 'first_launch_reported_v1';
+
 
 String _resolveBaseUrl() {
   if (kIsWeb) {
@@ -208,6 +210,39 @@ class ApiService {
       _resolvingUserToken = null;
     }
   }
+
+  /// 上报事件日志
+  Future<void> reportEvent(String event, [Map<String, dynamic>? data]) async {
+    try {
+      final userToken = await ensureUserToken();
+      await _dio.post('/api/logs', data: {
+        'event': event,
+        'data': data ?? {},
+        'userToken': userToken,
+      });
+    } catch (e) {
+      // 日志上报失败不影响主流程
+      print('上报事件 [$event] 失败: $e');
+    }
+  }
+
+  /// 检查并上报首次安装
+  Future<void> checkAndReportFirstLaunch() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final reported = prefs.getBool(_firstLaunchReportedKey) ?? false;
+      if (!reported) {
+        await reportEvent('first_install', {
+          'platform': kIsWeb ? 'web' : 'native',
+          'timestamp': DateTime.now().toIso8601String(),
+        });
+        await prefs.setBool(_firstLaunchReportedKey, true);
+      }
+    } catch (e) {
+      print('首次安装上报失败: $e');
+    }
+  }
+
 
   Future<void> setUserToken(String userToken) async {
     final token = userToken.trim();
