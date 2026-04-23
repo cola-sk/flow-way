@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "set-token-expiry": "tsx scripts/set-token-expiry.ts"
+    "set-token-expiry": "tsx scripts/set-token-expiry.ts",
+    "upload-apk": "tsx scripts/upload-apk.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,6 +18,7 @@
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@upstash/redis": "^1.37.0",
+    "@vercel/blob": "^2.3.3",
     "cheerio": "^1.2.0",
     "next": "^16.2.3",
     "node-fetch": "^3.3.2",
