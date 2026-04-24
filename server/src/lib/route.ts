@@ -961,6 +961,8 @@ export async function planAvoidCamerasRoute(
   let bestGlobalRoute: AvoidRouteEvaluation | null = null;
   let bestGlobalHits = 999999;
   let bestGlobalDist = Infinity;
+  let baselineDist = Infinity;
+  let emergencyFallbackRoute: { points: RoutePoint[]; distance: number; duration: number } | null = null;
   let currentAvoidCamIds = new Set<number>();
   
   // 约 35 米的微型避让区半径 (0.00035度)
@@ -1002,18 +1004,44 @@ export async function planAvoidCamerasRoute(
         diversificationWaypoints = [generateDiversificationWaypoint(start, end, i)];
       }
 
-      const routes = await callTencentDrivingAPI(
-        start,
-        end,
-        true,
-        diversificationWaypoints,
-        avoidPolygons,
-        context,
-        signal
-      );
+      let routes: Array<{ points: RoutePoint[]; distance: number; duration: number }> = [];
+      try {
+        routes = await callTencentDrivingAPI(
+          start,
+          end,
+          true,
+          diversificationWaypoints,
+          avoidPolygons,
+          context,
+          signal
+        );
+      } catch (apiErr) {
+        // 如果使用了抖动途径点导致规划失败（例如途径点落在了无法到达的区域），降级去掉途径点再试一次
+        if (diversificationWaypoints && diversificationWaypoints.length > 0) {
+          console.warn(`[route] Iteration ${i + 1} failed with waypoints, retrying without waypoints...`);
+          routes = await callTencentDrivingAPI(
+            start,
+            end,
+            true,
+            undefined,
+            avoidPolygons,
+            context,
+            signal
+          );
+        } else {
+          throw apiErr;
+        }
+      }
+      
       context.rateLimitRetries = 0;
       if (routes.length === 0) {
         throw new Error('腾讯地图路线规划失败: 未返回可用路线');
+      }
+
+      if (baselineDist === Infinity && routes.length > 0) {
+        // 第一轮规划的第一条路线（通常是最优路线）作为基准里程，同时保存为应急兜底路线
+        baselineDist = routes[0].distance;
+        emergencyFallbackRoute = { points: routes[0].points, distance: routes[0].distance, duration: routes[0].duration };
       }
 
       let bestHitsInIter = 999999;
@@ -1021,7 +1049,12 @@ export async function planAvoidCamerasRoute(
       let newCamIdsThisIter: number[] = [];
       let bestRouteInIter: { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number } | null = null;
 
+      const maxAllowedDist = Math.max(baselineDist * 2.0, baselineDist + 10000);
+
       for (const r of routes) {
+        // 如果备选路线绕路太夸张（超过基准里程的2.0倍或超出10公里），直接拒绝该备选！
+        if (r.distance > maxAllowedDist) continue;
+
         const hitCams = findCamerasNearRoute(r.points, cameras);
         if (hitCams.length < bestHitsInIter || (hitCams.length === bestHitsInIter && r.distance < bestDistInIter)) {
           bestHitsInIter = hitCams.length;
@@ -1031,19 +1064,27 @@ export async function planAvoidCamerasRoute(
         }
       }
 
-      if (!bestRouteInIter) break;
+      if (!bestRouteInIter) {
+        // 本轮所有备选路线都超过了距离限制
+        // 如果已经有全局最优路线，继续下一轮搜索（不要就此放弃导致直线兄底！）
+        if (bestGlobalRoute) {
+          noImprovementCount++;
+          console.warn(`[route] Iteration ${i + 1}: all routes exceeded distance limit, continuing search...`);
+          continue;
+        } else {
+          // 第一轮就遇到这种情况（极端少见），才真正就此中断
+          break;
+        }
+      }
 
       let improvedThisRound = false;
 
       // 如果能在里程不失控的情况下找到更少摄像头的路，就全局接纳它
-      // 放宽绕路限制：最多允许绕行 2.0 倍的距离
-      if (bestGlobalDist === Infinity || (bestDistInIter <= bestGlobalDist * 2.0)) {
-          if (bestHitsInIter < bestGlobalHits || (bestHitsInIter === bestGlobalHits && bestDistInIter < bestGlobalDist)) {
-              bestGlobalHits = bestHitsInIter;
-              bestGlobalDist = bestDistInIter;
-              bestGlobalRoute = bestRouteInIter;
-              improvedThisRound = true;
-          }
+      if (bestHitsInIter < bestGlobalHits || (bestHitsInIter === bestGlobalHits && bestDistInIter < bestGlobalDist)) {
+          bestGlobalHits = bestHitsInIter;
+          bestGlobalDist = bestDistInIter;
+          bestGlobalRoute = bestRouteInIter;
+          improvedThisRound = true;
       }
 
       if (improvedThisRound) {
@@ -1115,6 +1156,22 @@ export async function planAvoidCamerasRoute(
         i--; // 重试
         continue;
       }
+      // 腾讯 API 返回"数据获取错误"时，通常是因为 avoid_polygons 约束过强，路网中找不到可行路线
+      // 逐步减半避让摄像头数量，找到最大可行避让子集，而不是清零重来（清零会导致死循环）
+      if (message.includes('数据获取错误') && currentAvoidCamIds.size > 0) {
+        const prevSize = currentAvoidCamIds.size;
+        const halfSize = Math.floor(prevSize / 2);
+        if (halfSize === 0) {
+          // 即使只剩 1 个多边形也报错，说明这条路线根本无法规避任何摄像头，放弃避让
+          console.warn(`[route] Iteration ${i + 1} got "数据获取错误" with single polygon, giving up avoidance.`);
+          currentAvoidCamIds.clear();
+          break;
+        }
+        const keptIds = Array.from(currentAvoidCamIds).slice(0, halfSize);
+        currentAvoidCamIds = new Set(keptIds);
+        console.warn(`[route] Iteration ${i + 1} got "数据获取错误" with ${prevSize} polygons, reducing to ${halfSize} and retrying...`);
+        continue; // 用更少的约束重试
+      }
       console.warn(`[route] iteration ${i + 1} failed:`, err);
       break;
     }
@@ -1122,13 +1179,16 @@ export async function planAvoidCamerasRoute(
 
   if (!bestGlobalRoute) {
     throwIfRoutePlanningAborted(signal);
-    const points = generateFallbackRoute(start, end);
-    const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
+    // 全部迭代失败：优先使用本次规划第一轮获取的原始路线作为兜底（避免多余的网络请求）
+    console.warn('[route] All iterations failed, using emergency fallback route...');
+    const fallbackPoints = emergencyFallbackRoute?.points ?? generateFallbackRoute(start, end);
+    const fallbackDist = emergencyFallbackRoute?.distance ?? calculateDistance(start.lat, start.lng, end.lat, end.lng);
+    const fallbackDur = emergencyFallbackRoute?.duration ?? Math.round(fallbackDist / 13.33);
     bestGlobalRoute = {
-      points,
-      distance,
-      duration: Math.round(distance / 13.33),
-      cameraIndices: findCamerasNearRoute(points, cameras),
+      points: fallbackPoints,
+      distance: fallbackDist,
+      duration: fallbackDur,
+      cameraIndices: findCamerasNearRoute(fallbackPoints, cameras),
     };
   }
 
