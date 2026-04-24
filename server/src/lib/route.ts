@@ -962,6 +962,7 @@ export async function planAvoidCamerasRoute(
   let bestGlobalHits = 999999;
   let bestGlobalDist = Infinity;
   let baselineDist = Infinity;
+  let emergencyFallbackRoute: { points: RoutePoint[]; distance: number; duration: number } | null = null;
   let currentAvoidCamIds = new Set<number>();
   
   // 约 35 米的微型避让区半径 (0.00035度)
@@ -1038,8 +1039,9 @@ export async function planAvoidCamerasRoute(
       }
 
       if (baselineDist === Infinity && routes.length > 0) {
-        // 第一轮规划的第一条路线（通常是最优路线）作为基准里程
+        // 第一轮规划的第一条路线（通常是最优路线）作为基准里程，同时保存为应急兜底路线
         baselineDist = routes[0].distance;
+        emergencyFallbackRoute = { points: routes[0].points, distance: routes[0].distance, duration: routes[0].duration };
       }
 
       let bestHitsInIter = 999999;
@@ -1062,7 +1064,18 @@ export async function planAvoidCamerasRoute(
         }
       }
 
-      if (!bestRouteInIter) break;
+      if (!bestRouteInIter) {
+        // 本轮所有备选路线都超过了距离限制
+        // 如果已经有全局最优路线，继续下一轮搜索（不要就此放弃导致直线兄底！）
+        if (bestGlobalRoute) {
+          noImprovementCount++;
+          console.warn(`[route] Iteration ${i + 1}: all routes exceeded distance limit, continuing search...`);
+          continue;
+        } else {
+          // 第一轮就遇到这种情况（极端少见），才真正就此中断
+          break;
+        }
+      }
 
       let improvedThisRound = false;
 
@@ -1150,13 +1163,16 @@ export async function planAvoidCamerasRoute(
 
   if (!bestGlobalRoute) {
     throwIfRoutePlanningAborted(signal);
-    const points = generateFallbackRoute(start, end);
-    const distance = calculateDistance(start.lat, start.lng, end.lat, end.lng);
+    // 全部迭代失败：优先使用本次规划第一轮获取的原始路线作为兜底（避免多余的网络请求）
+    console.warn('[route] All iterations failed, using emergency fallback route...');
+    const fallbackPoints = emergencyFallbackRoute?.points ?? generateFallbackRoute(start, end);
+    const fallbackDist = emergencyFallbackRoute?.distance ?? calculateDistance(start.lat, start.lng, end.lat, end.lng);
+    const fallbackDur = emergencyFallbackRoute?.duration ?? Math.round(fallbackDist / 13.33);
     bestGlobalRoute = {
-      points,
-      distance,
-      duration: Math.round(distance / 13.33),
-      cameraIndices: findCamerasNearRoute(points, cameras),
+      points: fallbackPoints,
+      distance: fallbackDist,
+      duration: fallbackDur,
+      cameraIndices: findCamerasNearRoute(fallbackPoints, cameras),
     };
   }
 
