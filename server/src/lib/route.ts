@@ -1047,10 +1047,10 @@ export async function planAvoidCamerasRoute(
       let newCamIdsThisIter: number[] = [];
       let bestRouteInIter: { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number } | null = null;
 
-      const maxAllowedDist = Math.max(baselineDist * 1.8, baselineDist + 10000);
+      const maxAllowedDist = Math.max(baselineDist * 2.0, baselineDist + 10000);
 
       for (const r of routes) {
-        // 如果备选路线绕路太夸张（超过基准里程的1.8倍或超出10公里），直接拒绝该备选！
+        // 如果备选路线绕路太夸张（超过基准里程的2.0倍或超出10公里），直接拒绝该备选！
         if (r.distance > maxAllowedDist) continue;
 
         const hitCams = findCamerasNearRoute(r.points, cameras);
