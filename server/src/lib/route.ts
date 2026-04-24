@@ -1156,12 +1156,21 @@ export async function planAvoidCamerasRoute(
         i--; // 重试
         continue;
       }
-      // 腾讯 API 返回"数据获取错误"时，通常是因为 avoid_polygons 参数有问题（坐标格式/数量等）
-      // 降级：清空黑名单和多边形，用无避让限制的请求继续搜索，而不是直接放弃
+      // 腾讯 API 返回"数据获取错误"时，通常是因为 avoid_polygons 约束过强，路网中找不到可行路线
+      // 逐步减半避让摄像头数量，找到最大可行避让子集，而不是清零重来（清零会导致死循环）
       if (message.includes('数据获取错误') && currentAvoidCamIds.size > 0) {
-        console.warn(`[route] Iteration ${i + 1} got "数据获取错误", clearing avoid polygons and retrying...`);
-        currentAvoidCamIds.clear();
-        continue; // 重试本轮，这次不带任何 avoid_polygons
+        const prevSize = currentAvoidCamIds.size;
+        const halfSize = Math.floor(prevSize / 2);
+        if (halfSize === 0) {
+          // 即使只剩 1 个多边形也报错，说明这条路线根本无法规避任何摄像头，放弃避让
+          console.warn(`[route] Iteration ${i + 1} got "数据获取错误" with single polygon, giving up avoidance.`);
+          currentAvoidCamIds.clear();
+          break;
+        }
+        const keptIds = Array.from(currentAvoidCamIds).slice(0, halfSize);
+        currentAvoidCamIds = new Set(keptIds);
+        console.warn(`[route] Iteration ${i + 1} got "数据获取错误" with ${prevSize} polygons, reducing to ${halfSize} and retrying...`);
+        continue; // 用更少的约束重试
       }
       console.warn(`[route] iteration ${i + 1} failed:`, err);
       break;
