@@ -1156,6 +1156,13 @@ export async function planAvoidCamerasRoute(
         i--; // 重试
         continue;
       }
+      // 腾讯 API 返回"数据获取错误"时，通常是因为 avoid_polygons 参数有问题（坐标格式/数量等）
+      // 降级：清空黑名单和多边形，用无避让限制的请求继续搜索，而不是直接放弃
+      if (message.includes('数据获取错误') && currentAvoidCamIds.size > 0) {
+        console.warn(`[route] Iteration ${i + 1} got "数据获取错误", clearing avoid polygons and retrying...`);
+        currentAvoidCamIds.clear();
+        continue; // 重试本轮，这次不带任何 avoid_polygons
+      }
       console.warn(`[route] iteration ${i + 1} failed:`, err);
       break;
     }
