@@ -961,6 +961,7 @@ export async function planAvoidCamerasRoute(
   let bestGlobalRoute: AvoidRouteEvaluation | null = null;
   let bestGlobalHits = 999999;
   let bestGlobalDist = Infinity;
+  let baselineDist = Infinity;
   let currentAvoidCamIds = new Set<number>();
   
   // 约 35 米的微型避让区半径 (0.00035度)
@@ -1002,18 +1003,43 @@ export async function planAvoidCamerasRoute(
         diversificationWaypoints = [generateDiversificationWaypoint(start, end, i)];
       }
 
-      const routes = await callTencentDrivingAPI(
-        start,
-        end,
-        true,
-        diversificationWaypoints,
-        avoidPolygons,
-        context,
-        signal
-      );
+      let routes: Array<{ points: RoutePoint[]; distance: number; duration: number }> = [];
+      try {
+        routes = await callTencentDrivingAPI(
+          start,
+          end,
+          true,
+          diversificationWaypoints,
+          avoidPolygons,
+          context,
+          signal
+        );
+      } catch (apiErr) {
+        // 如果使用了抖动途径点导致规划失败（例如途径点落在了无法到达的区域），降级去掉途径点再试一次
+        if (diversificationWaypoints && diversificationWaypoints.length > 0) {
+          console.warn(`[route] Iteration ${i + 1} failed with waypoints, retrying without waypoints...`);
+          routes = await callTencentDrivingAPI(
+            start,
+            end,
+            true,
+            undefined,
+            avoidPolygons,
+            context,
+            signal
+          );
+        } else {
+          throw apiErr;
+        }
+      }
+      
       context.rateLimitRetries = 0;
       if (routes.length === 0) {
         throw new Error('腾讯地图路线规划失败: 未返回可用路线');
+      }
+
+      if (baselineDist === Infinity && routes.length > 0) {
+        // 第一轮规划的第一条路线（通常是最优路线）作为基准里程
+        baselineDist = routes[0].distance;
       }
 
       let bestHitsInIter = 999999;
@@ -1021,7 +1047,12 @@ export async function planAvoidCamerasRoute(
       let newCamIdsThisIter: number[] = [];
       let bestRouteInIter: { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number } | null = null;
 
+      const maxAllowedDist = Math.max(baselineDist * 1.8, baselineDist + 10000);
+
       for (const r of routes) {
+        // 如果备选路线绕路太夸张（超过基准里程的1.8倍或超出10公里），直接拒绝该备选！
+        if (r.distance > maxAllowedDist) continue;
+
         const hitCams = findCamerasNearRoute(r.points, cameras);
         if (hitCams.length < bestHitsInIter || (hitCams.length === bestHitsInIter && r.distance < bestDistInIter)) {
           bestHitsInIter = hitCams.length;
@@ -1036,14 +1067,11 @@ export async function planAvoidCamerasRoute(
       let improvedThisRound = false;
 
       // 如果能在里程不失控的情况下找到更少摄像头的路，就全局接纳它
-      // 放宽绕路限制：最多允许绕行 2.0 倍的距离
-      if (bestGlobalDist === Infinity || (bestDistInIter <= bestGlobalDist * 2.0)) {
-          if (bestHitsInIter < bestGlobalHits || (bestHitsInIter === bestGlobalHits && bestDistInIter < bestGlobalDist)) {
-              bestGlobalHits = bestHitsInIter;
-              bestGlobalDist = bestDistInIter;
-              bestGlobalRoute = bestRouteInIter;
-              improvedThisRound = true;
-          }
+      if (bestHitsInIter < bestGlobalHits || (bestHitsInIter === bestGlobalHits && bestDistInIter < bestGlobalDist)) {
+          bestGlobalHits = bestHitsInIter;
+          bestGlobalDist = bestDistInIter;
+          bestGlobalRoute = bestRouteInIter;
+          improvedThisRound = true;
       }
 
       if (improvedThisRound) {
