@@ -191,7 +191,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     });
 
     _loadUserSettings();
-    _loadCameras();
+    _loadCameras(preferRemote: true);
     _loadWayPoints();
     _loadDismissedCameras();
     _locateUser(forceRefresh: true);
@@ -2264,6 +2264,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   Future<bool> _loadCameras({
     bool forceRefresh = false,
     bool showLoading = true,
+    bool preferRemote = false,
   }) async {
     if (showLoading) {
       setState(() {
@@ -2273,7 +2274,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
 
     try {
-      final response = await _apiService.getCameras(forceRefresh: forceRefresh);
+      final response = await _apiService.getCameras(
+        forceRefresh: forceRefresh,
+        preferRemote: preferRemote,
+      );
+      if (!mounted) return true;
       setState(() {
         _cameras = response.cameras;
         _updatedAt = response.updatedAt;
@@ -2283,6 +2288,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       });
       return true;
     } catch (e) {
+      if (!mounted) return false;
       setState(() {
         _error = '加载摄像头数据失败: $e';
         if (showLoading) {
@@ -2531,6 +2537,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (excludePolylines == null) {
       _previousRoutePolylines = [];
     }
+
+    // 规划前优先拉一次远端摄像头快照，降低 cameraIndices 与本地缓存错位的概率。
+    await _loadCameras(showLoading: false, preferRemote: true);
 
     setState(() {
       _isNavigating = true;

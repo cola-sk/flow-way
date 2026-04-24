@@ -498,8 +498,11 @@ class ApiService {
   /// 获取所有摄像头数据
   /// 策略：每次启动时检查缓存是否超过 24 小时；
   /// 未过期直接返回，过期则请求接口并更新缓存。
-  Future<CamerasResponse> getCameras({bool forceRefresh = false}) async {
-    if (!forceRefresh) {
+  Future<CamerasResponse> getCameras({
+    bool forceRefresh = false,
+    bool preferRemote = false,
+  }) async {
+    if (!forceRefresh && !preferRemote) {
       final cachedFresh = await _readCachedCameras(allowExpired: false);
       if (cachedFresh != null) return cachedFresh;
     }
