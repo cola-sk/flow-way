@@ -38,7 +38,6 @@ async function uploadApk() {
     const blob = await put(fileName, fileBuffer, {
       access: 'public',
       addRandomSuffix: false, // 保持固定文件名便于下载
-      allowOverwrite: true,   // 覆盖已存在的同名文件
       contentType: 'application/vnd.android.package-archive',
       token: token,
     });
