@@ -1,8 +1,8 @@
 import { createHash } from 'crypto';
 
 // 每次调用时从 process.env 读取，避免模块初始化时 env 未就绪的问题
-function getKey() { return (process.env.TENCENT_MAP_KEY ?? '').trim(); }
-function getSk() { return (process.env.TENCENT_MAP_SK ?? '').trim(); }
+function getKey() { return process.env.TENCENT_MAP_KEY ?? ''; }
+function getSk() { return process.env.TENCENT_MAP_SK ?? ''; }
 
 /**
  * 给腾讯地图 WebService API 的 URL 追加 key 和 sig 参数。
