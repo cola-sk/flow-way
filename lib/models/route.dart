@@ -64,11 +64,11 @@ class RouteStep {
   };
 
   factory RouteStep.fromJson(Map<String, dynamic> json) => RouteStep(
-    instruction: json['instruction'] as String,
-    distance: (json['distance'] as num).toDouble(),
-    duration: (json['duration'] as num).toInt(),
-    polylineIdxStart: (json['polylineIdxStart'] as num).toInt(),
-    polylineIdxEnd: (json['polylineIdxEnd'] as num).toInt(),
+    instruction: json['instruction'] as String? ?? '',
+    distance: (json['distance'] as num?)?.toDouble() ?? 0.0,
+    duration: (json['duration'] as num?)?.toInt() ?? 0,
+    polylineIdxStart: (json['polylineIdxStart'] as num?)?.toInt() ?? 0,
+    polylineIdxEnd: (json['polylineIdxEnd'] as num?)?.toInt() ?? 0,
     action: json['action'] as String?,
     direction: json['direction'] as String?,
   );
@@ -122,23 +122,28 @@ class NavigationRoute {
   };
 
   factory NavigationRoute.fromJson(Map<String, dynamic> json) => NavigationRoute(
-    id: json['id'] as String,
+    id: json['id'] as String? ?? '',
     startPoint: LatLng(
-      (json['startPoint']['lat'] as num).toDouble(),
-      (json['startPoint']['lng'] as num).toDouble(),
+      (json['startPoint']?['lat'] as num?)?.toDouble() ?? 0.0,
+      (json['startPoint']?['lng'] as num?)?.toDouble() ?? 0.0,
     ),
     endPoint: LatLng(
-      (json['endPoint']['lat'] as num).toDouble(),
-      (json['endPoint']['lng'] as num).toDouble(),
+      (json['endPoint']?['lat'] as num?)?.toDouble() ?? 0.0,
+      (json['endPoint']?['lng'] as num?)?.toDouble() ?? 0.0,
     ),
-    polylinePoints: (json['polylinePoints'] as List)
-        .cast<Map<String, dynamic>>()
-        .map((p) => LatLng((p['lat'] as num).toDouble(), (p['lng'] as num).toDouble()))
-        .toList(),
-    distance: (json['distance'] as num).toDouble(),
-    duration: (json['duration'] as num).toInt(),
-    routeType: json['routeType'] as String,
-    cameraIndicesOnRoute: List<int>.from(json['cameraIndicesOnRoute'] as List),
+    polylinePoints: (json['polylinePoints'] as List?)
+            ?.cast<Map<String, dynamic>>()
+            .map((p) => LatLng(
+                (p['lat'] as num?)?.toDouble() ?? 0.0,
+                (p['lng'] as num?)?.toDouble() ?? 0.0))
+            .toList() ??
+        [],
+    distance: (json['distance'] as num?)?.toDouble() ?? 0.0,
+    duration: (json['duration'] as num?)?.toInt() ?? 0,
+    routeType: json['routeType'] as String? ?? 'normal',
+    cameraIndicesOnRoute: json['cameraIndicesOnRoute'] != null
+        ? List<int>.from(json['cameraIndicesOnRoute'] as List)
+        : [],
     steps: json['steps'] != null
         ? (json['steps'] as List)
             .map((s) => RouteStep.fromJson(s as Map<String, dynamic>))
