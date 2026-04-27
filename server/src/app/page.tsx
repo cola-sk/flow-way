@@ -7,8 +7,11 @@ export default function Home() {
         <li>
           <code>GET /api/cameras</code> — 获取所有摄像头坐标
         </li>
-        <li>
+        {/* <li>
           <code>GET /api/cron/refresh</code> — 刷新摄像头缓存（Cron）
+        </li> */}
+        <li>
+          <a href="/api/download" target="_blank">下载APK</a>
         </li>
       </ul>
     </main>
