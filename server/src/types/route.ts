@@ -44,6 +44,16 @@ export interface RoutePoint {
   lng: number;
 }
 
+export interface RouteStep {
+  instruction: string;
+  distance: number;
+  duration: number;
+  polylineIdxStart: number;
+  polylineIdxEnd: number;
+  action?: string;
+  direction?: string;
+}
+
 export interface Route {
   id: string;
   startPoint: RoutePoint;
@@ -54,6 +64,7 @@ export interface Route {
   routeType: 'normal' | 'avoid_cameras';
   cameraIndicesOnRoute: number[];
   avoidAlgorithmVersion?: string;
+  steps?: RouteStep[];
   createdAt: string;
 }
 

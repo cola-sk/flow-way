@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
@@ -55,6 +56,11 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   Camera? _nextCamera;
   double? _distanceToNextCamera;
 
+  // 转向引导状态
+  int _currentStepIndex = 0;
+  bool _isApproachingTurn = false;
+  final Set<int> _alertedSteps = {};
+
   @override
   void initState() {
     super.initState();
@@ -107,11 +113,20 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       if (permission == LocationPermission.denied) return;
     }
 
+    final LocationSettings settings = kIsWeb
+        ? const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 1,
+          )
+        : AndroidSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 1,
+            intervalDuration: const Duration(milliseconds: 500),
+            forceLocationManager: true,
+          );
+
     _positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 2, // 2 meters to trigger update
-      ),
+      locationSettings: settings,
     ).listen((Position position) {
       final mapPos = CoordinateTransform.wgs84ToGcj02(
         position.latitude,
@@ -131,11 +146,24 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       if (_isFollowing) {
         _mapController.moveAndRotate(
           mapPos,
-          18.0, // zoom level
+          _isApproachingTurn ? 19.0 : 18.0, // zoom level
           360.0 - _heading, // map rotated inversely to heading for heading-up
         );
       }
     });
+  }
+
+  int _findNearestPolylineIndex(LatLng currentLoc) {
+    double minDist = double.infinity;
+    int index = 0;
+    for (int i = 0; i < widget.route.polylinePoints.length; i++) {
+      final d = _distanceCalc(currentLoc, widget.route.polylinePoints[i]);
+      if (d < minDist) {
+        minDist = d;
+        index = i;
+      }
+    }
+    return index;
   }
 
   void _processNavigationLogic(LatLng currentLoc) {
@@ -191,6 +219,50 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         _speak("注意，前方三百米有进京证抓拍摄像头。");
       }
     }
+
+    // 3. Turn-at-Intersection Check
+    if (widget.route.steps != null && widget.route.steps!.isNotEmpty) {
+      int currentPolylineIdx = _findNearestPolylineIndex(currentLoc);
+      
+      RouteStep? nextStep;
+      int nextStepIdx = -1;
+      
+      for (int i = 0; i < widget.route.steps!.length; i++) {
+        final step = widget.route.steps![i];
+        if (step.polylineIdxStart > currentPolylineIdx) {
+          nextStep = step;
+          nextStepIdx = i;
+          break;
+        }
+      }
+      
+      if (nextStep != null) {
+        final turnPoint = widget.route.polylinePoints[nextStep.polylineIdxStart];
+        final distToTurn = _distanceCalc(currentLoc, turnPoint);
+        
+        // 距离路口 300 米内视为"接近中"
+        bool approaching = distToTurn < 300;
+        
+        if (approaching && !_isApproachingTurn) {
+          if (!_alertedSteps.contains(nextStepIdx)) {
+            _alertedSteps.add(nextStepIdx);
+            // 提取关键指令，腾讯 instruction 通常包含距离，我们只需要动作部分或者直接读 instruction
+            _speak("前方${distToTurn.toStringAsFixed(0)}米，${nextStep.instruction}");
+          }
+        }
+        
+        if (approaching != _isApproachingTurn) {
+          setState(() {
+            _isApproachingTurn = approaching;
+            _currentStepIndex = nextStepIdx;
+          });
+        }
+      } else {
+        if (_isApproachingTurn) {
+          setState(() => _isApproachingTurn = false);
+        }
+      }
+    }
   }
 
   @override
@@ -239,10 +311,11 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               // 高德瓦片图层 (GCJ-02 坐标系)
               TileLayer(
                 urlTemplate:
-                    'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
-                subdomains: const ['1', '2', '3', '4'],
+                    'https://rt{s}.map.gtimg.com/tile?z={z}&x={x}&y={y}&styleid=1000&scene=0&version=347',
+                subdomains: const ['0', '1', '2', '3'],
+                tms: true,
                 userAgentPackageName: 'com.flowway.app',
-                maxZoom: 18,
+                maxZoom: 20,
               ),
               PolylineLayer(
                 polylines: [
@@ -392,7 +465,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
           if (_currentMapPosition != null) {
             _mapController.moveAndRotate(
               _currentMapPosition!,
-              18.0,
+              _isApproachingTurn ? 19.0 : 18.0,
               360.0 - _heading,
             );
           }

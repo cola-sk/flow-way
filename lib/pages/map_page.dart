@@ -386,8 +386,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           )
         : AndroidSettings(
             accuracy: LocationAccuracy.bestForNavigation,
-            distanceFilter: 2,
-            intervalDuration: const Duration(seconds: 1),
+            distanceFilter: 1,
+            intervalDuration: const Duration(milliseconds: 500),
             forceLocationManager: true,
           );
 
@@ -5124,10 +5124,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               // 高德瓦片图层 (GCJ-02 坐标系，与摄像头坐标一致)
               TileLayer(
                 urlTemplate:
-                    'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}',
-                subdomains: const ['1', '2', '3', '4'],
+                    'https://rt{s}.map.gtimg.com/tile?z={z}&x={x}&y={y}&styleid=1000&scene=0&version=347',
+                subdomains: const ['0', '1', '2', '3'],
+                tms: true,
                 userAgentPackageName: 'com.flowway.app',
-                maxZoom: 18,
+                maxZoom: 20,
               ),
               // 路线图层
               if (_currentRoute != null)

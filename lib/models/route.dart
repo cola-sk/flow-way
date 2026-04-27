@@ -33,6 +33,47 @@ class WayPoint {
   );
 }
 
+/// 路线步骤（转向建议）
+class RouteStep {
+  final String instruction;
+  final double distance;
+  final int duration;
+  final int polylineIdxStart;
+  final int polylineIdxEnd;
+  final String? action;
+  final String? direction;
+
+  RouteStep({
+    required this.instruction,
+    required this.distance,
+    required this.duration,
+    required this.polylineIdxStart,
+    required this.polylineIdxEnd,
+    this.action,
+    this.direction,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'instruction': instruction,
+    'distance': distance,
+    'duration': duration,
+    'polylineIdxStart': polylineIdxStart,
+    'polylineIdxEnd': polylineIdxEnd,
+    'action': action,
+    'direction': direction,
+  };
+
+  factory RouteStep.fromJson(Map<String, dynamic> json) => RouteStep(
+    instruction: json['instruction'] as String,
+    distance: (json['distance'] as num).toDouble(),
+    duration: (json['duration'] as num).toInt(),
+    polylineIdxStart: (json['polylineIdxStart'] as num).toInt(),
+    polylineIdxEnd: (json['polylineIdxEnd'] as num).toInt(),
+    action: json['action'] as String?,
+    direction: json['direction'] as String?,
+  );
+}
+
 /// 导航路线信息
 class NavigationRoute {
   final String id;
@@ -43,6 +84,7 @@ class NavigationRoute {
   final int duration; // 秒
   final String routeType; // 'normal' 或 'avoid_cameras'
   final List<int> cameraIndicesOnRoute; // 路线上的摄像头索引
+  final List<RouteStep>? steps; // 转向建议
   final DateTime createdAt;
 
   NavigationRoute({
@@ -54,6 +96,7 @@ class NavigationRoute {
     required this.duration,
     required this.routeType,
     required this.cameraIndicesOnRoute,
+    this.steps,
     required this.createdAt,
   });
 
@@ -74,6 +117,7 @@ class NavigationRoute {
     'duration': duration,
     'routeType': routeType,
     'cameraIndicesOnRoute': cameraIndicesOnRoute,
+    'steps': steps?.map((s) => s.toJson()).toList(),
     'createdAt': createdAt.toIso8601String(),
   };
 
@@ -95,6 +139,11 @@ class NavigationRoute {
     duration: (json['duration'] as num).toInt(),
     routeType: json['routeType'] as String,
     cameraIndicesOnRoute: List<int>.from(json['cameraIndicesOnRoute'] as List),
+    steps: json['steps'] != null
+        ? (json['steps'] as List)
+            .map((s) => RouteStep.fromJson(s as Map<String, dynamic>))
+            .toList()
+        : null,
     createdAt: DateTime.parse(json['createdAt'] as String),
   );
 }

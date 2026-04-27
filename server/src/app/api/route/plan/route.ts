@@ -78,6 +78,7 @@ export async function POST(request: NextRequest) {
     let routeDistance: number | undefined;
     let routeDuration: number | undefined;
 
+    let routeSteps;
     if (avoidCameras) {
       // 规划避开摄像头的路线（腾讯地图备选路线中选摄像头最少的）
       const result = await planAvoidCamerasRoute(
@@ -92,6 +93,7 @@ export async function POST(request: NextRequest) {
       cameraIndices = result.cameraIndices.map((i) => indexMapping[i]);
       routeDistance = result.distance;
       routeDuration = result.duration;
+      routeSteps = result.steps;
     } else {
       // 规划普通路线（腾讯地图真实路网）
       const result = await planRoute(start, end, request.signal);
@@ -100,6 +102,7 @@ export async function POST(request: NextRequest) {
       cameraIndices = rawIndices.map((i) => indexMapping[i]);
       routeDistance = result.distance;
       routeDuration = result.duration;
+      routeSteps = result.steps;
     }
 
     // 创建路由对象
@@ -111,7 +114,8 @@ export async function POST(request: NextRequest) {
       avoidCameras,
       routeDistance,
       routeDuration,
-      undefined
+      undefined,
+      routeSteps
     );
 
     const response: RouteResponse = { route };

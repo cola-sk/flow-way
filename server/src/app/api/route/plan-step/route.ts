@@ -107,7 +107,8 @@ export async function POST(request: NextRequest) {
       true,
       finalState.distance,
       finalState.duration,
-      undefined
+      undefined,
+      finalState.steps
     );
 
     const bestRoute = createRoute(
@@ -118,7 +119,8 @@ export async function POST(request: NextRequest) {
       true,
       finalState.distance,
       finalState.duration,
-      undefined
+      undefined,
+      finalState.steps
     );
 
     const response: RoutePlanStepResponse = {

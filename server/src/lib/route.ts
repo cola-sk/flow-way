@@ -360,6 +360,15 @@ async function callTencentDrivingAPI(
     points: decodeTencentPolyline(route.polyline as number[]),
     distance: route.distance as number,
     duration: route.duration as number,
+    steps: (route.steps as any[] || []).map((step: any) => ({
+      instruction: step.instruction,
+      distance: step.distance,
+      duration: step.duration,
+      polylineIdxStart: step.polyline_idx[0],
+      polylineIdxEnd: step.polyline_idx[1],
+      action: step.act,
+      direction: step.direction,
+    })),
   }));
 }
 
@@ -451,6 +460,7 @@ type EvaluatedAvoidRoute = {
   distance: number;
   duration: number;
   cameraIndices: number[];
+  steps?: any[];
 };
 
 export type AvoidRouteStepState = EvaluatedAvoidRoute;
@@ -470,6 +480,7 @@ type AvoidRouteEvaluation = {
   cameraIndices: number[];
   distance: number;
   duration: number;
+  steps?: any[];
 };
 
 function pickBestRouteFromCandidates(
@@ -864,7 +875,7 @@ export async function planRoute(
   start: Coordinate,
   end: Coordinate,
   signal?: AbortSignal
-): Promise<{ points: RoutePoint[]; distance: number; duration: number }> {
+): Promise<{ points: RoutePoint[]; distance: number; duration: number; steps?: any[] }> {
   try {
     const routes = await callTencentDrivingAPI(start, end, false, undefined, undefined, undefined, signal);
     return routes[0];
@@ -952,7 +963,7 @@ export async function planAvoidCamerasRoute(
   requestContext?: TencentApiRequestContext,
   signal?: AbortSignal,
   excludePolylines?: RoutePoint[][]
-): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
+): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number; steps?: any[] }> {
   throwIfRoutePlanningAborted(signal);
 
   void splitAssistDepth;
@@ -1226,7 +1237,8 @@ export function createRoute(
   avoidCameras: boolean,
   distanceMeters?: number,
   durationSeconds?: number,
-  avoidAlgorithmVersion?: AvoidAlgorithmVersion
+  avoidAlgorithmVersion?: AvoidAlgorithmVersion,
+  steps?: any[]
 ): Route {
   const distance = distanceMeters ?? calculateDistance(start.lat, start.lng, end.lat, end.lng);
   const duration = durationSeconds ?? Math.round(distance / 13.33);
@@ -1241,6 +1253,7 @@ export function createRoute(
     routeType: avoidCameras ? 'avoid_cameras' : 'normal',
     cameraIndicesOnRoute: cameraIndices,
     avoidAlgorithmVersion,
+    steps,
     createdAt: new Date().toISOString(),
   };
 }
