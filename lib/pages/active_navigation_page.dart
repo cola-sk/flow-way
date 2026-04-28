@@ -61,6 +61,9 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   bool _isApproachingTurn = false;
   final Set<int> _alertedSteps = {};
 
+  // 吸附后的坐标（用于显示）
+  LatLng? _snappedMapPosition;
+
   @override
   void initState() {
     super.initState();
@@ -133,9 +136,14 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         position.longitude,
       );
       if (!mounted) return;
+      // 计算吸附后的坐标用于显示
+      final snappedPos = _calculateSnappedPosition(mapPos);
+
+      if (!mounted) return;
       setState(() {
         _currentPosition = position;
         _currentMapPosition = mapPos;
+        _snappedMapPosition = snappedPos;
         _currentSpeed = position.speed; // m/s
         if (position.speed > 1.0) {
           _heading = position.heading; // degrees
@@ -145,12 +153,64 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
       if (_isFollowing) {
         _mapController.moveAndRotate(
-          mapPos,
+          snappedPos, // 使用吸附后的位置跟随，更平滑
           _isApproachingTurn ? 19.0 : 18.0, // zoom level
           360.0 - _heading, // map rotated inversely to heading for heading-up
         );
       }
     });
+  }
+
+  /// 将原始坐标吸附到导航路线上
+  LatLng _calculateSnappedPosition(LatLng currentLoc) {
+    if (widget.route.polylinePoints.length < 2) return currentLoc;
+
+    double minDistance = double.infinity;
+    LatLng snappedPoint = currentLoc;
+
+    // 寻找最近的路线线段
+    for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
+      final p1 = widget.route.polylinePoints[i];
+      final p2 = widget.route.polylinePoints[i + 1];
+
+      final projected = _projectPointOnSegment(currentLoc, p1, p2);
+      final dist = _distanceCalc(currentLoc, projected);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        snappedPoint = projected;
+      }
+    }
+
+    // 如果距离路线小于 30 米，则认为在路上，进行吸附
+    if (minDistance < 30) {
+      return snappedPoint;
+    }
+
+    return currentLoc;
+  }
+
+  /// 计算点到线段的垂直投影点
+  LatLng _projectPointOnSegment(LatLng p, LatLng a, LatLng b) {
+    double x = p.longitude;
+    double y = p.latitude;
+    double x1 = a.longitude;
+    double y1 = a.latitude;
+    double x2 = b.longitude;
+    double y2 = b.latitude;
+
+    double dx = x2 - x1;
+    double dy = y2 - y1;
+
+    if (dx == 0 && dy == 0) return a;
+
+    // 计算投影比例 t
+    double t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
+
+    if (t < 0) return a;
+    if (t > 1) return b;
+
+    return LatLng(y1 + t * dy, x1 + t * dx);
   }
 
   int _findNearestPolylineIndex(LatLng currentLoc) {
@@ -339,7 +399,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                   // Current Position
                   if (_currentPosition != null)
                     Marker(
-                      point: _currentMapPosition ??
+                      point: _snappedMapPosition ??
+                          _currentMapPosition ??
                           LatLng(
                             _currentPosition!.latitude,
                             _currentPosition!.longitude,
