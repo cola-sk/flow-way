@@ -56,11 +56,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   Camera? _nextCamera;
   double? _distanceToNextCamera;
 
-  // 转向引导状态
-  int _currentStepIndex = 0;
-  bool _isApproachingTurn = false;
-  final Set<int> _alertedSteps = {};
-
   // 吸附后的坐标（用于显示）
   LatLng? _snappedMapPosition;
 
@@ -154,7 +149,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       if (_isFollowing) {
         _mapController.moveAndRotate(
           snappedPos, // 使用吸附后的位置跟随，更平滑
-          _isApproachingTurn ? 19.0 : 18.0, // zoom level
+          18.0, // zoom level
           360.0 - _heading, // map rotated inversely to heading for heading-up
         );
       }
@@ -280,49 +275,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       }
     }
 
-    // 3. Turn-at-Intersection Check
-    if (widget.route.steps != null && widget.route.steps!.isNotEmpty) {
-      int currentPolylineIdx = _findNearestPolylineIndex(currentLoc);
-      
-      RouteStep? nextStep;
-      int nextStepIdx = -1;
-      
-      for (int i = 0; i < widget.route.steps!.length; i++) {
-        final step = widget.route.steps![i];
-        if (step.polylineIdxStart > currentPolylineIdx) {
-          nextStep = step;
-          nextStepIdx = i;
-          break;
-        }
-      }
-      
-      if (nextStep != null) {
-        final turnPoint = widget.route.polylinePoints[nextStep.polylineIdxStart];
-        final distToTurn = _distanceCalc(currentLoc, turnPoint);
-        
-        // 距离路口 300 米内视为"接近中"
-        bool approaching = distToTurn < 300;
-        
-        if (approaching && !_isApproachingTurn) {
-          if (!_alertedSteps.contains(nextStepIdx)) {
-            _alertedSteps.add(nextStepIdx);
-            // 提取关键指令，腾讯 instruction 通常包含距离，我们只需要动作部分或者直接读 instruction
-            _speak("前方${distToTurn.toStringAsFixed(0)}米，${nextStep.instruction}");
-          }
-        }
-        
-        if (approaching != _isApproachingTurn) {
-          setState(() {
-            _isApproachingTurn = approaching;
-            _currentStepIndex = nextStepIdx;
-          });
-        }
-      } else {
-        if (_isApproachingTurn) {
-          setState(() => _isApproachingTurn = false);
-        }
-      }
-    }
   }
 
   @override
@@ -526,7 +478,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
           if (_currentMapPosition != null) {
             _mapController.moveAndRotate(
               _currentMapPosition!,
-              _isApproachingTurn ? 19.0 : 18.0,
+              18.0,
               360.0 - _heading,
             );
           }
