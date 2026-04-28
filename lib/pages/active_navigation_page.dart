@@ -60,6 +60,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   // 吸附后的坐标（用于显示）
   LatLng? _snappedMapPosition;
 
+  bool _isOverviewMode = false;
+
   @override
   void initState() {
     super.initState();
@@ -288,6 +290,38 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   }
 
+  void _enterOverviewMode() {
+    if (!mounted) return;
+    
+    setState(() {
+      _isOverviewMode = true;
+      _isFollowing = false;
+    });
+
+    _fitRouteOverview();
+  }
+
+  void _fitRouteOverview() {
+    if (widget.route.polylinePoints.isEmpty) return;
+    try {
+      final bounds = LatLngBounds.fromPoints(widget.route.polylinePoints);
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: bounds,
+          padding: const EdgeInsets.only(
+            top: 120,
+            bottom: 160,
+            left: 60,
+            right: 60,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Fit route overview failed: $e');
+      _mapController.move(widget.route.startPoint, 12.0);
+    }
+  }
+
   @override
   void dispose() {
     _positionStream?.cancel();
@@ -325,8 +359,9 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                 flags: InteractiveFlag.all,
               ),
               onPositionChanged: (pos, hasGesture) {
-                if (hasGesture && _isFollowing) {
-                  setState(() => _isFollowing = false);
+                if (hasGesture) {
+                  if (_isFollowing) setState(() => _isFollowing = false);
+                  if (_isOverviewMode) setState(() => _isOverviewMode = false);
                 }
               },
             ),
@@ -479,76 +514,24 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   }
 
   Widget _buildBottomPanel() {
-    final Widget trailingControl;
-    if (!_isFollowing) {
-      trailingControl = FloatingActionButton.extended(
-        heroTag: 'recenterNav',
-        backgroundColor: Colors.blue,
-        onPressed: () {
-          setState(() => _isFollowing = true);
-          if (_currentMapPosition != null) {
-            _mapController.moveAndRotate(
-              _currentMapPosition!,
-              18.0,
-              360.0 - _heading,
-            );
-          }
-        },
-        icon: const Icon(Icons.my_location, color: Colors.white),
-        label: const Text('恢复跟随'),
-      );
-    } else {
-      trailingControl = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton(
-            heroTag: 'saveRoute',
-            backgroundColor: Colors.white,
-            onPressed: () {
-              showDialog(
-                context: context,
-                builder: (context) => SaveRouteDialog(
-                  route: widget.route,
-                  apiService: widget.apiService,
-                  stops: widget.stops,
-                ),
-              );
-            },
-            child: const Icon(Icons.bookmark_add_outlined, color: Colors.blue),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.blue,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.navigation, color: Colors.white),
-                SizedBox(width: 8),
-                Text('导航中', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
+        // 左侧退出按钮
         FloatingActionButton(
-          heroTag: 'exitNav',
+          heroTag: null,
           backgroundColor: Colors.red,
           onPressed: () => Navigator.of(context).pop(),
           child: const Icon(Icons.close, color: Colors.white),
         ),
+        
+        // 右侧控制区域
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 语音开关
             FloatingActionButton(
-              heroTag: 'muteVoice',
+              heroTag: null,
               backgroundColor: _muteVoiceGuidance ? const Color(0xFF546E7A) : Colors.white,
               onPressed: _toggleVoiceMute,
               child: Icon(
@@ -557,7 +540,63 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               ),
             ),
             const SizedBox(width: 12),
-            trailingControl,
+            
+            // 全览按钮 (进入全览后隐藏)
+            if (!_isOverviewMode) ...[
+              FloatingActionButton(
+                key: const ValueKey('nav_overview_btn'),
+                heroTag: null,
+                backgroundColor: Colors.white,
+                onPressed: _enterOverviewMode,
+                child: const Icon(
+                  Icons.route,
+                  color: Colors.blue,
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+
+            // 根据状态显示：恢复跟随 或 (保存+状态)
+            if (!_isFollowing)
+              FloatingActionButton.extended(
+                heroTag: null,
+                backgroundColor: Colors.blue,
+                onPressed: () {
+                  // 获取目标位置，如果没有当前定位则回退到路线起点
+                  final targetPos = _snappedMapPosition ?? 
+                                   _currentMapPosition ?? 
+                                   widget.route.startPoint;
+                  
+                  setState(() {
+                    _isFollowing = true;
+                    _isOverviewMode = false;
+                  });
+
+                  _mapController.moveAndRotate(
+                    targetPos,
+                    18.0,
+                    360.0 - _heading,
+                  );
+                },
+                icon: const Icon(Icons.my_location, color: Colors.white),
+                label: const Text('恢复跟随'),
+              )
+            else ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blue,
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.navigation, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('导航中', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+            ],
           ],
         ),
       ],
