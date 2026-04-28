@@ -48,6 +48,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   bool _isFollowing = true;
   bool _isOffRoute = false;
+  int _offRouteCounter = 0; // 连续偏离计数器
   bool _muteVoiceGuidance = false;
 
   // 记录已经播报过的摄像头 ID/名称，避免重复播报
@@ -224,22 +225,32 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
 
-    // 1. Off-Route Check (simple projection)
+    // 1. Off-Route Check (True point-to-segment distance)
     double minDistanceToRoute = double.infinity;
     for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
       final p1 = widget.route.polylinePoints[i];
       final p2 = widget.route.polylinePoints[i + 1];
-      // Note: A true point-to-line segment distance is better, but as a simple approx:
-      final d1 = _distanceCalc(currentLoc, p1);
-      final d2 = _distanceCalc(currentLoc, p2);
-      final segmentD = math.min(d1, d2);
-      if (segmentD < minDistanceToRoute) {
-        minDistanceToRoute = segmentD;
+      
+      final projected = _projectPointOnSegment(currentLoc, p1, p2);
+      final d = _distanceCalc(currentLoc, projected);
+      
+      if (d < minDistanceToRoute) {
+        minDistanceToRoute = d;
       }
     }
 
-    // if further than 50 meters from the whole route
-    final offRoute = minDistanceToRoute > 50;
+    // 如果偏离距离超过 60 米，增加计数器
+    final isCurrentlyOff = minDistanceToRoute > 60;
+    
+    if (isCurrentlyOff) {
+      _offRouteCounter++;
+    } else {
+      _offRouteCounter = 0;
+    }
+
+    // 只有连续 3 次（约 1.5 秒）检测到偏离，才触发播报
+    final offRoute = _offRouteCounter >= 3;
+    
     if (offRoute && !_isOffRoute) {
       _speak("您已偏离路线，请注意行驶。");
     }
