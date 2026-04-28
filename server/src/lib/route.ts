@@ -236,13 +236,22 @@ export function findCamerasNearRoute(
         if (validPrevIdx >= 0) {
           const distToStart = calculateDistance(p1.lat, p1.lng, camera.lat, camera.lng);
           if (distToStart < 40 && cameraBearings !== null) {
-            const prevP1 = polylinePoints[validPrevIdx];
-            const prevBearing = calculateBearing(prevP1, p1);
-            // 放宽一点点角度（+10度）以容忍路口弯道的曲线
-            const prevDirMatched = cameraBearings.some(cb => angleGapDeg(prevBearing, cb) <= DIRECTION_TOLERANCE_DEG + 10);
-            if (!prevDirMatched) {
-              // 车辆是从侧面拐进来的，不会被拍到，跳过此路段的匹配
-              continue;
+            // 判断摄像头是在 p1->p2 线段的前方（下游）还是后方（上游）
+            const dLatRoute = p2.lat - p1.lat;
+            const dLngRoute = p2.lng - p1.lng;
+            const dLatCam = camera.lat - p1.lat;
+            const dLngCam = camera.lng - p1.lng;
+            const isUpstream = (dLatRoute * dLatCam + dLngRoute * dLngCam) < 0;
+
+            if (isUpstream) {
+              const prevP1 = polylinePoints[validPrevIdx];
+              const prevBearing = calculateBearing(prevP1, p1);
+              // 放宽一点点角度（+10度）以容忍路口弯道的曲线
+              const prevDirMatched = cameraBearings.some(cb => angleGapDeg(prevBearing, cb) <= DIRECTION_TOLERANCE_DEG + 10);
+              if (!prevDirMatched) {
+                // 车辆是从侧面拐进来的，且摄像头在拐弯点的后方（上游），不会被拍到，跳过此路段的匹配
+                continue;
+              }
             }
           }
         }
