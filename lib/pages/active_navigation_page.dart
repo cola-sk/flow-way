@@ -62,6 +62,9 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   bool _isOverviewMode = false;
 
+  RouteStep? _nextStep;
+  double? _distanceToNextStep;
+
   @override
   void initState() {
     super.initState();
@@ -149,10 +152,16 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       });
       _processNavigationLogic(mapPos);
 
+      double targetZoom = 18.0;
+      // 距离下一个路口或转向不足 150 米时，拉升视角（缩放级别减小）以便看清路口全貌
+      if (_distanceToNextStep != null && _distanceToNextStep! < 150) {
+        targetZoom = 16.5; 
+      }
+
       if (_isFollowing) {
         _mapController.moveAndRotate(
           snappedPos, // 使用吸附后的位置跟随，更平滑
-          18.0, // zoom level
+          targetZoom, // 动态 zoom level
           360.0 - _heading, // map rotated inversely to heading for heading-up
         );
       }
@@ -288,6 +297,47 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       }
     }
 
+    // 3. Navigation Steps & Turn Prompts
+    int nearestIndex = _findNearestPolylineIndex(currentLoc);
+
+    if (widget.route.steps != null && widget.route.steps!.isNotEmpty) {
+      // 找到当前所在步骤（以终点索引来判断，只要路段终点在前方，说明仍在当前步骤）
+      int currentStepIndex = -1;
+      for (int i = 0; i < widget.route.steps!.length; i++) {
+        final step = widget.route.steps![i];
+        if (step.polylineIdxEnd >= nearestIndex) {
+          currentStepIndex = i;
+          break;
+        }
+      }
+
+      if (currentStepIndex != -1 && currentStepIndex + 1 < widget.route.steps!.length) {
+        final nextStep = widget.route.steps![currentStepIndex + 1];
+        
+        // 计算沿路线到达下一步骤起点的距离
+        double distToNext = 0.0;
+        int targetIdx = nextStep.polylineIdxStart;
+        
+        if (targetIdx > nearestIndex && nearestIndex + 1 < widget.route.polylinePoints.length) {
+          distToNext += _distanceCalc(currentLoc, widget.route.polylinePoints[nearestIndex + 1]);
+          for (int i = nearestIndex + 1; i < targetIdx; i++) {
+            if (i + 1 < widget.route.polylinePoints.length) {
+              distToNext += _distanceCalc(widget.route.polylinePoints[i], widget.route.polylinePoints[i+1]);
+            }
+          }
+        }
+        
+        setState(() {
+          _nextStep = nextStep;
+          _distanceToNextStep = distToNext;
+        });
+      } else {
+        setState(() {
+          _nextStep = null;
+          _distanceToNextStep = null;
+        });
+      }
+    }
   }
 
   void _enterOverviewMode() {
@@ -435,6 +485,16 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     );
   }
 
+  IconData _getTurnIcon(String text) {
+    if (text.contains('左转')) return Icons.turn_left;
+    if (text.contains('右转')) return Icons.turn_right;
+    if (text.contains('掉头') || text.contains('调头')) return Icons.u_turn_left;
+    if (text.contains('左前方') || text.contains('左侧')) return Icons.turn_slight_left;
+    if (text.contains('右前方') || text.contains('右侧')) return Icons.turn_slight_right;
+    if (text.contains('直行') || text.contains('直走')) return Icons.straight;
+    return Icons.navigation;
+  }
+
   Widget _buildLocationIcon() {
     return Stack(
       alignment: Alignment.center,
@@ -507,6 +567,61 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                   ),
                 ],
               ),
+            ),
+          
+          // 转向提示卡片
+          if (_nextStep != null && _distanceToNextStep != null)
+            Container(
+              margin: const EdgeInsets.only(top: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      _getTurnIcon(_nextStep!.action ?? _nextStep!.instruction), 
+                      size: 28, 
+                      color: Colors.blue[800]
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _distanceToNextStep! > 1000 
+                            ? '前方 ${(_distanceToNextStep! / 1000).toStringAsFixed(1)} 公里'
+                            : '前方 ${_distanceToNextStep!.toInt()} 米',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
+                        ),
+                        Text(
+                          _nextStep!.instruction,
+                          style: const TextStyle(fontSize: 16),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (_nextStep!.distance > 0 || _nextStep!.duration > 0)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text(
+                              '本段路程: ${_nextStep!.distance >= 1000 ? '${(_nextStep!.distance / 1000).toStringAsFixed(1)} 公里' : '${_nextStep!.distance.toInt()} 米'}  •  预计: ${(_nextStep!.duration / 60).ceil()} 分钟',
+                              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
+                            ),
+                          ),
+                      ],
+                    )
+                  ),
+                ],
+              )
             ),
         ],
       ),
