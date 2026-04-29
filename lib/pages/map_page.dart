@@ -2184,15 +2184,34 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   ) {
     final mergedPoints = <LatLng>[];
     final mergedCameraIndices = <int>{};
+    final mergedSteps = <RouteStep>[];
     double distance = 0;
     int duration = 0;
+    int currentPointOffset = 0;
 
     for (var i = 0; i < segments.length; i++) {
       final route = segments[i];
       if (i == 0) {
         mergedPoints.addAll(route.polylinePoints);
+        if (route.steps != null) {
+          mergedSteps.addAll(route.steps!);
+        }
+        currentPointOffset = mergedPoints.length - 1;
       } else {
         mergedPoints.addAll(route.polylinePoints.skip(1));
+        if (route.steps != null) {
+          final offsetSteps = route.steps!.map((s) => RouteStep(
+            instruction: s.instruction,
+            distance: s.distance,
+            duration: s.duration,
+            polylineIdxStart: s.polylineIdxStart + currentPointOffset,
+            polylineIdxEnd: s.polylineIdxEnd + currentPointOffset,
+            action: s.action,
+            direction: s.direction,
+          )).toList();
+          mergedSteps.addAll(offsetSteps);
+        }
+        currentPointOffset = mergedPoints.length - 1;
       }
       mergedCameraIndices.addAll(route.cameraIndicesOnRoute);
       distance += route.distance;
@@ -2208,6 +2227,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       duration: duration,
       routeType: avoidCameras ? 'avoid_cameras' : 'normal',
       cameraIndicesOnRoute: mergedCameraIndices.toList()..sort(),
+      steps: mergedSteps.isNotEmpty ? mergedSteps : null,
       createdAt: DateTime.now(),
     );
   }
