@@ -53,6 +53,9 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   // 记录已经播报过的摄像头 ID/名称，避免重复播报
   final Set<String> _alertedCameras = {};
+  
+  // 记录已经播报过的步骤标识，避免重复播报
+  final Set<String> _alertedSteps = {};
 
   Camera? _nextCamera;
   double? _distanceToNextCamera;
@@ -331,6 +334,29 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
           _nextStep = nextStep;
           _distanceToNextStep = distToNext;
         });
+
+        // 转向语音播报逻辑
+        if (distToNext > 0) {
+          final stepId = nextStep.polylineIdxStart.toString();
+          
+          // 2. 近距离确认提醒 (150 米以内)
+          if (distToNext <= 150 && distToNext > 30) {
+            final key150 = "${stepId}_150m";
+            if (!_alertedSteps.contains(key150)) {
+              _alertedSteps.add(key150);
+              // 去掉原始 instruction 可能自带的"前方xxx米"，直接组合
+              _speak("前方 ${distToNext.round()} 米，${nextStep.instruction}");
+            }
+          }
+          // 3. 动作执行提醒 (30 米以内)
+          else if (distToNext <= 30) {
+            final key30 = "${stepId}_30m";
+            if (!_alertedSteps.contains(key30)) {
+              _alertedSteps.add(key30);
+              _speak(nextStep.instruction);
+            }
+          }
+        }
       } else {
         setState(() {
           _nextStep = null;
