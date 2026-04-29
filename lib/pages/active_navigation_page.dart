@@ -392,9 +392,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
           ),
         ),
       );
+      _mapController.rotate(0.0);
     } catch (e) {
       debugPrint('Fit route overview failed: $e');
-      _mapController.move(widget.route.startPoint, 12.0);
+      _mapController.moveAndRotate(widget.route.startPoint, 12.0, 0.0);
     }
   }
 
