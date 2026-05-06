@@ -49,6 +49,9 @@ export async function POST(request: NextRequest) {
     const shouldIgnoreLowRisk =
       avoidCameras && ignoreLowRiskCameras === true;
 
+    // 解析出客户端传过来的除当前正在规划以外的历史路线（用于再试一次）
+    const excludePolylines = (body as any).excludePolylines as RoutePoint[][] | undefined;
+
     const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
 
@@ -87,7 +90,8 @@ export async function POST(request: NextRequest) {
         cameras,
         0,
         undefined,
-        request.signal
+        request.signal,
+        excludePolylines
       );
       polylinePoints = result.points;
       cameraIndices = result.cameraIndices.map((i) => indexMapping[i]);

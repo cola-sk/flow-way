@@ -1136,6 +1136,41 @@ export async function planAvoidCamerasRoute(
         // 陷入局部最优（死胡同），启动"退火/抖动"：随机丢弃几个已拉黑的摄像头放行（可能是必经之路的桥之类），并把最佳路线里剩下的摄像头随机挑 1~2 个封锁
         console.log(`[route] Local minimum detected, applying perturbation...`);
 
+        // ======= 引入柔性的强制引导方式（避免污染主循环，且严格受限于距离上限） =======
+        if (bestGlobalRoute && bestGlobalRoute.cameraIndices.length > 0) {
+          try {
+            const helperResult = await tryGuidedHelperRoute(
+              start, end, cameras, currentAvoidCamIds, bestGlobalRoute as any, i, POLYGON_RADIUS, context, signal
+            );
+            if (helperResult) {
+              const maxAllowedDist = Math.max(baselineDist * 2.0, baselineDist + 10000);
+              if (helperResult.distance <= maxAllowedDist) {
+                if (helperResult.cameraIndices.length < bestGlobalHits || 
+                   (helperResult.cameraIndices.length === bestGlobalHits && helperResult.distance < bestGlobalDist)) {
+                  console.log(`[route] Guided helper found better route! hit: ${helperResult.cameraIndices.length}, dist: ${helperResult.distance}`);
+                  bestGlobalHits = helperResult.cameraIndices.length;
+                  bestGlobalDist = helperResult.distance;
+                  bestGlobalRoute = helperResult as any;
+                  
+                  let added = false;
+                  for (const camIdx of helperResult.cameraIndices) {
+                    if (!currentAvoidCamIds.has(camIdx) && currentAvoidCamIds.size < 32) {
+                      currentAvoidCamIds.add(camIdx);
+                      added = true;
+                    }
+                  }
+                  noImprovementCount = added ? 0 : 2;
+                  continue; // 利用侧边诱导点成功找到了更好路线，直接进入下一轮，跳过随机退火
+                }
+              }
+            }
+          } catch (helperErr) {
+            if (isRoutePlanningAbortedError(helperErr)) throw helperErr;
+            console.warn('[route] Guided helper attempt failed:', helperErr);
+          }
+        }
+        // ====================================================================
+
         // 1. 从当前黑名单中随机宽恕（移除）1~3 个摄像头
         const currentArr = Array.from(currentAvoidCamIds);
         if (currentArr.length > 0) {
@@ -1224,13 +1259,14 @@ export async function planAvoidCamerasRouteByVersion(
   algorithmVersion: AvoidAlgorithmVersion,
   splitAssistDepth = 0,
   requestContext?: TencentApiRequestContext,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  excludePolylines?: RoutePoint[][]
 ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }> {
   switch (algorithmVersion) {
     case AVOID_ALGORITHM_V1_0:
     case AVOID_ALGORITHM_V1_0_BETA_1:
     default:
-      return planAvoidCamerasRoute(start, end, cameras, splitAssistDepth, requestContext, signal);
+      return planAvoidCamerasRoute(start, end, cameras, splitAssistDepth, requestContext, signal, excludePolylines);
   }
 }
 
