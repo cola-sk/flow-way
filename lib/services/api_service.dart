@@ -430,24 +430,24 @@ class ApiService {
   Future<void> _saveLocalRecentRecord(Map<String, dynamic> item) async {
     final list = await _readLocalRecentRaw();
     list.insert(0, item);
+    list.sort((a, b) =>
+        _safeParseCreatedAt(b['createdAt']).compareTo(_safeParseCreatedAt(a['createdAt'])));
 
-    list.sort((a, b) => _safeParseCreatedAt(b['createdAt']).compareTo(_safeParseCreatedAt(a['createdAt'])));
+    // 分开维护搜索历史与路线记录，确保搜索历史不被大量路线记录挤出
+    final searchHistories = list
+        .where((e) => (e['source'] as String?) == 'search_history')
+        .take(_localSearchHistoryKeepLimit)
+        .toList();
+    final others = list
+        .where((e) => (e['source'] as String?) != 'search_history')
+        .take((_localRecentKeepLimit - searchHistories.length).clamp(0, _localRecentKeepLimit))
+        .toList();
 
-    int searchHistoryCount = 0;
-    for (int i = list.length - 1; i >= 0; i--) {
-      if ((list[i]['source'] as String?) == 'search_history') {
-        searchHistoryCount += 1;
-        if (searchHistoryCount > _localSearchHistoryKeepLimit) {
-          list.removeAt(i);
-        }
-      }
-    }
+    final merged = [...searchHistories, ...others]
+      ..sort((a, b) => _safeParseCreatedAt(b['createdAt'])
+          .compareTo(_safeParseCreatedAt(a['createdAt'])));
 
-    if (list.length > _localRecentKeepLimit) {
-      list.removeRange(_localRecentKeepLimit, list.length);
-    }
-
-    await _writeLocalRecentRaw(list);
+    await _writeLocalRecentRaw(merged);
   }
 
   Future<CamerasResponse?> _readCachedCameras({

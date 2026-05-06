@@ -119,6 +119,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   // 定位状态：定位完成（成功或失败）后才显示摄像头
   bool _locationResolved = false;
+  // 防止并发：同时只允许一次定位请求
+  bool _isLocating = false;
 
   // 导航模式状态
   // _navSearchTarget: null=普通搜索 / 'end'=搜索终点 / 'waypoint'=搜索途径点
@@ -481,6 +483,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   Future<void> _locateUser({bool forceRefresh = false}) async {
+    // 防止并发：如果已经在定位中，直接返回
+    if (_isLocating) return;
+    if (mounted) setState(() => _isLocating = true);
     try {
       // 先检查设备级定位服务开关
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -518,19 +523,20 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         }
       }
 
-      // 获取精确位置：强制刷新时使用更强的 Android GPS 策略，避免回落到旧缓存点。
+      // 获取精确位置
       final LocationSettings locationSettings;
       if (kIsWeb) {
         locationSettings = const LocationSettings(
           accuracy: LocationAccuracy.high,
         );
       } else if (forceRefresh) {
+        // 强制刷新：直接用 getCurrentPosition + forceLocationManager，
+        // 避免 getPositionStream().first 超时后 stream 未取消导致两个 GPS 请求并发。
         locationSettings = AndroidSettings(
           accuracy: LocationAccuracy.bestForNavigation,
           distanceFilter: 0,
-          intervalDuration: const Duration(seconds: 1),
           forceLocationManager: true,
-          timeLimit: const Duration(seconds: 60),
+          timeLimit: const Duration(seconds: 30),
         );
       } else {
         locationSettings = AndroidSettings(
@@ -540,18 +546,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         );
       }
 
-      final Position position = forceRefresh
-          ? await Geolocator.getPositionStream(
-              locationSettings: locationSettings,
-            ).first.timeout(
-              const Duration(seconds: 25),
-              onTimeout: () => Geolocator.getCurrentPosition(
-                locationSettings: locationSettings,
-              ),
-            )
-          : await Geolocator.getCurrentPosition(
-              locationSettings: locationSettings,
-            );
+      final Position position = await Geolocator.getCurrentPosition(
+        locationSettings: locationSettings,
+      );
       if (mounted) {
         final pos = CoordinateTransform.wgs84ToGcj02(
           position.latitude,
@@ -567,6 +564,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       // 定位失败时保持默认北京中心，仍然解锁摄像头显示
       print('定位失败: $e');
       if (mounted) setState(() => _locationResolved = true);
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
     }
   }
 
@@ -997,12 +996,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _showSuggestions = false;
       _suggestions = [];
     });
-    // 用 search 接口获取精确地点信息
-    final results = await _apiService.searchPlaces(
-      suggestion.name,
-      nearBy: _userPosition,
-    );
-    final place = results.isNotEmpty ? results.first : suggestion;
+    // 直接使用已选中的 suggestion（含精确坐标），避免再次按 nearBy 搜索返回错误城市的同名地点
+    final place = suggestion;
     await _recordSearchHistoryPlace(place);
     if (!mounted) return;
 
@@ -2876,32 +2871,54 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         ),
                       );
                     },
-                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                    icon: const Icon(Icons.bookmark_add_outlined, size: 16),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(42),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
                     label: const Text(
                       '保存路线',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _retryRouteWithDifferentCorridor();
+                    },
+                    icon: const Icon(Icons.alt_route_rounded, size: 16),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _primary,
+                      side: const BorderSide(color: _primary, width: 1.2),
+                      minimumSize: const Size.fromHeight(42),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    label: const Text(
+                      '重新规划',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: () async {
                       Navigator.pop(ctx);
                       await _openActiveNavigation(route);
                     },
-                    icon: const Icon(Icons.navigation, size: 18),
+                    icon: const Icon(Icons.navigation, size: 16),
                     style: FilledButton.styleFrom(
                       backgroundColor: _primary,
                       foregroundColor: Colors.white,
                       minimumSize: const Size.fromHeight(42),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
                     label: const Text(
-                      '开始导航',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      '导航',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
                     ),
                   ),
                 ),
@@ -4684,29 +4701,60 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ),
                 SizedBox(
                   width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _isNavigating
-                        ? _requestStopPlanning
-                        : (_navEndPlace != null
-                            ? (_currentRoute != null
-                                ? () => _openActiveNavigation(_currentRoute!)
-                                : _startNavigation)
-                            : null),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _isNavigating
-                          ? const Color(0xFFBA1A1A)
-                          : (_currentRoute != null ? const Color(0xFF34C759) : _primary),
-                      disabledBackgroundColor: _surfaceVariant,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(42),
-                    ),
-                    child: Text(
-                      _isNavigating
-                          ? (_stopPlanningRequested ? '正在停止...' : '暂停/停止')
-                          : (_currentRoute != null ? '开始导航' : '开始规划'),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
+                  child: _currentRoute != null && !_isNavigating
+                      ? Row(
+                          children: [
+                            Expanded(
+                              child: FilledButton(
+                                onPressed: () => _openActiveNavigation(_currentRoute!),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: const Color(0xFF34C759),
+                                  foregroundColor: Colors.white,
+                                  minimumSize: const Size.fromHeight(42),
+                                ),
+                                child: const Text(
+                                  '开始导航',
+                                  style: TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isNavigating ? null : _retryRouteWithDifferentCorridor,
+                                icon: const Icon(Icons.alt_route_rounded, size: 18),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _primary,
+                                  side: const BorderSide(color: _primary, width: 1.2),
+                                  minimumSize: const Size.fromHeight(42),
+                                ),
+                                label: const Text(
+                                  '重新规划',
+                                  style: TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                            ),
+                          ],
+                        )
+                      : FilledButton(
+                          onPressed: _isNavigating
+                              ? _requestStopPlanning
+                              : (_navEndPlace != null ? _startNavigation : null),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: _isNavigating
+                                ? const Color(0xFFBA1A1A)
+                                : _primary,
+                            disabledBackgroundColor: _surfaceVariant,
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size.fromHeight(42),
+                          ),
+                          child: Text(
+                            _isNavigating
+                                ? (_stopPlanningRequested ? '正在停止...' : '暂停/停止')
+                                : '开始规划',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
                 ),
               ],
             ),
@@ -5521,7 +5569,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               onPressed: () async {
                 await _locateUser(forceRefresh: true);
               },
-              child: const Icon(Icons.my_location_rounded),
+              child: _isLocating
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location_rounded),
             ),
           ),
 

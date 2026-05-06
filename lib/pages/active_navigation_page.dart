@@ -68,6 +68,14 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   RouteStep? _nextStep;
   double? _distanceToNextStep;
 
+  // 当前所在路段（用于底部道路信息显示）
+  RouteStep? _currentStep;
+  double? _distanceRemainingInStep;  // 当前路段剩余距离
+
+  Timer? _overviewTimer;
+  int _overviewCountdown = 5;
+  bool _isOverviewPinned = false;
+
   @override
   void initState() {
     super.initState();
@@ -155,10 +163,11 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       });
       _processNavigationLogic(mapPos);
 
-      double targetZoom = 18.0;
-      // 距离下一个路口或转向不足 150 米时，拉升视角（缩放级别减小）以便看清路口全貌
-      if (_distanceToNextStep != null && _distanceToNextStep! < 150) {
-        targetZoom = 16.5; 
+      double targetZoom = 17.0;
+      // 当前步骤末端转向不足 300 米时，拉升视角（缩放级别减小）以便看清路口全貌
+      if (_distanceRemainingInStep != null && _distanceRemainingInStep! < 300 &&
+          _currentStep != null && _isActionableStep(_currentStep!)) {
+        targetZoom = 16.0;
       }
 
       if (_isFollowing) {
@@ -223,75 +232,78 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     return LatLng(y1 + t * dy, x1 + t * dx);
   }
 
-  int _findNearestPolylineIndex(LatLng currentLoc) {
-    double minDist = double.infinity;
-    int index = 0;
-    for (int i = 0; i < widget.route.polylinePoints.length; i++) {
-      final d = _distanceCalc(currentLoc, widget.route.polylinePoints[i]);
-      if (d < minDist) {
-        minDist = d;
-        index = i;
-      }
-    }
-    return index;
+  /// 从步骤中提取方向关键词（用于语音和显示）
+  String _getDirectionLabel(RouteStep step) {
+    final text = step.action ?? step.instruction;
+    if (text.contains('左转')) return '左转';
+    if (text.contains('右转')) return '右转';
+    if (text.contains('掉头') || text.contains('调头')) return '掉头';
+    if (text.contains('靠左') || text.contains('左前')) return '靠左行驶';
+    if (text.contains('靠右') || text.contains('右前')) return '靠右行驶';
+    if (text.contains('直行') || text.contains('直走')) return '直行';
+    return step.instruction;
+  }
+
+  /// 判断步骤是否包含需要提示的转向动作（非直行/出发）
+  bool _isActionableStep(RouteStep step) {
+    final text = step.action ?? step.instruction;
+    return text.contains('左转') ||
+        text.contains('右转') ||
+        text.contains('掉头') ||
+        text.contains('调头') ||
+        text.contains('靠左') ||
+        text.contains('靠右') ||
+        text.contains('左前') ||
+        text.contains('右前');
   }
 
   void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
 
-    // 1. Off-Route Check (True point-to-segment distance)
+    // 1. 找最近线段（基于点到线段投影，比最近顶点更准确）
     double minDistanceToRoute = double.infinity;
+    int nearestSegIdx = 0;
+    LatLng snappedOnRoute = currentLoc;
+
     for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
       final p1 = widget.route.polylinePoints[i];
       final p2 = widget.route.polylinePoints[i + 1];
-      
       final projected = _projectPointOnSegment(currentLoc, p1, p2);
       final d = _distanceCalc(currentLoc, projected);
-      
       if (d < minDistanceToRoute) {
         minDistanceToRoute = d;
+        nearestSegIdx = i;
+        snappedOnRoute = projected;
       }
     }
 
-    // 如果偏离距离超过 60 米，增加计数器
-    final isCurrentlyOff = minDistanceToRoute > 60;
-    
-    if (isCurrentlyOff) {
+    // 偏离检测：连续 3 次超过 60 米才触发
+    if (minDistanceToRoute > 60) {
       _offRouteCounter++;
     } else {
       _offRouteCounter = 0;
     }
-
-    // 只有连续 3 次（约 1.5 秒）检测到偏离，才触发播报
     final offRoute = _offRouteCounter >= 3;
-    
     if (offRoute && !_isOffRoute) {
       _speak("您已偏离路线，请注意行驶。");
     }
     _isOffRoute = offRoute;
 
-    // 2. Camera Proximity Check
-    // In a real app we'd project our point onto the route string and find the NEXT camera ahead.
-    // For simplicity, we check absolute distances to all cameras on route and find the nearest ahead.
+    // 2. 摄像头距离检测
     Camera? nearestCam;
     double minCamDist = double.infinity;
-
     for (var cam in widget.camerasOnRoute) {
       final camLoc = LatLng(cam.lat, cam.lng);
       final d = _distanceCalc(currentLoc, camLoc);
-      
-      // simplistic "ahead" check: requires better logic in reality, but distance < 1000 is okay
       if (d < 1000 && d < minCamDist) {
         minCamDist = d;
         nearestCam = cam;
       }
     }
-
     setState(() {
       _nextCamera = nearestCam;
       _distanceToNextCamera = nearestCam != null ? minCamDist : null;
     });
-
     if (nearestCam != null && minCamDist < 300) {
       final camId = "${nearestCam.lat}_${nearestCam.lng}";
       if (!_alertedCameras.contains(camId)) {
@@ -300,68 +312,75 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       }
     }
 
-    // 3. Navigation Steps & Turn Prompts
-    int nearestIndex = _findNearestPolylineIndex(currentLoc);
+    // 3. 步骤检测：找第一个 polylineIdxEnd > nearestSegIdx 的步骤
+    if (widget.route.steps == null || widget.route.steps!.isEmpty) return;
 
-    if (widget.route.steps != null && widget.route.steps!.isNotEmpty) {
-      // 找到当前所在步骤（以终点索引来判断，只要路段终点在前方，说明仍在当前步骤）
-      int currentStepIndex = -1;
-      for (int i = 0; i < widget.route.steps!.length; i++) {
-        final step = widget.route.steps![i];
-        if (step.polylineIdxEnd >= nearestIndex) {
-          currentStepIndex = i;
-          break;
+    int currentStepIndex = widget.route.steps!.length - 1;
+    for (int i = 0; i < widget.route.steps!.length; i++) {
+      if (widget.route.steps![i].polylineIdxEnd > nearestSegIdx) {
+        currentStepIndex = i;
+        break;
+      }
+    }
+
+    final curStep = widget.route.steps![currentStepIndex];
+
+    // 4. 计算到下一步骤起点的路线距离（从吸附点沿路线累加）
+    RouteStep? nextStep;
+    double distToNext = 0.0;
+    if (currentStepIndex + 1 < widget.route.steps!.length) {
+      nextStep = widget.route.steps![currentStepIndex + 1];
+      final targetIdx = nextStep.polylineIdxStart;
+      if (nearestSegIdx + 1 < widget.route.polylinePoints.length) {
+        distToNext = _distanceCalc(
+            snappedOnRoute, widget.route.polylinePoints[nearestSegIdx + 1]);
+        for (int i = nearestSegIdx + 1;
+            i < targetIdx && i + 1 < widget.route.polylinePoints.length;
+            i++) {
+          distToNext += _distanceCalc(
+              widget.route.polylinePoints[i], widget.route.polylinePoints[i + 1]);
         }
       }
+    }
 
-      if (currentStepIndex != -1 && currentStepIndex + 1 < widget.route.steps!.length) {
-        final nextStep = widget.route.steps![currentStepIndex + 1];
-        
-        // 计算沿路线到达下一步骤起点的距离
-        double distToNext = 0.0;
-        int targetIdx = nextStep.polylineIdxStart;
-        
-        if (targetIdx > nearestIndex && nearestIndex + 1 < widget.route.polylinePoints.length) {
-          distToNext += _distanceCalc(currentLoc, widget.route.polylinePoints[nearestIndex + 1]);
-          for (int i = nearestIndex + 1; i < targetIdx; i++) {
-            if (i + 1 < widget.route.polylinePoints.length) {
-              distToNext += _distanceCalc(widget.route.polylinePoints[i], widget.route.polylinePoints[i+1]);
-            }
-          }
-        }
-        
-        setState(() {
-          _nextStep = nextStep;
-          _distanceToNextStep = distToNext;
-        });
+    // 5. 当前路段剩余距离
+    double remainingInStep = 0.0;
+    final endIdx = curStep.polylineIdxEnd;
+    if (nearestSegIdx + 1 < widget.route.polylinePoints.length &&
+        endIdx > nearestSegIdx) {
+      remainingInStep = _distanceCalc(
+          snappedOnRoute, widget.route.polylinePoints[nearestSegIdx + 1]);
+      for (int i = nearestSegIdx + 1;
+          i < endIdx && i + 1 < widget.route.polylinePoints.length;
+          i++) {
+        remainingInStep += _distanceCalc(
+            widget.route.polylinePoints[i], widget.route.polylinePoints[i + 1]);
+      }
+    }
 
-        // 转向语音播报逻辑
-        if (distToNext > 0) {
-          final stepId = nextStep.polylineIdxStart.toString();
-          
-          // 2. 近距离确认提醒 (150 米以内)
-          if (distToNext <= 150 && distToNext > 30) {
-            final key150 = "${stepId}_150m";
-            if (!_alertedSteps.contains(key150)) {
-              _alertedSteps.add(key150);
-              // 去掉原始 instruction 可能自带的"前方xxx米"，直接组合
-              _speak("前方 ${distToNext.round()} 米，${nextStep.instruction}");
-            }
-          }
-          // 3. 动作执行提醒 (30 米以内)
-          else if (distToNext <= 30) {
-            final key30 = "${stepId}_30m";
-            if (!_alertedSteps.contains(key30)) {
-              _alertedSteps.add(key30);
-              _speak(nextStep.instruction);
-            }
-          }
+    setState(() {
+      _currentStep = curStep;
+      _distanceRemainingInStep = remainingInStep;
+      _nextStep = nextStep;
+      _distanceToNextStep = nextStep != null ? distToNext : null;
+    });
+
+    // 转向语音播报：基于当前步骤末端的转向动作和剩余距离
+    if (_isActionableStep(curStep) && remainingInStep > 0) {
+      final stepId = curStep.polylineIdxStart.toString();
+      final dirLabel = _getDirectionLabel(curStep);
+      if (remainingInStep <= 150 && remainingInStep > 30) {
+        final key150 = "${stepId}_150m";
+        if (!_alertedSteps.contains(key150)) {
+          _alertedSteps.add(key150);
+          _speak("前方 ${remainingInStep.round()} 米，$dirLabel");
         }
-      } else {
-        setState(() {
-          _nextStep = null;
-          _distanceToNextStep = null;
-        });
+      } else if (remainingInStep <= 30) {
+        final key30 = "${stepId}_30m";
+        if (!_alertedSteps.contains(key30)) {
+          _alertedSteps.add(key30);
+          _speak(dirLabel);
+        }
       }
     }
   }
@@ -372,9 +391,54 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     setState(() {
       _isOverviewMode = true;
       _isFollowing = false;
+      _isOverviewPinned = false;
+      _overviewCountdown = 5;
+    });
+
+    _overviewTimer?.cancel();
+    _overviewTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        if (_overviewCountdown > 1) {
+          _overviewCountdown--;
+        } else {
+          timer.cancel();
+          _resumeFollowing();
+        }
+      });
     });
 
     _fitRouteOverview();
+  }
+
+  void _resumeFollowing() {
+    if (!mounted) return;
+    _overviewTimer?.cancel();
+    
+    final targetPos = _snappedMapPosition ?? 
+                     _currentMapPosition ?? 
+                     widget.route.startPoint;
+    
+    setState(() {
+      _isFollowing = true;
+      _isOverviewMode = false;
+    });
+
+    _mapController.moveAndRotate(
+      targetPos,
+      17.0,
+      360.0 - _heading,
+    );
+  }
+
+  void _pinOverview() {
+    _overviewTimer?.cancel();
+    setState(() {
+      _isOverviewPinned = true;
+    });
   }
 
   void _fitRouteOverview() {
@@ -402,6 +466,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   @override
   void dispose() {
     _positionStream?.cancel();
+    _overviewTimer?.cancel();
     _flutterTts.stop();
     unawaited(WakelockPlus.disable());
     
@@ -428,7 +493,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
             mapController: _mapController,
             options: MapOptions(
               initialCenter: widget.route.startPoint,
-              initialZoom: 18.0,
+              initialZoom: 17.0,
               minZoom: 3.0,
               maxZoom: 20.0,
               // rotation properties?
@@ -438,7 +503,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               onPositionChanged: (pos, hasGesture) {
                 if (hasGesture) {
                   if (_isFollowing) setState(() => _isFollowing = false);
-                  if (_isOverviewMode) setState(() => _isOverviewMode = false);
+                  if (_isOverviewMode) {
+                    _overviewTimer?.cancel();
+                    setState(() => _isOverviewMode = false);
+                  }
                 }
               },
             ),
@@ -505,7 +573,37 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
             bottom: MediaQuery.of(context).padding.bottom + 16,
             left: 16,
             right: 16,
-            child: _buildBottomPanel(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // 当前道路信息条
+                if (_currentStep != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.65),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Text(
+                        _currentStep!.instruction,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                _buildBottomPanel(),
+              ],
+            ),
           ),
         ],
       ),
@@ -553,6 +651,11 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   }
 
   Widget _buildTopPanel() {
+    // 当前步骤末端有转向动作（当前路段行驶完后需执行的操作）
+    final bool isTurningSoon = _currentStep != null &&
+        _isActionableStep(_currentStep!) &&
+        _distanceRemainingInStep != null;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -596,10 +699,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               ),
             ),
           
-          // 转向提示卡片
-          if (_nextStep != null && _distanceToNextStep != null)
+          // 转向提示卡片：仅在 500m 内显示；否则显示直行剩余距离
+          if (isTurningSoon)
             Container(
-              margin: const EdgeInsets.only(top: 12),
+              margin: const EdgeInsets.only(top: 10),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: Colors.blue.withValues(alpha: 0.1),
@@ -614,41 +717,38 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _getTurnIcon(_nextStep!.action ?? _nextStep!.instruction), 
-                      size: 28, 
-                      color: Colors.blue[800]
+                      _getTurnIcon(_currentStep!.action ?? _currentStep!.instruction),
+                      size: 28,
+                      color: Colors.blue[800],
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _distanceToNextStep! > 1000 
-                            ? '前方 ${(_distanceToNextStep! / 1000).toStringAsFixed(1)} 公里'
-                            : '前方 ${_distanceToNextStep!.toInt()} 米',
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue),
-                        ),
-                        Text(
-                          _nextStep!.instruction,
-                          style: const TextStyle(fontSize: 16),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (_nextStep!.distance > 0 || _nextStep!.duration > 0)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              '本段路程: ${_nextStep!.distance >= 1000 ? '${(_nextStep!.distance / 1000).toStringAsFixed(1)} 公里' : '${_nextStep!.distance.toInt()} 米'}  •  预计: ${(_nextStep!.duration / 60).ceil()} 分钟',
-                              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-                            ),
-                          ),
-                      ],
-                    )
+                    child: Text(
+                      '${_distanceRemainingInStep! >= 1000 ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)}公里' : '${_distanceRemainingInStep!.toInt()}米'} ${_getDirectionLabel(_currentStep!)}',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue[800],
+                      ),
+                    ),
                   ),
                 ],
-              )
+              ),
+            )
+          else if (_distanceRemainingInStep != null && _distanceRemainingInStep! > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.straight, color: Colors.grey, size: 22),
+                  const SizedBox(width: 8),
+                  Text(
+                    '直行 ${_distanceRemainingInStep! >= 1000 ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)} 公里' : '${_distanceRemainingInStep!.toInt()} 米'}',
+                    style: TextStyle(fontSize: 15, color: Colors.grey[700]),
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -699,31 +799,29 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
             ],
 
             // 根据状态显示：恢复跟随 或 (保存+状态)
-            if (!_isFollowing)
+            if (!_isFollowing) ...[
+              if (_isOverviewMode && !_isOverviewPinned) ...[
+                FloatingActionButton.extended(
+                  heroTag: null,
+                  backgroundColor: Colors.orange,
+                  onPressed: _pinOverview,
+                  icon: const Icon(Icons.push_pin_rounded, color: Colors.white, size: 20),
+                  label: const Text('固定'),
+                ),
+                const SizedBox(width: 8),
+              ],
               FloatingActionButton.extended(
                 heroTag: null,
                 backgroundColor: Colors.blue,
-                onPressed: () {
-                  // 获取目标位置，如果没有当前定位则回退到路线起点
-                  final targetPos = _snappedMapPosition ?? 
-                                   _currentMapPosition ?? 
-                                   widget.route.startPoint;
-                  
-                  setState(() {
-                    _isFollowing = true;
-                    _isOverviewMode = false;
-                  });
-
-                  _mapController.moveAndRotate(
-                    targetPos,
-                    18.0,
-                    360.0 - _heading,
-                  );
-                },
-                icon: const Icon(Icons.my_location, color: Colors.white),
-                label: const Text('恢复跟随'),
-              )
-            else ...[
+                onPressed: _resumeFollowing,
+                icon: const Icon(Icons.my_location, color: Colors.white, size: 20),
+                label: Text(
+                  (_isOverviewMode && !_isOverviewPinned)
+                      ? '恢复($_overviewCountdown)'
+                      : '恢复跟随',
+                ),
+              ),
+            ] else ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
