@@ -1770,6 +1770,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ..addAll(waypoints);
       _avoidCameras = record.route.routeType == 'avoid_cameras';
       _currentRoute = record.route;
+      _previousRoutePolylines = []; // 从保存的路线进入时，视为新的起点，清空原本的重试走廊
       _unavoidableCameraIndices = record.route.cameraIndicesOnRoute.toSet();
       _navSearchTarget = null;
       _selectedPlace = null;
@@ -1809,6 +1810,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ..addAll(waypoints);
       _avoidCameras = plan.avoidCameras;
       _currentRoute = null;
+      _previousRoutePolylines = []; // 应用点位方案，清空历史走廊
       _unavoidableCameraIndices = {};
       _navSearchTarget = null;
       _selectedPlace = null;
@@ -2670,10 +2672,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
   }
 
-  /// 没找到避让路线？再尝试一次：使用之前规划过的路线作为排除项，搜索全新走廊
-  void _retryRouteWithDifferentCorridor() {
+  /// 重新规划：如果当前路线未能完全避开摄像头（失败），则尝试屏蔽之前路线再次规划；
+  /// 如果当前路线已成功避开，或者从保存路线进入，则清空历史执行全新规划。
+  void _handleReplanOrRetry() {
     final stops = _buildNavStopItems();
     if (stops.length < 2) return;
+
+    if (_unavoidableCameraIndices.isEmpty) {
+      // 成功避开了所有摄像头，或者根本没有需要避开的，这里应当作全新规划
+      _previousRoutePolylines.clear();
+    }
 
     _apiService.reportEvent('route_retry_click', {
       'previous_attempt_count': _previousRoutePolylines.length,
@@ -2682,11 +2690,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final orderedStops = stops.map((e) => e.place.location).toList();
     _planRouteWithStops(
       orderedStops,
-      true,
+      _avoidCameras,
       excludePolylines: _previousRoutePolylines.isNotEmpty
           ? _previousRoutePolylines
           : null,
     );
+  }
+
+  void _retryRouteWithDifferentCorridor() {
+    _handleReplanOrRetry();
   }
 
 
