@@ -855,7 +855,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final list = await _apiService.getSearchHistoryPlaces();
     if (!mounted) return;
     setState(() {
-      _searchHistoryPlaces = list;
+      // 对已存储的数据也做前缀清理，修复历史脏数据
+      _searchHistoryPlaces = list.map(_stripSuggestionDisplayAddress).toList();
     });
   }
 
@@ -863,6 +864,24 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     await _apiService.saveSearchHistoryPlace(place);
     await _loadSearchHistoryPlaces();
     await _loadRecentData(silent: true);
+  }
+
+  /// 去除 suggestion 地址中的显示专用前缀，还原为原始地址后再保存。
+  /// 使用循环以处理多次叠加保存导致的多层前缀脏数据。
+  PlaceResult _stripSuggestionDisplayAddress(PlaceResult p) {
+    const historyPrefix = '🕘 搜索历史 · ';
+    const historyOnly = '🕘 搜索历史';
+    const favoriteOnly = '⭐ 保存的点位';
+    String address = p.address;
+    // 循环剥除所有叠加的前缀层（修复历史脏数据）
+    while (address.startsWith(historyPrefix)) {
+      address = address.substring(historyPrefix.length);
+    }
+    if (address == historyOnly || address == favoriteOnly) {
+      address = '';
+    }
+    if (address == p.address) return p;
+    return PlaceResult(name: p.name, address: address, location: p.location);
   }
 
   PlaceResult _buildMyLocationSuggestion() {
@@ -997,7 +1016,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _suggestions = [];
     });
     // 直接使用已选中的 suggestion（含精确坐标），避免再次按 nearBy 搜索返回错误城市的同名地点
-    final place = suggestion;
+    // 去除 suggestion 地址中可能带有的显示前缀（如 "🕘 搜索历史 · "、"⭐ 保存的点位"），
+    // 避免重复搜索同一地点时地址前缀被叠加保存。
+    final place = _stripSuggestionDisplayAddress(suggestion);
     await _recordSearchHistoryPlace(place);
     if (!mounted) return;
 

@@ -72,6 +72,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   RouteStep? _currentStep;
   double? _distanceRemainingInStep;  // 当前路段剩余距离
 
+  // 路线进度游标：记录用户已走过的最远线段下标，只前进不后退，
+  // 防止弯道上把身后的线段识别为「当前位置」导致距离偏长
+  int _routeProgressIdx = 0;
+
   Timer? _overviewTimer;
   int _overviewCountdown = 5;
   bool _isOverviewPinned = false;
@@ -180,32 +184,28 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     });
   }
 
-  /// 将原始坐标吸附到导航路线上
+  /// 将原始坐标吸附到导航路线上（从进度游标附近搜索，避免回吸到已过的路段）
   LatLng _calculateSnappedPosition(LatLng currentLoc) {
     if (widget.route.polylinePoints.length < 2) return currentLoc;
 
     double minDistance = double.infinity;
     LatLng snappedPoint = currentLoc;
+    final int searchStart = math.max(0, _routeProgressIdx - 2);
 
-    // 寻找最近的路线线段
-    for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
+    for (int i = searchStart; i < widget.route.polylinePoints.length - 1; i++) {
       final p1 = widget.route.polylinePoints[i];
       final p2 = widget.route.polylinePoints[i + 1];
-
       final projected = _projectPointOnSegment(currentLoc, p1, p2);
       final dist = _distanceCalc(currentLoc, projected);
-
       if (dist < minDistance) {
         minDistance = dist;
         snappedPoint = projected;
       }
     }
 
-    // 如果距离路线小于 30 米，则认为在路上，进行吸附
     if (minDistance < 30) {
       return snappedPoint;
     }
-
     return currentLoc;
   }
 
@@ -260,21 +260,41 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
 
-    // 1. 找最近线段（基于点到线段投影，比最近顶点更准确）
+    // 1. 从进度游标附近搜索最近线段
+    //    允许少量回溯（-2）以应对 GPS 抖动，但不回到起点，防止弯道把身后路段误判为当前位置
+    final int searchStart = math.max(0, _routeProgressIdx - 2);
     double minDistanceToRoute = double.infinity;
-    int nearestSegIdx = 0;
-    LatLng snappedOnRoute = currentLoc;
+    int bestSegIdx = searchStart;
+    LatLng bestSnapped = currentLoc;
 
-    for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
+    for (int i = searchStart; i < widget.route.polylinePoints.length - 1; i++) {
       final p1 = widget.route.polylinePoints[i];
       final p2 = widget.route.polylinePoints[i + 1];
       final projected = _projectPointOnSegment(currentLoc, p1, p2);
       final d = _distanceCalc(currentLoc, projected);
       if (d < minDistanceToRoute) {
         minDistanceToRoute = d;
-        nearestSegIdx = i;
-        snappedOnRoute = projected;
+        bestSegIdx = i;
+        bestSnapped = projected;
       }
+    }
+
+    // 进度游标只前进不后退
+    _routeProgressIdx = math.max(_routeProgressIdx, bestSegIdx);
+    final nearestSegIdx = _routeProgressIdx;
+
+    // 在当前进度段上重新计算吸附点（进度可能因游标超过 bestSegIdx 而更新）
+    final LatLng snappedOnRoute;
+    if (nearestSegIdx == bestSegIdx) {
+      snappedOnRoute = bestSnapped;
+    } else if (nearestSegIdx + 1 < widget.route.polylinePoints.length) {
+      snappedOnRoute = _projectPointOnSegment(
+        currentLoc,
+        widget.route.polylinePoints[nearestSegIdx],
+        widget.route.polylinePoints[nearestSegIdx + 1],
+      );
+    } else {
+      snappedOnRoute = widget.route.polylinePoints.last;
     }
 
     // 偏离检测：连续 3 次超过 60 米才触发
