@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { RouteRequest, RouteResponse } from '@/types/route';
+import { RouteRequest, RouteResponse, RoutePoint } from '@/types/route';
 import { getCameras } from '@/lib/cache';
 import {
   planRoute,
