@@ -34,7 +34,13 @@ function printUsage(): void {
 }
 
 function parseArgs(): { expiresAt: string } {
-  const args = process.argv.slice(2);
+  let args = process.argv.slice(2);
+  
+  // 跳过 pnpm 传入的 '--' 分隔符
+  if (args[0] === '--') {
+    args = args.slice(1);
+  }
+
   const daysIdx = args.indexOf('--days');
   const untilIdx = args.indexOf('--until');
 
