@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "set-token-expiry": "tsx scripts/set-token-expiry.ts",
+    "gen-token": "tsx scripts/gen-token.ts",
     "build-apk": "flutter build apk --release",
     "upload-apk": "tsx scripts/upload-apk.ts"
   },
