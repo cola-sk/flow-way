@@ -30,9 +30,19 @@ async function uploadApk() {
     process.exit(1);
   }
 
+  // 获取命令行参数中的版本标签
+  const versionTag = process.argv[2];
+  let fileName = 'flow-way-latest.apk';
+  
+  if (versionTag) {
+    fileName = `flow-way-${versionTag}.apk`;
+    console.log(`📌 Version tag specified: ${versionTag}`);
+  } else {
+    console.log(`📌 No version tag specified, using default: latest`);
+  }
+
   console.log('🚀 Uploading APK to Vercel Blob...');
   const fileBuffer = fs.readFileSync(apkPath);
-  const fileName = 'flow-way-latest.apk';
   
   try {
     const blob = await put(fileName, fileBuffer, {

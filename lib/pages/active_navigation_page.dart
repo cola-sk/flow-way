@@ -598,6 +598,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // 当前道路信息条
+                // [已隐藏] 注释掉当前道路信息条显示
+                /*
                 if (_currentStep != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
@@ -621,6 +623,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                       ),
                     ),
                   ),
+                */
+                // if (_currentStep != null) SizedBox.shrink(),  // 隐藏当前路段信息
                 _buildBottomPanel(),
               ],
             ),
@@ -720,6 +724,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
             ),
           
           // 转向提示卡片：仅在 500m 内显示；否则显示直行剩余距离
+          // [已隐藏] 注释掉转向提示卡片以隐藏"右转"、"左转"等提示
+          /*
           if (isTurningSoon)
             Container(
               margin: const EdgeInsets.only(top: 10),
@@ -756,7 +762,9 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                 ],
               ),
             )
-          else if (_distanceRemainingInStep != null && _distanceRemainingInStep! > 0)
+          else 
+          */
+          if (_distanceRemainingInStep != null && _distanceRemainingInStep! > 0)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Row(
