@@ -19,7 +19,7 @@ async function getMetrics() {
       sql`
         SELECT
           COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS total_users,
-          COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL AND created_at >= NOW() - INTERVAL '7 days') AS active_users_7d,
+          COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL AND created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai') AS active_users_7d,
           COUNT(*) AS total_events
         FROM event_logs
       `,
@@ -56,14 +56,14 @@ async function getMetrics() {
       `,
       sql`
         SELECT
-          DATE(created_at) AS date,
+          DATE(created_at AT TIME ZONE 'Asia/Shanghai') AS date,
           COUNT(*) FILTER (WHERE event = 'route_plan_click') AS route_plans,
           COUNT(*) FILTER (WHERE event = 'navigation_start') AS navigations,
           COUNT(*) FILTER (WHERE event = 'cruise_start') AS cruises,
           COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS active_users
         FROM event_logs
-        WHERE created_at >= NOW() - INTERVAL '7 days'
-        GROUP BY DATE(created_at)
+        WHERE created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai'
+        GROUP BY DATE(created_at AT TIME ZONE 'Asia/Shanghai')
         ORDER BY date DESC
       `,
     ]);

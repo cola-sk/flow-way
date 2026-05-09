@@ -5,8 +5,8 @@ export async function GET() {
     const result = await sql`
       SELECT
         user_token,
-        MIN(created_at) AS first_event_date,
-        MAX(created_at) AS last_event_date,
+        MIN(created_at AT TIME ZONE 'Asia/Shanghai') AS first_event_date,
+        MAX(created_at AT TIME ZONE 'Asia/Shanghai') AS last_event_date,
         COUNT(*) AS total_events
       FROM event_logs
       WHERE user_token IS NOT NULL
