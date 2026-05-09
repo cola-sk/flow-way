@@ -110,20 +110,24 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
       },
       legend: {
         data: ['路线规划', '导航次数', '巡航次数', '活跃用户'],
-        top: isMobile ? 8 : 10,
-        right: isMobile ? 10 : 20,
-        orient: isMobile ? 'vertical' : 'horizontal',
-        type: 'plain',
+        bottom: isMobile ? 0 : undefined,
+        top: isMobile ? undefined : 10,
+        left: 'center',
+        orient: 'horizontal',
+        type: isMobile ? 'scroll' : 'plain',
         textStyle: {
           fontSize: isMobile ? 10 : 12,
         },
+        itemWidth: isMobile ? 10 : 25,
+        itemHeight: isMobile ? 7 : 14,
+        itemGap: isMobile ? 6 : 10,
       },
       grid: {
-        left: isMobile ? '15%' : '5%',
-        right: isMobile ? '15%' : '5%',
-        bottom: isMobile ? '60px' : '50px',
-        top: isMobile ? 50 : 40,
-        containLabel: false,
+        left: isMobile ? '3%' : '5%',
+        right: isMobile ? '3%' : '5%',
+        bottom: isMobile ? '35px' : '50px',
+        top: isMobile ? 35 : 40,
+        containLabel: true,
       },
       xAxis: {
         type: 'category',
@@ -215,6 +219,50 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
     chartInstance.setOption(option);
 
     const handleResize = () => {
+      const nowMobile = window.innerWidth < 768;
+      chartInstance.setOption({
+        legend: {
+          bottom: nowMobile ? 0 : undefined,
+          top: nowMobile ? undefined : 10,
+          left: 'center',
+          orient: 'horizontal',
+          type: nowMobile ? 'scroll' : 'plain',
+          textStyle: { fontSize: nowMobile ? 10 : 12 },
+          itemWidth: nowMobile ? 10 : 25,
+          itemHeight: nowMobile ? 7 : 14,
+          itemGap: nowMobile ? 6 : 10,
+        },
+        grid: {
+          left: nowMobile ? '3%' : '5%',
+          right: nowMobile ? '3%' : '5%',
+          bottom: nowMobile ? '35px' : '50px',
+          top: nowMobile ? 35 : 40,
+          containLabel: true,
+        },
+        xAxis: {
+          axisLabel: {
+            fontSize: nowMobile ? 9 : 12,
+            rotate: nowMobile ? 45 : 0,
+            interval: nowMobile ? Math.ceil(dates.length / 3) - 1 : 0,
+          },
+        },
+        yAxis: [
+          {
+            nameTextStyle: { fontSize: nowMobile ? 9 : 12 },
+            axisLabel: { fontSize: nowMobile ? 8 : 12, margin: nowMobile ? 5 : 8 },
+          },
+          {
+            nameTextStyle: { fontSize: nowMobile ? 9 : 12 },
+            axisLabel: { fontSize: nowMobile ? 8 : 12, margin: nowMobile ? 5 : 8 },
+          },
+        ],
+        series: [
+          { symbol: nowMobile ? 'none' : 'circle', symbolSize: nowMobile ? 0 : 4 },
+          { symbol: nowMobile ? 'none' : 'circle', symbolSize: nowMobile ? 0 : 4 },
+          { symbol: nowMobile ? 'none' : 'circle', symbolSize: nowMobile ? 0 : 4 },
+          { barWidth: nowMobile ? '60%' : '80%' },
+        ],
+      });
       chartInstance.resize();
     };
     window.addEventListener('resize', handleResize);
@@ -223,7 +271,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
       window.removeEventListener('resize', handleResize);
       chartInstance.dispose();
     };
-  }, [daily]);
+  }, [daily, isMobile]);
 
   // 初始化成功率饼图
   useEffect(() => {
@@ -287,6 +335,17 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
     chartInstance.setOption(option);
 
     const handleResize = () => {
+      const nowMobile = window.innerWidth < 768;
+      chartInstance.setOption({
+        legend: { textStyle: { fontSize: nowMobile ? 11 : 12 } },
+        series: [
+          {
+            radius: nowMobile ? ['30%', '55%'] : ['40%', '70%'],
+            center: ['50%', nowMobile ? '40%' : '45%'],
+            emphasis: { label: { fontSize: nowMobile ? 12 : 14 } },
+          },
+        ],
+      });
       chartInstance.resize();
     };
     window.addEventListener('resize', handleResize);
@@ -302,7 +361,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
       {/* 近7天趋势图 */}
       <div style={{ marginBottom: 32 }}>
         <div style={h2Style}>近7天每日趋势</div>
-        <div style={{ ...cardStyle, height: isMobile ? 420 : 400, minHeight: 350 }}>
+        <div style={{ ...cardStyle, height: isMobile ? 440 : 400, minHeight: 350 }}>
           <div ref={dailyChartRef} style={{ width: '100%', height: '100%' }} />
         </div>
       </div>
