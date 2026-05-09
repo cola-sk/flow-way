@@ -1,9 +1,18 @@
 import { sql } from '@/lib/db';
+import { DashboardCharts } from './dashboard-charts';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 // ---- 数据获取 ----
+interface DailyMetric {
+  date: string;
+  route_plans: number;
+  navigations: number;
+  cruises: number;
+  active_users: number;
+}
+
 async function getMetrics() {
   const [overview, installs, routePlan, navigation, cruise, daily] =
     await Promise.all([
@@ -64,7 +73,7 @@ async function getMetrics() {
     routePlan: routePlan[0],
     navigation: navigation[0],
     cruise: cruise[0],
-    daily,
+    daily: daily as DailyMetric[],
   };
 }
 
@@ -247,48 +256,12 @@ export default async function MonitorPage() {
         </div>
       </div>
 
-      {/* 近7天趋势 */}
-      <div style={section}>
-        <div style={h2}>近7天每日趋势</div>
-        <div
-          style={{
-            background: '#fff',
-            border: '1px solid #e5e7eb',
-            borderRadius: 12,
-            overflow: 'hidden',
-          }}
-        >
-          <table style={table}>
-            <thead>
-              <tr>
-                <th style={th}>日期</th>
-                <th style={th}>规划次数</th>
-                <th style={th}>导航次数</th>
-                <th style={th}>巡航次数</th>
-                <th style={th}>活跃用户</th>
-              </tr>
-            </thead>
-            <tbody>
-              {daily.length === 0 && (
-                <tr>
-                  <td colSpan={5} style={{ ...td, textAlign: 'center', color: '#9ca3af' }}>
-                    暂无数据
-                  </td>
-                </tr>
-              )}
-              {daily.map((row: any) => (
-                <tr key={String(row.date)}>
-                  <td style={td}>{String(row.date).slice(0, 10)}</td>
-                  <td style={td}>{row.route_plans}</td>
-                  <td style={td}>{row.navigations}</td>
-                  <td style={td}>{row.cruises}</td>
-                  <td style={td}>{row.active_users}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* 近7天趋势 - 图表看板 */}
+      <DashboardCharts
+        daily={daily}
+        routePlanSuccess={Number(routePlan.success)}
+        routePlanTotal={Number(routePlan.clicks)}
+      />
     </main>
   );
 }
