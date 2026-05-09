@@ -5587,6 +5587,35 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
             ),
 
+          if (_apiService.isBeta)
+            Positioned(
+              right: 16,
+              bottom: navBarHeight + (canShowCruiseButton ? 116 : 60),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 4,
+                      offset: Offset(0, 2),
+                    )
+                  ],
+                ),
+                child: const Text(
+                  'BETA',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+            ),
+
           if (canShowCruiseButton)
             Positioned(
               right: 16,

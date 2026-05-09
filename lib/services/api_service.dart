@@ -37,6 +37,11 @@ String _resolveBaseUrl() {
   return 'https://flow-way.tz0618.uk';
 }
 
+bool _isBetaEnv() {
+  const customUrl = String.fromEnvironment('API_BASE_URL');
+  return customUrl.contains('beta');
+}
+
 String _formatError(Object e) {
   if (e is DioException) {
     final resp = e.response;
@@ -86,6 +91,8 @@ class ApiService {
   static const String firstLaunchDefaultUserToken = 'test_token_v2026';
 
   static final RegExp _userTokenPattern = RegExp(r'^[A-Za-z0-9_]{16}$');
+
+  bool get isBeta => _isBetaEnv();
 
   final Dio _dio;
   void Function(TokenAccessDeniedError error)? onTokenAccessDenied;
