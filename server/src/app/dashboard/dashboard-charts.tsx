@@ -39,9 +39,9 @@ const useResponsive = () => {
 
 const cardStyle: React.CSSProperties = {
   background: '#fff',
-  border: '1px solid #e5e7eb',
   borderRadius: 12,
-  padding: '20px 24px',
+  padding: 'clamp(12px, 3vw, 24px)',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
 };
 
 const h2Style: React.CSSProperties = {
@@ -49,8 +49,11 @@ const h2Style: React.CSSProperties = {
   fontWeight: 600,
   color: '#374151',
   marginBottom: 12,
-  borderLeft: '3px solid #6366f1',
+  borderLeft: '4px solid #14b8a6',
   paddingLeft: 10,
+  backgroundColor: '#f0fdfa',
+  padding: '4px 8px 4px 10px',
+  borderRadius: 4,
 };
 
 export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: DashboardChartsProps) {
@@ -147,7 +150,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
           name: '次数',
           splitLine: {
             lineStyle: {
-              color: '#e5e7eb',
+              color: '#d1fae5',
             },
           },
           nameTextStyle: {
@@ -393,14 +396,14 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                 <div
                   key={token.user_token}
                   style={{
-                    border: '1px solid #e5e7eb',
                     borderRadius: 8,
                     padding: 12,
-                    background: '#f9fafb',
+                    background: '#f0fdfa',
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
                   }}
                 >
                   <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                    <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
                       User Token
                     </div>
                     <div
@@ -416,7 +419,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                      <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
                         首次事件
                       </div>
                       <div style={{ fontSize: 12, color: '#374151' }}>
@@ -424,7 +427,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                      <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
                         最后事件
                       </div>
                       <div style={{ fontSize: 12, color: '#374151' }}>
@@ -433,7 +436,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                     </div>
                   </div>
                   <div style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                    <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
                       事件数
                     </div>
                     <div style={{ fontSize: 12, color: '#374151' }}>{token.total_events}</div>

@@ -80,9 +80,9 @@ async function getMetrics() {
 // ---- 样式常量 ----
 const card: React.CSSProperties = {
   background: '#fff',
-  border: '1px solid #e5e7eb',
   borderRadius: 12,
-  padding: 'clamp(12px, 3vw, 24px)',
+  padding: 'clamp(16px, 4vw, 24px)',
+  boxShadow: '0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06)',
   flex: '1 1 120px',
   minWidth: 100,
 };
@@ -98,8 +98,11 @@ const h2: React.CSSProperties = {
   fontWeight: 600,
   color: '#374151',
   marginBottom: 12,
-  borderLeft: '3px solid #6366f1',
+  borderLeft: '4px solid #14b8a6',
   paddingLeft: 10,
+  backgroundColor: '#f0fdfa',
+  padding: '4px 8px 4px 10px',
+  borderRadius: 4,
 };
 const label: React.CSSProperties = {
   fontSize: 'clamp(10px, 2vw, 12px)',
@@ -109,7 +112,7 @@ const label: React.CSSProperties = {
 const value: React.CSSProperties = {
   fontSize: 'clamp(20px, 5vw, 28px)',
   fontWeight: 700,
-  color: '#1f2937',
+  color: '#0f766e',
   lineHeight: 1.2,
 };
 const sub: React.CSSProperties = { 
@@ -125,7 +128,7 @@ const table: React.CSSProperties = {
 const th: React.CSSProperties = {
   textAlign: 'left',
   padding: '8px 12px',
-  background: '#f9fafb',
+  background: '#f0fdfa',
   borderBottom: '1px solid #e5e7eb',
   fontWeight: 600,
   color: '#374151',
@@ -178,13 +181,14 @@ export default async function MonitorPage() {
         margin: '0 auto',
         padding: 'clamp(16px, 4vw, 40px) clamp(12px, 3vw, 24px)',
         fontFamily: 'system-ui, sans-serif',
-        background: '#f9fafb',
+        background: '#f0fdfa',
         minHeight: '100vh',
       }}
     >
       <div style={{ marginBottom: 'clamp(16px, 4vw, 32px)' }}>
-        <h1 style={{ fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 700, color: '#111827', margin: 0 }}>
-          📊 绕川 · 运营监控
+        <h1 style={{ fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 700, color: '#0f766e', margin: 0, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <img src="/app-icon.png" alt="" style={{ width: 'clamp(28px, 7vw, 40px)', height: 'clamp(28px, 7vw, 40px)', borderRadius: 8 }} />
+          绕川 · 运营监控
         </h1>
         <p style={{ fontSize: 'clamp(12px, 2vw, 14px)', color: '#9ca3af', marginTop: 6 }}>
           数据来源：event_logs · 实时查询
