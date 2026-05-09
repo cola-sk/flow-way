@@ -45,19 +45,38 @@ async function uploadApk() {
   const fileBuffer = fs.readFileSync(apkPath);
   
   try {
+    // 上传带版本号的文件
     const blob = await put(fileName, fileBuffer, {
       access: 'public',
-      addRandomSuffix: false, // 保持固定文件名便于下载
-      allowOverwrite: true,   // 覆盖已存在的同名文件
+      addRandomSuffix: false,
+      allowOverwrite: true,
       contentType: 'application/vnd.android.package-archive',
       token: token,
     });
+    console.log('✅ Versioned upload:', blob.url);
 
-    console.log('✅ Upload successful!');
-    console.log('🔗 Blob URL:', blob.url);
+    // 如果提供了版本号，同时更新版本清单
+    if (versionTag) {
+      const manifest = JSON.stringify({
+        version: versionTag,
+        apkUrl: blob.url,
+        releasedAt: new Date().toISOString(),
+      });
+      const manifestBlob = await put('flow-way-version.json', manifest, {
+        access: 'public',
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        contentType: 'application/json',
+        token: token,
+      });
+      console.log('✅ Version manifest updated:', manifestBlob.url);
+    }
+
     console.log('--------------------------------------------------');
-    console.log('You can now download the APK via the API endpoint:');
-    console.log('/api/download');
+    console.log('Download latest : /api/download');
+    if (versionTag) {
+      console.log(`Download v${versionTag}: /api/download?version=${versionTag}`);
+    }
     console.log('--------------------------------------------------');
   } catch (error) {
     console.error('❌ Upload failed:', error);

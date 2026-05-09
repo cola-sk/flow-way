@@ -11,6 +11,9 @@
     "gen-token": "tsx scripts/gen-token.ts",
     "build-apk": "flutter build apk --release",
     "upload-apk": "tsx scripts/upload-apk.ts",
+    "release": "tsx scripts/release.ts",
+    "release:minor": "tsx scripts/release.ts minor",
+    "release:major": "tsx scripts/release.ts major",
     "init-db": "tsx scripts/init-db.ts"
   },
   "keywords": [],
