@@ -30,8 +30,8 @@ async function uploadApk() {
     process.exit(1);
   }
 
-  // 获取命令行参数中的版本标签
-  const versionTag = process.argv[2];
+  // 获取命令行参数中的版本标签（过滤掉 pnpm 透传的 '--' 分隔符）
+  const versionTag = process.argv.slice(2).find(a => a !== '--');
   let fileName = 'flow-way-latest.apk';
   
   if (versionTag) {

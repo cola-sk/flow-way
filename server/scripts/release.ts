@@ -104,7 +104,7 @@ async function uploadApk(semver: string, build: number, fileBuffer: Buffer) {
 
 // ---------- 主流程 ----------
 async function main() {
-  const bump = process.argv[2] ?? 'patch';
+  const bump = process.argv.slice(2).find(a => a !== '--') ?? 'patch';
 
   const { semver: currentSemver, build: currentBuild } = readVersion();
   const newSemver = bumpSemver(currentSemver, bump);
