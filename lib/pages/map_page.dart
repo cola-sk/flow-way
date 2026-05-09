@@ -1079,6 +1079,27 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  bool _isMyLocationPlace(PlaceResult place) {
+    return place.name == '我的位置' || _isMyLocationSuggestion(place);
+  }
+
+  Future<PlaceResult> _resolvePlaceNameForSave(PlaceResult place) async {
+    if (_isMyLocationPlace(place)) {
+      final resolved = await _apiService.reverseGeocode(point: place.location);
+      if (resolved != null && resolved.name.trim().isNotEmpty) {
+        return resolved;
+      }
+    }
+    if (_isMapPointLikePlace(place)) {
+      return _resolveMapPointPlaceName(place);
+    }
+    return place;
+  }
+
+  Future<List<PlaceResult>> _resolvePlaceNamesForSave(List<PlaceResult> places) async {
+    return Future.wait(places.map(_resolvePlaceNameForSave));
+  }
+
   bool _isMapPointLikePlace(PlaceResult place) {
     final coordName = _formatLatLng(place.location);
     return place.name == '地图选点' ||
@@ -1655,7 +1676,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       return;
     }
 
-    final stops = _buildNavStopItems().map((item) => item.place).toList();
+    final rawStops = _buildNavStopItems().map((item) => item.place).toList();
+    final stops = await _resolvePlaceNamesForSave(rawStops);
+    if (!mounted) return;
     final startName = stops.isNotEmpty ? stops.first.name : '起点';
     final endName = stops.length >= 2 ? stops.last.name : '终点';
     final defaultName = '$startName -> $endName ${_saveNameTimestamp()}';
@@ -1682,9 +1705,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       return;
     }
 
-    final start = _resolvedNavStartPlace();
-    final waypoints = List<PlaceResult>.from(_navWaypoints);
-    final defaultName = '${start.name} -> ${end.name} ${_saveNameTimestamp()}';
+    final rawStart = _resolvedNavStartPlace();
+    final rawWaypoints = List<PlaceResult>.from(_navWaypoints);
+    final resolved = await _resolvePlaceNamesForSave([rawStart, end, ...rawWaypoints]);
+    if (!mounted) return;
+    final start = resolved[0];
+    final resolvedEnd = resolved[1];
+    final waypoints = resolved.sublist(2);
+    final defaultName = '${start.name} -> ${resolvedEnd.name} ${_saveNameTimestamp()}';
     final inputName = await _promptSaveName(
       title: '保存点位方案名称',
       initialValue: defaultName,
@@ -1695,7 +1723,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final ok = await _apiService.saveRoutePlanPoints(
       name: planName,
       start: start,
-      end: end,
+      end: resolvedEnd,
       waypoints: waypoints,
       avoidCameras: _avoidCameras,
     );
@@ -1984,12 +2012,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     required bool avoidCameras,
     required String source,
   }) async {
-    final name = '${start.name} -> ${end.name} ${_saveNameTimestamp()}';
+    final resolved = await _resolvePlaceNamesForSave([start, end, ...waypoints]);
+    final resolvedStart = resolved[0];
+    final resolvedEnd = resolved[1];
+    final resolvedWaypoints = resolved.sublist(2);
+    final name = '${resolvedStart.name} -> ${resolvedEnd.name} ${_saveNameTimestamp()}';
     await _apiService.saveRecentNavigation(
       name: name,
-      start: start,
-      end: end,
-      waypoints: waypoints,
+      start: resolvedStart,
+      end: resolvedEnd,
+      waypoints: resolvedWaypoints,
       avoidCameras: avoidCameras,
       source: source,
     );
@@ -2906,12 +2938,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
+                      final rawStops = _buildNavStopItems().map((e) => e.place).toList();
+                      final resolvedStops = await _resolvePlaceNamesForSave(rawStops);
+                      if (!context.mounted) return;
                       showDialog(
                         context: context,
                         builder: (context) => SaveRouteDialog(
                           route: route,
-                          apiService: _apiService, stops: _buildNavStopItems().map((e) => e.place).toList(),
+                          apiService: _apiService, stops: resolvedStops,
                         ),
                       );
                     },

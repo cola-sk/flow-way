@@ -72,3 +72,4 @@ pubspec.lock
 .playwright-mcp
 debug*
 demo*
+.claude
