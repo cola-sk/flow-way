@@ -70,3 +70,5 @@ app.*.map.json
 .packages
 pubspec.lock
 .playwright-mcp
+debug*
+demo*
