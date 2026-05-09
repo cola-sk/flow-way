@@ -1489,6 +1489,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       return;
     }
 
+    // 如果起点是「我的位置」，先重新定位以获取最新坐标
+    if (_navStartIsMyLocation) {
+      _showToast('正在重新定位...');
+      await _locateUser(forceRefresh: true);
+      if (!mounted) return;
+      if (_userPosition == null) {
+        _showToast('定位失败，请稍后重试');
+        return;
+      }
+    }
+
     final stopItems = _buildNavStopItems();
     final orderedPoints = stopItems.map((item) => item.place.location).toList();
     if (orderedPoints.length < 2) {
@@ -2973,7 +2984,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     if (!mounted) return;
 
-    await Navigator.push(
+    final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (ctx) => ActiveNavigationPage(
@@ -2987,6 +2998,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ),
       ),
     );
+    if (result == 'reroute' && mounted) {
+      await _startNavigation();
+    }
   }
 
   Widget _routeResultRow({
@@ -4521,6 +4535,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 isPlaceholder: false,
                                 onTap: isStart
                                     ? () {
+                                        if (_navStartIsMyLocation) {
+                                          unawaited(_locateUser(forceRefresh: true));
+                                        }
                                         setState(
                                           () => _navSearchTarget = 'start',
                                         );

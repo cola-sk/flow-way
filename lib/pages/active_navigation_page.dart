@@ -597,17 +597,15 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // 当前道路信息条
-                // [已隐藏] 注释掉当前道路信息条显示
-                /*
+                // 当前步骤提示条
                 if (_currentStep != null)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.65),
+                        color: Colors.black.withValues(alpha: 0.75),
                         borderRadius: BorderRadius.circular(24),
                       ),
                       child: Text(
@@ -615,16 +613,14 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
+                          fontSize: 20,
                           fontWeight: FontWeight.w600,
                         ),
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ),
-                */
-                // if (_currentStep != null) SizedBox.shrink(),  // 隐藏当前路段信息
                 _buildBottomPanel(),
               ],
             ),
@@ -764,35 +760,39 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
             )
           else 
           */
-          if (_distanceRemainingInStep != null && _distanceRemainingInStep! > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.straight, color: Colors.grey, size: 22),
-                  const SizedBox(width: 8),
-                  Text(
-                    '直行 ${_distanceRemainingInStep! >= 1000 ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)} 公里' : '${_distanceRemainingInStep!.toInt()} 米'}',
-                    style: TextStyle(fontSize: 15, color: Colors.grey[700]),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
+  }
+
+  void _reroute() {
+    Navigator.of(context).pop('reroute');
   }
 
   Widget _buildBottomPanel() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // 左侧退出按钮
-        FloatingActionButton(
-          heroTag: null,
-          backgroundColor: Colors.red,
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Icon(Icons.close, color: Colors.white),
+        // 左侧：退出 + 换航
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FloatingActionButton(
+              heroTag: null,
+              backgroundColor: Colors.red,
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Icon(Icons.close, color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            FloatingActionButton.extended(
+              heroTag: null,
+              backgroundColor: Colors.orange,
+              onPressed: _reroute,
+              icon: const Icon(Icons.alt_route, color: Colors.white, size: 20),
+              label: const Text('换航', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
         ),
         
         // 右侧控制区域
