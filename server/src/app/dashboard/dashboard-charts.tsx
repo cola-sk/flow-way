@@ -51,9 +51,6 @@ const h2Style: React.CSSProperties = {
   marginBottom: 12,
   borderLeft: '4px solid #14b8a6',
   paddingLeft: 10,
-  backgroundColor: '#f0fdfa',
-  padding: '4px 8px 4px 10px',
-  borderRadius: 4,
 };
 
 export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: DashboardChartsProps) {
@@ -398,7 +395,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                   style={{
                     borderRadius: 8,
                     padding: 12,
-                    background: '#f0fdfa',
+                    background: '#f9fafb',
                     boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
                   }}
                 >

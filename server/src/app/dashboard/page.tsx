@@ -100,9 +100,6 @@ const h2: React.CSSProperties = {
   marginBottom: 12,
   borderLeft: '4px solid #14b8a6',
   paddingLeft: 10,
-  backgroundColor: '#f0fdfa',
-  padding: '4px 8px 4px 10px',
-  borderRadius: 4,
 };
 const label: React.CSSProperties = {
   fontSize: 'clamp(10px, 2vw, 12px)',
@@ -128,7 +125,7 @@ const table: React.CSSProperties = {
 const th: React.CSSProperties = {
   textAlign: 'left',
   padding: '8px 12px',
-  background: '#f0fdfa',
+  background: '#f9fafb',
   borderBottom: '1px solid #e5e7eb',
   fontWeight: 600,
   color: '#374151',
@@ -181,7 +178,7 @@ export default async function MonitorPage() {
         margin: '0 auto',
         padding: 'clamp(16px, 4vw, 40px) clamp(12px, 3vw, 24px)',
         fontFamily: 'system-ui, sans-serif',
-        background: '#f0fdfa',
+        background: '#f9fafb',
         minHeight: '100vh',
       }}
     >
