@@ -184,15 +184,18 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     });
   }
 
-  /// 将原始坐标吸附到导航路线上（从进度游标附近搜索，避免回吸到已过的路段）
+  /// 将原始坐标吸附到导航路线上
   LatLng _calculateSnappedPosition(LatLng currentLoc) {
     if (widget.route.polylinePoints.length < 2) return currentLoc;
 
     double minDistance = double.infinity;
     LatLng snappedPoint = currentLoc;
-    final int searchStart = math.max(0, _routeProgressIdx - 2);
+    
+    // 局部搜索边界 [当前进度 - 3, 当前进度 + 15]，防止吸附到隔壁平行街道或是身后弯道
+    final int localStart = math.max(0, _routeProgressIdx - 3);
+    final int localEnd = math.min(widget.route.polylinePoints.length - 1, _routeProgressIdx + 15);
 
-    for (int i = searchStart; i < widget.route.polylinePoints.length - 1; i++) {
+    for (int i = localStart; i < localEnd; i++) {
       final p1 = widget.route.polylinePoints[i];
       final p2 = widget.route.polylinePoints[i + 1];
       final projected = _projectPointOnSegment(currentLoc, p1, p2);
@@ -200,6 +203,21 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       if (dist < minDistance) {
         minDistance = dist;
         snappedPoint = projected;
+      }
+    }
+
+    // 若局部搜索发现吸附点太远（可能漂移太多或长时间切后台移动），使用全局搜索提供吸附标
+    if (minDistance > 100) {
+      minDistance = double.infinity;
+      for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
+        final p1 = widget.route.polylinePoints[i];
+        final p2 = widget.route.polylinePoints[i + 1];
+        final projected = _projectPointOnSegment(currentLoc, p1, p2);
+        final dist = _distanceCalc(currentLoc, projected);
+        if (dist < minDistance) {
+          minDistance = dist;
+          snappedPoint = projected;
+        }
       }
     }
 
@@ -260,27 +278,65 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
 
-    // 1. 从进度游标附近搜索最近线段
-    //    允许少量回溯（-2）以应对 GPS 抖动，但不回到起点，防止弯道把身后路段误判为当前位置
-    final int searchStart = math.max(0, _routeProgressIdx - 2);
-    double minDistanceToRoute = double.infinity;
-    int bestSegIdx = searchStart;
-    LatLng bestSnapped = currentLoc;
+    // 1. 局部搜索：在进度游标附近搜索最近线段 [游标-3, 游标+15]
+    // 允许少量回溯（-3）以应对 GPS 抖动，但局部通常只前进不后退，防止弯道把身后路段误判为当前位置
+    final int localStart = math.max(0, _routeProgressIdx - 3);
+    final int localEnd = math.min(widget.route.polylinePoints.length - 1, _routeProgressIdx + 15);
+    
+    double localMinDist = double.infinity;
+    int localBestIdx = _routeProgressIdx;
+    LatLng localBestSnapped = currentLoc;
 
-    for (int i = searchStart; i < widget.route.polylinePoints.length - 1; i++) {
+    for (int i = localStart; i < localEnd; i++) {
       final p1 = widget.route.polylinePoints[i];
       final p2 = widget.route.polylinePoints[i + 1];
       final projected = _projectPointOnSegment(currentLoc, p1, p2);
       final d = _distanceCalc(currentLoc, projected);
-      if (d < minDistanceToRoute) {
-        minDistanceToRoute = d;
-        bestSegIdx = i;
-        bestSnapped = projected;
+      if (d < localMinDist) {
+        localMinDist = d;
+        localBestIdx = i;
+        localBestSnapped = projected;
       }
     }
 
-    // 进度游标只前进不后退
-    _routeProgressIdx = math.max(_routeProgressIdx, bestSegIdx);
+    double minDistanceToRoute;
+    int bestSegIdx;
+    LatLng bestSnapped;
+
+    // 如果局部搜索结果距离过大（>100米），说明极可能切入后台后移动了长距离或偏航
+    // 此时启用全局搜索并允许越级跳跃（更新进度游标）
+    if (localMinDist > 100) {
+      double globalMinDist = double.infinity;
+      int globalBestIdx = 0;
+      LatLng globalBestSnapped = currentLoc;
+
+      for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
+        final p1 = widget.route.polylinePoints[i];
+        final p2 = widget.route.polylinePoints[i + 1];
+        final projected = _projectPointOnSegment(currentLoc, p1, p2);
+        final d = _distanceCalc(currentLoc, projected);
+        if (d < globalMinDist) {
+          globalMinDist = d;
+          globalBestIdx = i;
+          globalBestSnapped = projected;
+        }
+      }
+
+      minDistanceToRoute = globalMinDist;
+      bestSegIdx = globalBestIdx;
+      bestSnapped = globalBestSnapped;
+
+      // 全局搜索允许随意跳跃（包括跳后退，应对重新开始导航或严重偏航复位）
+      _routeProgressIdx = bestSegIdx;
+    } else {
+      minDistanceToRoute = localMinDist;
+      bestSegIdx = localBestIdx;
+      bestSnapped = localBestSnapped;
+
+      // 局部范围内，进度游标只前进不后退
+      _routeProgressIdx = math.max(_routeProgressIdx, bestSegIdx);
+    }
+
     final nearestSegIdx = _routeProgressIdx;
 
     // 在当前进度段上重新计算吸附点（进度可能因游标超过 bestSegIdx 而更新）
@@ -720,8 +776,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
             ),
           
           // 转向提示卡片：仅在 500m 内显示；否则显示直行剩余距离
-          // [已隐藏] 注释掉转向提示卡片以隐藏"右转"、"左转"等提示
-          /*
           if (isTurningSoon)
             Container(
               margin: const EdgeInsets.only(top: 10),
@@ -758,8 +812,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                 ],
               ),
             )
-          else 
-          */
         ],
       ),
     );

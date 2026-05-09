@@ -106,6 +106,28 @@ grep '^version:' pubspec.yaml
 
 ---
 
+### 操作五：构建并上传 Beta 版本 (连接 Preview 接口)
+
+**触发场景**：用户说"打个 beta 包"、"发个 beta"，或希望打一个连接 Vercel Preview 域名（或任何指定非正式环境）的测试包。
+
+**核心步骤**：
+1. **获取 Preview URL**：确定要在 Beta 包中使用的接口地址（如 `https://beta.flow-way.tz0618.uk` 或根据 PR 动态生成的 Vercel URL）。
+2. **构建传入环境变量**：使用 `--dart-define` 将其作为 `API_BASE_URL` 注入到 Flutter 应用中。
+   ```bash
+   # 在项目根目录执行
+   flutter build apk --release --dart-define=API_BASE_URL=https://beta.flow-way.tz0618.uk
+   ```
+3. **上传 Beta APK**：
+   ```bash
+   cd server/
+   # 上传且带上 "beta" 标签，产物为 flow-way-beta.apk
+   pnpm run upload-apk:beta 
+   # 或者使用 pnpm run upload-apk -- beta
+   ```
+4. **下载入口**：完成后可通过 `/api/download?version=beta` 下载此 Beta 版，该版本会访问到我们传入的 Preview 接口而不是线上生产接口。
+
+---
+
 ## 文件结构
 
 | 文件 | 作用 |

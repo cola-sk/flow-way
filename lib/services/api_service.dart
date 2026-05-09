@@ -19,6 +19,12 @@ const String _firstLaunchReportedKey = 'first_launch_reported_v1';
 
 
 String _resolveBaseUrl() {
+  // 优先取编译期传进来的 BASE URL
+  const customUrl = String.fromEnvironment('API_BASE_URL');
+  if (customUrl.isNotEmpty) {
+    return customUrl;
+  }
+  
   if (kIsWeb) {
     // Web 端：Chrome 本地开发用 localhost:3000，部署到生产域名时用当前 origin 的 server
     final origin = Uri.base.origin;
