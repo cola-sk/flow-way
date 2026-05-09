@@ -29,6 +29,7 @@
     "@upstash/redis": "^1.37.0",
     "@vercel/blob": "^2.3.3",
     "cheerio": "^1.2.0",
+    "echarts": "^5.5.1",
     "next": "^16.2.3",
     "node-fetch": "^3.3.2",
     "react": "^19.2.5",
