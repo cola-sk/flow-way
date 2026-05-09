@@ -1,4 +1,4 @@
-import { put } from '@vercel/blob';
+import { put, list } from '@vercel/blob';
 import fs from 'fs';
 import path from 'path';
 import { config } from 'dotenv';
@@ -55,21 +55,51 @@ async function uploadApk() {
     });
     console.log('✅ Versioned upload:', blob.url);
 
-    // 如果提供了版本号，同时更新版本清单
+    // 如果提供了版本号，同时更新版本清单（仅当新版本 >= 当前记录版本时）
     if (versionTag) {
-      const manifest = JSON.stringify({
-        version: versionTag,
-        apkUrl: blob.url,
-        releasedAt: new Date().toISOString(),
-      });
-      const manifestBlob = await put('flow-way-version.json', manifest, {
-        access: 'public',
-        addRandomSuffix: false,
-        allowOverwrite: true,
-        contentType: 'application/json',
-        token: token,
-      });
-      console.log('✅ Version manifest updated:', manifestBlob.url);
+      // 读取当前 version.json
+      let currentVersion: string | null = null;
+      try {
+        const { blobs } = await list({ prefix: 'flow-way-version.json', limit: 1 });
+        const manifestBlob = blobs.find(b => b.pathname === 'flow-way-version.json');
+        if (manifestBlob) {
+          const res = await fetch(manifestBlob.url, { cache: 'no-store' });
+          if (res.ok) {
+            const data = await res.json() as { version: string };
+            currentVersion = data.version;
+          }
+        }
+      } catch { /* 读取失败则忽略，视为首次发布 */ }
+
+      // 比较版本：将 x.y.z 转成数字数组逐段比较
+      const toNums = (v: string) => v.split('.').map(Number);
+      const isNewer = (a: string, b: string) => {
+        const [a0, a1, a2] = toNums(a);
+        const [b0, b1, b2] = toNums(b);
+        return a0 > b0 || (a0 === b0 && a1 > b1) || (a0 === b0 && a1 === b1 && a2 >= b2);
+      };
+
+      if (currentVersion && !isNewer(versionTag, currentVersion)) {
+        console.warn(`⚠️  跳过更新 version.json：指定版本 ${versionTag} 低于当前记录版本 ${currentVersion}`);
+        console.warn('   若确实要回滚，请手动修改 version.json。');
+      } else {
+        const manifest = JSON.stringify({
+          version: versionTag,
+          apkUrl: blob.url,
+          releasedAt: new Date().toISOString(),
+        });
+        const manifestResult = await put('flow-way-version.json', manifest, {
+          access: 'public',
+          addRandomSuffix: false,
+          allowOverwrite: true,
+          contentType: 'application/json',
+          token: token,
+        });
+        console.log('✅ Version manifest updated:', manifestResult.url);
+        if (currentVersion) {
+          console.log(`   ${currentVersion} → ${versionTag}`);
+        }
+      }
     }
 
     console.log('--------------------------------------------------');
