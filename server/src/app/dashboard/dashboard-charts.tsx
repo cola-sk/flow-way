@@ -22,6 +22,21 @@ interface UserToken {
   total_events: number;
 }
 
+const useResponsive = () => {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  return isMobile;
+};
+
 const cardStyle: React.CSSProperties = {
   background: '#fff',
   border: '1px solid #e5e7eb',
@@ -43,6 +58,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
   const successChartRef = useRef<HTMLDivElement>(null);
   const [userTokens, setUserTokens] = useState<UserToken[]>([]);
   const [loading, setLoading] = useState(true);
+  const isMobile = useResponsive();
 
   // 获取用户 token 列表
   useEffect(() => {
@@ -94,28 +110,64 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
       },
       legend: {
         data: ['路线规划', '导航次数', '巡航次数', '活跃用户'],
-        top: 10,
+        top: isMobile ? 8 : 10,
+        right: isMobile ? 10 : 20,
+        orient: isMobile ? 'vertical' : 'horizontal',
+        type: 'plain',
+        textStyle: {
+          fontSize: isMobile ? 10 : 12,
+        },
       },
       grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
-        top: 50,
-        containLabel: true,
+        left: isMobile ? '15%' : '5%',
+        right: isMobile ? '15%' : '5%',
+        bottom: isMobile ? '60px' : '50px',
+        top: isMobile ? 50 : 40,
+        containLabel: false,
       },
       xAxis: {
         type: 'category',
         data: dates,
+        axisLabel: {
+          fontSize: isMobile ? 9 : 12,
+          rotate: isMobile ? 45 : 0,
+          interval: isMobile ? Math.ceil(dates.length / 3) - 1 : 0,
+        },
+        axisTick: {
+          alignWithLabel: true,
+        },
       },
       yAxis: [
         {
           type: 'value',
           name: '次数',
+          splitLine: {
+            lineStyle: {
+              color: '#e5e7eb',
+            },
+          },
+          nameTextStyle: {
+            fontSize: isMobile ? 9 : 12,
+          },
+          axisLabel: {
+            fontSize: isMobile ? 8 : 12,
+            margin: isMobile ? 5 : 8,
+          },
         },
         {
           type: 'value',
           name: '用户数',
           position: 'right',
+          splitLine: {
+            show: false,
+          },
+          nameTextStyle: {
+            fontSize: isMobile ? 9 : 12,
+          },
+          axisLabel: {
+            fontSize: isMobile ? 8 : 12,
+            margin: isMobile ? 5 : 8,
+          },
         },
       ],
       series: [
@@ -126,6 +178,8 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
           smooth: true,
           yAxisIndex: 0,
           itemStyle: { color: '#6366f1' },
+          symbol: isMobile ? 'none' : 'circle',
+          symbolSize: isMobile ? 0 : 4,
         },
         {
           name: '导航次数',
@@ -134,6 +188,8 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
           smooth: true,
           yAxisIndex: 0,
           itemStyle: { color: '#10b981' },
+          symbol: isMobile ? 'none' : 'circle',
+          symbolSize: isMobile ? 0 : 4,
         },
         {
           name: '巡航次数',
@@ -142,6 +198,8 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
           smooth: true,
           yAxisIndex: 0,
           itemStyle: { color: '#f59e0b' },
+          symbol: isMobile ? 'none' : 'circle',
+          symbolSize: isMobile ? 0 : 4,
         },
         {
           name: '活跃用户',
@@ -149,6 +207,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
           type: 'bar',
           yAxisIndex: 1,
           itemStyle: { color: '#ec4899', opacity: 0.6 },
+          barWidth: isMobile ? '60%' : '80%',
         },
       ],
     };
@@ -180,13 +239,17 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
         trigger: 'item',
       },
       legend: {
-        top: 'center',
-        left: 'right',
+        bottom: 0,
+        left: 'center',
+        textStyle: {
+          fontSize: isMobile ? 11 : 12,
+        },
       },
       series: [
         {
           type: 'pie',
-          radius: ['40%', '70%'],
+          radius: isMobile ? ['30%', '55%'] : ['40%', '70%'],
+          center: ['50%', isMobile ? '40%' : '45%'],
           avoidLabelOverlap: false,
           itemStyle: {
             borderRadius: 10,
@@ -199,6 +262,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
           emphasis: {
             label: {
               show: true,
+              fontSize: isMobile ? 12 : 14,
             },
           },
           labelLine: {
@@ -238,7 +302,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
       {/* 近7天趋势图 */}
       <div style={{ marginBottom: 32 }}>
         <div style={h2Style}>近7天每日趋势</div>
-        <div style={{ ...cardStyle, height: 400 }}>
+        <div style={{ ...cardStyle, height: isMobile ? 420 : 400, minHeight: 350 }}>
           <div ref={dailyChartRef} style={{ width: '100%', height: '100%' }} />
         </div>
       </div>
@@ -246,7 +310,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
       {/* 路线规划成功率 */}
       <div style={{ marginBottom: 32 }}>
         <div style={h2Style}>路线规划成功率</div>
-        <div style={{ ...cardStyle, height: 300 }}>
+        <div style={{ ...cardStyle, height: isMobile ? 320 : 300, minHeight: 280 }}>
           <div ref={successChartRef} style={{ width: '100%', height: '100%' }} />
         </div>
       </div>
@@ -263,7 +327,63 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
             <div style={{ textAlign: 'center', color: '#9ca3af', padding: '20px' }}>
               暂无数据
             </div>
+          ) : isMobile ? (
+            // 移动设备：卡片式展示
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {userTokens.map((token) => (
+                <div
+                  key={token.user_token}
+                  style={{
+                    border: '1px solid #e5e7eb',
+                    borderRadius: 8,
+                    padding: 12,
+                    background: '#f9fafb',
+                  }}
+                >
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                      User Token
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: '#374151',
+                        fontFamily: 'monospace',
+                        wordBreak: 'break-all',
+                      }}
+                    >
+                      {token.user_token}
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                        首次事件
+                      </div>
+                      <div style={{ fontSize: 12, color: '#374151' }}>
+                        {String(token.first_event_date).slice(0, 10)}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                        最后事件
+                      </div>
+                      <div style={{ fontSize: 12, color: '#374151' }}>
+                        {String(token.last_event_date).slice(0, 10)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, color: '#9ca3af', marginBottom: 2 }}>
+                      事件数
+                    </div>
+                    <div style={{ fontSize: 12, color: '#374151' }}>{token.total_events}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
+            // 桌面设备：表格式展示
             <table
               style={{
                 width: '100%',

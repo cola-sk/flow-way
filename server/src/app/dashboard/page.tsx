@@ -82,19 +82,19 @@ const card: React.CSSProperties = {
   background: '#fff',
   border: '1px solid #e5e7eb',
   borderRadius: 12,
-  padding: '20px 24px',
-  flex: '1 1 160px',
-  minWidth: 140,
+  padding: 'clamp(12px, 3vw, 24px)',
+  flex: '1 1 120px',
+  minWidth: 100,
 };
 const cardGrid: React.CSSProperties = {
   display: 'flex',
   flexWrap: 'wrap',
-  gap: 16,
-  marginBottom: 32,
+  gap: 'clamp(8px, 2vw, 16px)',
+  marginBottom: 'clamp(16px, 4vw, 32px)',
 };
-const section: React.CSSProperties = { marginBottom: 36 };
+const section: React.CSSProperties = { marginBottom: 'clamp(20px, 5vw, 36px)' };
 const h2: React.CSSProperties = {
-  fontSize: 16,
+  fontSize: 'clamp(14px, 3vw, 16px)',
   fontWeight: 600,
   color: '#374151',
   marginBottom: 12,
@@ -102,17 +102,21 @@ const h2: React.CSSProperties = {
   paddingLeft: 10,
 };
 const label: React.CSSProperties = {
-  fontSize: 12,
+  fontSize: 'clamp(10px, 2vw, 12px)',
   color: '#9ca3af',
   marginBottom: 4,
 };
 const value: React.CSSProperties = {
-  fontSize: 28,
+  fontSize: 'clamp(20px, 5vw, 28px)',
   fontWeight: 700,
   color: '#1f2937',
   lineHeight: 1.2,
 };
-const sub: React.CSSProperties = { fontSize: 12, color: '#6b7280', marginTop: 4 };
+const sub: React.CSSProperties = { 
+  fontSize: 'clamp(10px, 2vw, 12px)', 
+  color: '#6b7280', 
+  marginTop: 4 
+};
 const table: React.CSSProperties = {
   width: '100%',
   borderCollapse: 'collapse',
@@ -170,19 +174,19 @@ export default async function MonitorPage() {
   return (
     <main
       style={{
-        maxWidth: 900,
+        maxWidth: 1200,
         margin: '0 auto',
-        padding: '40px 24px',
+        padding: 'clamp(16px, 4vw, 40px) clamp(12px, 3vw, 24px)',
         fontFamily: 'system-ui, sans-serif',
         background: '#f9fafb',
         minHeight: '100vh',
       }}
     >
-      <div style={{ marginBottom: 32 }}>
-        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#111827', margin: 0 }}>
+      <div style={{ marginBottom: 'clamp(16px, 4vw, 32px)' }}>
+        <h1 style={{ fontSize: 'clamp(20px, 5vw, 28px)', fontWeight: 700, color: '#111827', margin: 0 }}>
           📊 绕川 · 运营监控
         </h1>
-        <p style={{ fontSize: 13, color: '#9ca3af', marginTop: 6 }}>
+        <p style={{ fontSize: 'clamp(12px, 2vw, 14px)', color: '#9ca3af', marginTop: 6 }}>
           数据来源：event_logs · 实时查询
         </p>
       </div>
