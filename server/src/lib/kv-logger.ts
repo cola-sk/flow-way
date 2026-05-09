@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import { sql } from './db';
 
 export interface LogData extends Record<string, any> {
   userToken?: string;
@@ -7,37 +8,28 @@ export interface LogData extends Record<string, any> {
 }
 
 /**
- * 记录 KV 格式的日志
- * 格式示例: [KV_LOG] timestamp=2024-04-23T03:00:00Z event=first_install userToken="abc" ...
+ * 记录事件日志，持久化到 Postgres，同时保留 console.log 兜底
  */
 export function kvLog(event: string, data: LogData) {
   const timestamp = new Date().toISOString();
-  
-  // 基础字段
-  const baseFields = {
-    timestamp,
-    event,
-  };
 
-  const allFields = { ...baseFields, ...data };
+  // console.log 兜底，便于本地开发调试
+  console.log(`[KV_LOG] timestamp=${timestamp} event=${event}`, data);
 
-  const kvString = Object.entries(allFields)
-    .map(([k, v]) => {
-      let val = v;
-      if (typeof v === 'object' && v !== null) {
-        val = JSON.stringify(v);
-      } else if (typeof v === 'string') {
-        // 如果包含空格，则加引号
-        if (v.includes(' ') || v.includes('"') || v.includes('=')) {
-          val = `"${v.replace(/"/g, '\\"')}"`;
-        }
-      }
-      return `${k}=${val}`;
-    })
-    .join(' ');
-
-  // 这里的 console.log 会输出到 Vercel/Node.js 日志中，方便后续数据统计
-  console.log(`[KV_LOG] ${kvString}`);
+  // 异步写入 Postgres，不阻塞响应
+  sql`
+    INSERT INTO event_logs (event, user_token, ip, user_agent, data, created_at)
+    VALUES (
+      ${event},
+      ${data.userToken ?? null},
+      ${data.ip ?? null},
+      ${data.userAgent ?? null},
+      ${JSON.stringify(data)},
+      ${timestamp}
+    )
+  `.catch((err: unknown) => {
+    console.error('[KV_LOG] Failed to persist log to Postgres:', err);
+  });
 }
 
 /**

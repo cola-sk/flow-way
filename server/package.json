@@ -10,13 +10,15 @@
     "set-token-expiry": "tsx scripts/set-token-expiry.ts",
     "gen-token": "tsx scripts/gen-token.ts",
     "build-apk": "flutter build apk --release",
-    "upload-apk": "tsx scripts/upload-apk.ts"
+    "upload-apk": "tsx scripts/upload-apk.ts",
+    "init-db": "tsx scripts/init-db.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@types/node": "^25.5.2",
     "@types/react": "^19.2.14",
     "@upstash/redis": "^1.37.0",
