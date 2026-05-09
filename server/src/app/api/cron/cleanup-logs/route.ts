@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   try {
     const result = await sql`
       DELETE FROM event_logs
-      WHERE created_at < NOW() - INTERVAL '7 days'
+      WHERE created_at < NOW() - INTERVAL '6 months'
     `;
     const deleted = result.length ?? 0;
     console.info(`[cleanup-logs] deleted ${deleted} rows older than 7 days`);
