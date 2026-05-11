@@ -1,12 +1,36 @@
 import 'package:flutter/material.dart';
 import 'pages/map_page.dart';
+import 'services/api_service.dart';
 
 void main() {
   runApp(const FlowWayApp());
 }
 
-class FlowWayApp extends StatelessWidget {
+/// 每次打开 App 上报打点（fire-and-forget，不影响启动）
+Future<void> _reportAppOpen() async {
+  try {
+    final apiService = ApiService();
+    await apiService.reportEvent('app_open', {
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+  } catch (e) {
+    print('上报 app_open 失败: $e');
+  }
+}
+
+class FlowWayApp extends StatefulWidget {
   const FlowWayApp({super.key});
+
+  @override
+  State<FlowWayApp> createState() => _FlowWayAppState();
+}
+
+class _FlowWayAppState extends State<FlowWayApp> {
+  @override
+  void initState() {
+    super.initState();
+    _reportAppOpen();
+  }
 
   @override
   Widget build(BuildContext context) {

@@ -715,6 +715,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       await _loadSearchHistoryPlaces();
       await _refreshTokenProfile();
       _showToast('已切换到新用户配置');
+
+      await _apiService.reportEvent('token_change', {
+        'oldToken': _userToken,
+        'newToken': candidate,
+        'timestamp': DateTime.now().toIso8601String(),
+      });
     } catch (e) {
       if (mounted) {
         setState(() {
