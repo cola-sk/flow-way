@@ -1,4 +1,5 @@
 import { CHANGELOG } from './changelog';
+import { BetaDownloadButton } from './beta-download-button';
 
 export default function Home() {
   const latest = CHANGELOG[0];
@@ -34,21 +35,7 @@ export default function Home() {
           >
             ↓ 下载最新版 v{latest.version}
           </a>
-          <a
-            href="/api/download?version=beta"
-            style={{
-              display: 'inline-block',
-              padding: '0.55rem 1.25rem',
-              background: '#7c3aed',
-              color: '#fff',
-              borderRadius: 8,
-              textDecoration: 'none',
-              fontWeight: 600,
-              fontSize: '0.95rem',
-            }}
-          >
-            ↓ 下载 Beta 版
-          </a>
+          <BetaDownloadButton />
         </div>
       </div>
 
