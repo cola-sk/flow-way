@@ -14,7 +14,7 @@ interface DailyMetric {
 }
 
 async function getMetrics() {
-  const [overview, installs, routePlan, navigation, cruise, daily] =
+  const [overview, installs, appOpens, tokenChanges, routePlan, navigation, cruise, daily] =
     await Promise.all([
       sql`
         SELECT
@@ -29,6 +29,20 @@ async function getMetrics() {
           COUNT(*) FILTER (WHERE data->>'platform' = 'native') AS native,
           COUNT(*) FILTER (WHERE data->>'platform' = 'web') AS web
         FROM event_logs WHERE event = 'first_install'
+      `,
+      sql`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai') AS opens_7d,
+          COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS unique_users,
+          COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL AND created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai') AS unique_users_7d
+        FROM event_logs WHERE event = 'app_open'
+      `,
+      sql`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS unique_users
+        FROM event_logs WHERE event = 'token_change'
       `,
       sql`
         SELECT
@@ -70,6 +84,8 @@ async function getMetrics() {
   return {
     overview: overview[0],
     installs: installs[0],
+    appOpens: appOpens[0],
+    tokenChanges: tokenChanges[0],
     routePlan: routePlan[0],
     navigation: navigation[0],
     cruise: cruise[0],
@@ -156,7 +172,7 @@ function StatCard({
 
 // ---- 页面 ----
 export default async function MonitorPage() {
-  const { overview, installs, routePlan, navigation, cruise, daily } =
+  const { overview, installs, appOpens, tokenChanges, routePlan, navigation, cruise, daily } =
     await getMetrics();
 
   const successRate =
@@ -204,6 +220,16 @@ export default async function MonitorPage() {
           />
           <StatCard title="累计安装" val={installs.total} hint={`Native ${installs.native} / Web ${installs.web}`} />
           <StatCard title="累计事件数" val={overview.total_events} />
+          <StatCard
+            title="App 启动次数"
+            val={appOpens.total}
+            hint={`近7天 ${appOpens.opens_7d} 次`}
+          />
+          <StatCard
+            title="Token 切换次数"
+            val={tokenChanges.total}
+            hint={`独立用户 ${tokenChanges.unique_users}`}
+          />
         </div>
       </div>
 

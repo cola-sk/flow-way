@@ -16,6 +16,8 @@ export async function GET(request: Request) {
   const [
     overview,
     installs,
+    appOpens,
+    tokenChanges,
     routePlan,
     navigation,
     cruise,
@@ -37,6 +39,24 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE data->>'platform' = 'web') AS web
       FROM event_logs
       WHERE event = 'first_install'
+    `,
+    // App 启动
+    sql`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai') AS opens_7d,
+        COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS unique_users,
+        COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL AND created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai') AS unique_users_7d
+      FROM event_logs
+      WHERE event = 'app_open'
+    `,
+    // Token 切换
+    sql`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS unique_users
+      FROM event_logs
+      WHERE event = 'token_change'
     `,
     // 路线规划
     sql`
@@ -86,6 +106,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     overview: overview[0],
     installs: installs[0],
+    appOpens: appOpens[0],
+    tokenChanges: tokenChanges[0],
     routePlan: routePlan[0],
     navigation: navigation[0],
     cruise: cruise[0],
