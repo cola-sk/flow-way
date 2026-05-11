@@ -15,6 +15,7 @@ import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
 import '../utils/coordinate_transform.dart';
+import '../widgets/contact_me_dialog.dart';
 import '../widgets/jinjing_marker.dart';
 import 'active_navigation_page.dart';
 import 'save_route_dialog.dart';
@@ -265,14 +266,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             child: const Text('复制当前 token'),
           ),
           TextButton(
-            onPressed: () async {
-              final contactText = '请协助续费，用户Token: $currentToken';
-              await Clipboard.setData(ClipboardData(text: contactText));
-              if (mounted) {
-                _showToast('续费信息已复制，请联系管理员');
-              }
+            onPressed: () {
+              Navigator.of(ctx).pop();
+              if (!mounted) return;
+              showContactMeDialog(context);
             },
-            child: const Text('联系续费'),
+            child: const Text('联系我'),
           ),
           TextButton(
             onPressed: () {
@@ -4306,6 +4305,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 ],
                               ],
                             ),
+                    ),
+                    const Divider(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => showContactMeDialog(context),
+                        icon: const Icon(Icons.contact_mail_outlined, size: 18),
+                        label: const Text('联系我'),
+                      ),
                     ),
                     const Divider(height: 20),
                     SwitchListTile.adaptive(

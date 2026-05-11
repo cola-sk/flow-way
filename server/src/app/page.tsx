@@ -1,5 +1,6 @@
 import { CHANGELOG } from './changelog';
 import { BetaDownloadButton } from './beta-download-button';
+import { ContactMeButton } from './contact-me-button';
 
 export default function Home() {
   const latest = CHANGELOG[0];
@@ -36,6 +37,7 @@ export default function Home() {
             ↓ 下载最新版 v{latest.version}
           </a>
           <BetaDownloadButton />
+          <ContactMeButton />
         </div>
       </div>
 
