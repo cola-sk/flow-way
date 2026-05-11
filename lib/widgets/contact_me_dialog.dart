@@ -39,7 +39,7 @@ Future<void> showContactMeDialog(BuildContext context) async {
               const SizedBox(width: 12),
               FilledButton.icon(
                 icon: const Icon(Icons.open_in_new, size: 18),
-                label: const Text('打开闲鱼购买'),
+                label: const Text('打开闲鱼咨询'),
                 onPressed: () async {
                   Navigator.of(ctx).pop();
                   final uri = Uri.parse(kXianyuUrl);

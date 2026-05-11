@@ -107,7 +107,7 @@ export function ContactMeButton() {
                   fontSize: '0.85rem',
                 }}
               >
-                打开闲鱼购买
+                打开闲鱼咨询
               </button>
             </div>
             <button
