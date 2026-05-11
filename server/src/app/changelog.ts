@@ -10,7 +10,7 @@ export interface ReleaseNote {
 export const CHANGELOG: ReleaseNote[] = [
   {
     version: '1.0.2',
-    date: '2026-05-09',
+    date: '2026-05-11',
     title: '路线保存与导航精度升级',
     highlights: [
       '保存路线更聪明：保存路线时，「我的位置」会自动解析为真实地名，让保存的路线更易识别和复用。',
