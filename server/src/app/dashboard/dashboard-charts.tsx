@@ -20,6 +20,9 @@ interface UserToken {
   first_event_date: string;
   last_event_date: string;
   total_events: number;
+  state: string;
+  validity: string;
+  expiresAt: string | null;
 }
 
 const useResponsive = () => {
@@ -399,20 +402,35 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                     boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
                   }}
                 >
-                  <div style={{ marginBottom: 8 }}>
-                    <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
-                      User Token
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
+                        User Token
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 12,
+                          color: '#374151',
+                          fontFamily: 'monospace',
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        {token.user_token}
+                      </div>
                     </div>
-                    <div
+                    <span
                       style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 4,
                         fontSize: 12,
-                        color: '#374151',
-                        fontFamily: 'monospace',
-                        wordBreak: 'break-all',
+                        fontWeight: 600,
+                        color: token.state === 'active' ? '#16a34a' : token.state === 'expired' ? '#dc2626' : '#9ca3af',
+                        background: token.state === 'active' ? '#f0fdf4' : token.state === 'expired' ? '#fef2f2' : '#f9fafb',
                       }}
                     >
-                      {token.user_token}
-                    </div>
+                      {token.state === 'active' ? '有效' : token.state === 'expired' ? '已过期' : token.state === 'invalid' ? '无效' : '—'}
+                    </span>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div>
@@ -431,12 +449,20 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                         {String(token.last_event_date).slice(0, 10)}
                       </div>
                     </div>
-                  </div>
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
-                      事件数
+                    <div>
+                      <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
+                        事件数
+                      </div>
+                      <div style={{ fontSize: 12, color: '#374151' }}>{token.total_events}</div>
                     </div>
-                    <div style={{ fontSize: 12, color: '#374151' }}>{token.total_events}</div>
+                    <div>
+                      <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
+                        到期时间
+                      </div>
+                      <div style={{ fontSize: 12, color: '#374151' }}>
+                        {token.expiresAt ? new Date(token.expiresAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : (token.validity === 'permanent' ? '永久' : '—')}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -494,6 +520,28 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                       color: '#374151',
                     }}
                   >
+                    状态
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      padding: '8px 12px',
+                      borderBottom: '1px solid #e5e7eb',
+                      fontWeight: 600,
+                      color: '#374151',
+                    }}
+                  >
+                    到期时间
+                  </th>
+                  <th
+                    style={{
+                      textAlign: 'left',
+                      padding: '8px 12px',
+                      borderBottom: '1px solid #e5e7eb',
+                      fontWeight: 600,
+                      color: '#374151',
+                    }}
+                  >
                     事件数
                   </th>
                 </tr>
@@ -529,6 +577,36 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                       }}
                     >
                       {String(token.last_event_date).slice(0, 10)}
+                    </td>
+                    <td
+                      style={{
+                        padding: '8px 12px',
+                        borderBottom: '1px solid #f3f4f6',
+                        color: '#4b5563',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '2px 8px',
+                          borderRadius: 4,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: token.state === 'active' ? '#16a34a' : token.state === 'expired' ? '#dc2626' : '#9ca3af',
+                          background: token.state === 'active' ? '#f0fdf4' : token.state === 'expired' ? '#fef2f2' : '#f9fafb',
+                        }}
+                      >
+                        {token.state === 'active' ? '有效' : token.state === 'expired' ? '已过期' : token.state === 'invalid' ? '无效' : '—'}
+                      </span>
+                    </td>
+                    <td
+                      style={{
+                        padding: '8px 12px',
+                        borderBottom: '1px solid #f3f4f6',
+                        color: '#4b5563',
+                      }}
+                    >
+                      {token.expiresAt ? new Date(token.expiresAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : (token.validity === 'permanent' ? '永久' : '—')}
                     </td>
                     <td
                       style={{
