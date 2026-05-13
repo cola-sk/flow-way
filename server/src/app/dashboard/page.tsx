@@ -237,11 +237,6 @@ export default async function MonitorPage() {
             val={appOpens.total}
             hint={`近7天 ${appOpens.opens_7d} 次`}
           />
-          <StatCard
-            title="Token 切换次数"
-            val={tokenChanges.total}
-            hint={`独立用户 ${tokenChanges.unique_users}`}
-          />
         </div>
       </div>
 
@@ -299,10 +294,17 @@ export default async function MonitorPage() {
         </div>
       </div>
 
-      {/* Token 列表 */}
+      {/* 用户 Token */}
       <div style={section}>
-        <div style={h2}>用户 Token 有效期</div>
-        <div style={{ ...card, padding: 0, overflow: 'auto' }}>
+        <div style={h2}>用户 Token</div>
+        <div style={cardGrid}>
+          <StatCard
+            title="Token 切换次数"
+            val={tokenChanges.total}
+            hint={`独立用户 ${tokenChanges.unique_users}`}
+          />
+        </div>
+        <div style={{ ...card, padding: 0, overflow: 'auto', marginTop: 'clamp(8px, 2vw, 16px)' }}>
           <table style={table}>
             <thead>
               <tr>
