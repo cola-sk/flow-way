@@ -1,5 +1,7 @@
 import { sql } from '@/lib/db';
 import { DashboardCharts } from './dashboard-charts';
+import { requireRedis } from '@/lib/redis';
+import { listUserTokenPolicies, evaluateUserTokenAccess } from '@/lib/user-token';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -175,6 +177,16 @@ export default async function MonitorPage() {
   const { overview, installs, appOpens, tokenChanges, routePlan, navigation, cruise, daily } =
     await getMetrics();
 
+  // Token 列表
+  const redis = requireRedis();
+  const policies = await listUserTokenPolicies(redis);
+  const tokenRows = await Promise.all(
+    policies.map(async (p) => {
+      const access = await evaluateUserTokenAccess(redis, p.token);
+      return { ...p, state: access.state };
+    })
+  );
+
   const successRate =
     routePlan.clicks > 0
       ? Math.round((Number(routePlan.success) / Number(routePlan.clicks)) * 100)
@@ -284,6 +296,49 @@ export default async function MonitorPage() {
             title="平均巡航时长"
             val={cruise.avg_duration_min ? `${cruise.avg_duration_min} min` : null}
           />
+        </div>
+      </div>
+
+      {/* Token 列表 */}
+      <div style={section}>
+        <div style={h2}>用户 Token 有效期</div>
+        <div style={{ ...card, padding: 0, overflow: 'auto' }}>
+          <table style={table}>
+            <thead>
+              <tr>
+                <th style={th}>Token</th>
+                <th style={th}>状态</th>
+                <th style={th}>有效期类型</th>
+                <th style={th}>到期时间</th>
+                <th style={th}>创建时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokenRows.map((row) => (
+                <tr key={row.token}>
+                  <td style={{ ...td, fontWeight: 600 }}>{row.token}</td>
+                  <td style={td}>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: row.state === 'active' ? '#16a34a' : row.state === 'expired' ? '#dc2626' : '#9ca3af',
+                        background: row.state === 'active' ? '#f0fdf4' : row.state === 'expired' ? '#fef2f2' : '#f9fafb',
+                      }}
+                    >
+                      {row.state === 'active' ? '有效' : row.state === 'expired' ? '已过期' : '无效'}
+                    </span>
+                  </td>
+                  <td style={td}>{row.validity === 'permanent' ? '永久' : '限时'}</td>
+                  <td style={td}>{row.expiresAt ? new Date(row.expiresAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) : '—'}</td>
+                  <td style={td}>{new Date(row.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 

@@ -3035,6 +3035,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               .where((i) => i < _cameras.length)
               .map((i) => _cameras[i])
               .toList(),
+          allCameras: _cameras,
         ),
       ),
     );

@@ -7,17 +7,19 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
 import '../utils/coordinate_transform.dart';
-import '../widgets/jinjing_marker.dart';
+
 import 'save_route_dialog.dart';
 
 class ActiveNavigationPage extends StatefulWidget {
   final NavigationRoute route;
   final List<Camera> camerasOnRoute;
+  final List<Camera> allCameras;
   final ApiService apiService;
   final List<PlaceResult> stops;
 
@@ -25,6 +27,7 @@ class ActiveNavigationPage extends StatefulWidget {
     Key? key,
     required this.route,
     required this.camerasOnRoute,
+    required this.allCameras,
     required this.apiService,
     required this.stops,
   }) : super(key: key);
@@ -50,6 +53,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   bool _isOffRoute = false;
   int _offRouteCounter = 0; // 连续偏离计数器
   bool _muteVoiceGuidance = false;
+  bool _showAllCameras = false;
 
   // 记录已经播报过的摄像头 ID/名称，避免重复播报
   final Set<String> _alertedCameras = {};
@@ -605,15 +609,72 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                   ),
                 ],
               ),
+              // 所有摄像头（路线外的用小标记）— 默认不显示，开关开启后才渲染
+              if (_showAllCameras)
               MarkerLayer(
                 markers: [
-                  // Cameras
+                  for (var cam in widget.allCameras)
+                    if (!widget.camerasOnRoute.any((c) => c.lat == cam.lat && c.lng == cam.lng))
+                      Marker(
+                        point: LatLng(cam.lat, cam.lng),
+                        width: 28,
+                        height: 28,
+                        child: GestureDetector(
+                          onTap: () => _showCameraInfo(cam),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.85),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _cameraColor(cam.type),
+                                width: 1.2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.1),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              Icons.videocam_rounded,
+                              color: _cameraColor(cam.type),
+                              size: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                ],
+              ),
+              // 路线上摄像头（红色标记）
+              MarkerLayer(
+                markers: [
                   for (var cam in widget.camerasOnRoute)
                     Marker(
                       point: LatLng(cam.lat, cam.lng),
-                      width: 40,
-                      height: 40,
-                      child: const JinjingMarker(size: 40),
+                      width: 32,
+                      height: 32,
+                      child: GestureDetector(
+                        onTap: () => _showCameraInfo(cam),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.85),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.2),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.videocam_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        ),
+                      ),
                     ),
                   // Current Position
                   if (_currentPosition != null)
@@ -825,7 +886,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // 左侧：退出 + 换航
+        // 左侧：退出 + 摄像头开关 + 换航
         Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -835,6 +896,17 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               backgroundColor: Colors.red,
               onPressed: () => Navigator.of(context).pop(),
               child: const Icon(Icons.close, color: Colors.white),
+            ),
+            const SizedBox(height: 8),
+            // 全部摄像头开关
+            FloatingActionButton(
+              heroTag: null,
+              backgroundColor: _showAllCameras ? const Color(0xFF546E7A) : Colors.white,
+              onPressed: () => setState(() => _showAllCameras = !_showAllCameras),
+              child: Icon(
+                _showAllCameras ? Icons.videocam_rounded : Icons.videocam_outlined,
+                color: _showAllCameras ? Colors.white : Colors.grey,
+              ),
             ),
             const SizedBox(height: 8),
             FloatingActionButton.extended(
@@ -921,5 +993,109 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         ),
       ],
     );
+  }
+
+  Color _cameraColor(int type) {
+    switch (type) {
+      case 1:
+        return const Color(0xFFBA1A1A);
+      case 2:
+        return const Color(0xFFB96A00);
+      case 4:
+        return const Color(0xFF7C7766);
+      case 6:
+        return const Color(0xFF9E9E9E);
+      default:
+        return const Color(0xFFBA1A1A);
+    }
+  }
+
+  void _showCameraInfo(Camera camera) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final sourceUri = _cameraDetailUri(camera.href);
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(ctx).padding.bottom + 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.videocam, color: _cameraColor(camera.type)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      camera.name,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _infoRow('类型', camera.typeLabel),
+              _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
+              _infoRow('更新日期', camera.localDateDisplay),
+              const SizedBox(height: 12),
+              if (sourceUri != null)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.open_in_new_rounded),
+                    label: const Text('查看进京网原始页面'),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final ok = await launchUrl(sourceUri, mode: LaunchMode.platformDefault);
+                      if (!ok && mounted) _showToast('打开链接失败');
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Uri? _cameraDetailUri(String href) {
+    final trimmed = href.trim();
+    if (trimmed.isEmpty) return null;
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      return Uri.tryParse(trimmed);
+    }
+    final normalized = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+    return Uri.tryParse('https://www.jinjing365.com$normalized');
+  }
+
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 70,
+            child: Text(
+              label,
+              style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showToast(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
   }
 }
