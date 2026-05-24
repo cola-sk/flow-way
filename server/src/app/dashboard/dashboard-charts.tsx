@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import * as echarts from 'echarts';
+import { EventTimelineModal } from './event-timeline-modal';
 
 interface DashboardChartsProps {
   daily: Array<{
@@ -61,6 +62,7 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
   const successChartRef = useRef<HTMLDivElement>(null);
   const [userTokens, setUserTokens] = useState<UserToken[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedToken, setSelectedToken] = useState<string | null>(null);
   const isMobile = useResponsive();
 
   // 获取用户 token 列表
@@ -453,7 +455,18 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                       <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
                         事件数
                       </div>
-                      <div style={{ fontSize: 12, color: '#374151' }}>{token.total_events}</div>
+                      <div
+                        onClick={() => setSelectedToken(token.user_token)}
+                        style={{
+                          fontSize: 12,
+                          color: '#2563eb',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          textDecorationColor: '#93c5fd',
+                        }}
+                      >
+                        {token.total_events}
+                      </div>
                     </div>
                     <div>
                       <div style={{ fontSize: 11, color: '#14b8a6', marginBottom: 2, fontWeight: 600 }}>
@@ -539,10 +552,10 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                       padding: '8px 12px',
                       borderBottom: '1px solid #e5e7eb',
                       fontWeight: 600,
-                      color: '#374151',
+                      color: '#2563eb',
                     }}
                   >
-                    事件数
+                    事件数 ↪
                   </th>
                 </tr>
               </thead>
@@ -612,8 +625,11 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
                       style={{
                         padding: '8px 12px',
                         borderBottom: '1px solid #f3f4f6',
-                        color: '#4b5563',
+                        color: '#2563eb',
+                        cursor: 'pointer',
+                        fontWeight: 600,
                       }}
+                      onClick={() => setSelectedToken(token.user_token)}
                     >
                       {token.total_events}
                     </td>
@@ -624,6 +640,13 @@ export function DashboardCharts({ daily, routePlanSuccess, routePlanTotal }: Das
           )}
         </div>
       </div>
+
+      {selectedToken && (
+        <EventTimelineModal
+          token={selectedToken}
+          onClose={() => setSelectedToken(null)}
+        />
+      )}
     </div>
   );
 }
