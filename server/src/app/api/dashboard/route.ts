@@ -65,6 +65,10 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE (data->>'success')::boolean = true) AS success,
         COUNT(*) FILTER (WHERE (data->>'success')::boolean = false) AS failed,
         COUNT(*) FILTER (WHERE (data->>'avoid_cameras')::boolean = true) AS avoid_cameras_count,
+        (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_sheet_show') AS result_sheet_shows,
+        (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_click_navigate') AS result_navigate_clicks,
+        (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_click_replan') AS result_replan_clicks,
+        (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_click_save') AS result_save_clicks,
         ROUND(AVG((data->>'distance')::numeric) FILTER (WHERE (data->>'success')::boolean = true) / 1000, 1) AS avg_distance_km,
         ROUND(AVG((data->>'duration')::numeric) FILTER (WHERE (data->>'success')::boolean = true) / 60, 1) AS avg_duration_min
       FROM event_logs

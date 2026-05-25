@@ -2774,12 +2774,26 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   /// 路线规划结果弹窗：告知用户绕开了几个摄像头、哪些无法绕开
   void _showRouteResult(NavigationRoute route, bool avoidCameras) {
     final onRouteCount = route.cameraIndicesOnRoute.length;
+    final planningFailed = avoidCameras && onRouteCount > 0;
     // 本次规划绕开的摄像头数（与总数对比无意义，与路线直线对比也难算，
     // 直接告诉用户"路线上仍有 N 个"以及"具体是哪些"）
     final unavoidableCameras = route.cameraIndicesOnRoute
         .where((i) => i < _cameras.length)
         .map((i) => _cameras[i])
         .toList();
+    final stopItems = _buildNavStopItems();
+
+    _apiService.reportEvent('route_result_sheet_show', {
+      'avoid_cameras': avoidCameras,
+      'planning_failed': planningFailed,
+      'camera_count': onRouteCount,
+      'distance': route.distance,
+      'duration': route.duration,
+      'waypoint_count': stopItems.length > 2 ? stopItems.length - 2 : 0,
+      'previous_attempt_count': _previousRoutePolylines.length,
+    });
+
+    var dismissReason = 'tap_outside_or_system';
 
     showModalBottomSheet(
       context: context,
@@ -2913,12 +2927,21 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
             const SizedBox(height: 16),
 
-            // "再尝试一次"按钮：当有无法绕开的摄像头时显示
-            if (avoidCameras && onRouteCount > 0) ...[
+            // "再尝试一次"按钮：仅在规划失败时显示
+            if (planningFailed) ...[
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   onPressed: () {
+                    dismissReason = 'click_replan_failure_banner';
+                    _apiService.reportEvent('route_result_click_replan', {
+                      'source': 'failure_banner',
+                      'avoid_cameras': avoidCameras,
+                      'camera_count': onRouteCount,
+                      'distance': route.distance,
+                      'duration': route.duration,
+                      'previous_attempt_count': _previousRoutePolylines.length,
+                    });
                     Navigator.pop(ctx);
                     _retryRouteWithDifferentCorridor();
                   },
@@ -2928,11 +2951,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     side: const BorderSide(color: Color(0xFF1565C0), width: 1.2),
                     minimumSize: const Size.fromHeight(42),
                   ),
-                  label: Text(
-                    _previousRoutePolylines.length > 1
-                        ? '没找到避让路线？再尝试一次（第${_previousRoutePolylines.length}次）'
-                        : '没找到避让路线？再尝试一次',
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  label: const Text(
+                    '找不到路线？点击重试（添加途径点成功率会变高）',
+                    style: TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -2944,9 +2965,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () async {
+                      _apiService.reportEvent('route_result_click_save', {
+                        'source': 'footer',
+                        'avoid_cameras': avoidCameras,
+                        'planning_failed': planningFailed,
+                        'camera_count': onRouteCount,
+                        'distance': route.distance,
+                        'duration': route.duration,
+                        'previous_attempt_count': _previousRoutePolylines.length,
+                      });
                       final rawStops = _buildNavStopItems().map((e) => e.place).toList();
                       final resolvedStops = await _resolvePlaceNamesForSave(rawStops);
-                      if (!context.mounted) return;
+                      if (!mounted) return;
                       showDialog(
                         context: context,
                         builder: (context) => SaveRouteDialog(
@@ -2970,13 +3000,25 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: () {
+                      dismissReason = 'click_replan_footer';
+                      _apiService.reportEvent('route_result_click_replan', {
+                        'source': 'footer',
+                        'avoid_cameras': avoidCameras,
+                        'camera_count': onRouteCount,
+                        'distance': route.distance,
+                        'duration': route.duration,
+                        'previous_attempt_count': _previousRoutePolylines.length,
+                      });
                       Navigator.pop(ctx);
                       _retryRouteWithDifferentCorridor();
                     },
                     icon: const Icon(Icons.alt_route_rounded, size: 16),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: _primary,
-                      side: const BorderSide(color: _primary, width: 1.2),
+                      foregroundColor: _onSurfaceVariant,
+                      side: BorderSide(
+                        color: _onSurfaceVariant.withValues(alpha: 0.35),
+                        width: 1,
+                      ),
                       minimumSize: const Size.fromHeight(42),
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
@@ -2990,6 +3032,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: () async {
+                      dismissReason = 'click_navigate';
+                      _apiService.reportEvent('route_result_click_navigate', {
+                        'source': 'footer',
+                        'avoid_cameras': avoidCameras,
+                        'planning_failed': planningFailed,
+                        'camera_count': onRouteCount,
+                        'distance': route.distance,
+                        'duration': route.duration,
+                        'previous_attempt_count': _previousRoutePolylines.length,
+                      });
                       Navigator.pop(ctx);
                       await _openActiveNavigation(route);
                     },
@@ -3012,7 +3064,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ),
       ),
       ),
-    );
+    ).whenComplete(() {
+      _apiService.reportEvent('route_result_sheet_dismiss', {
+        'dismiss_reason': dismissReason,
+        'avoid_cameras': avoidCameras,
+        'planning_failed': planningFailed,
+        'camera_count': onRouteCount,
+        'distance': route.distance,
+        'duration': route.duration,
+        'previous_attempt_count': _previousRoutePolylines.length,
+      });
+    });
   }
 
   Future<void> _openActiveNavigation(

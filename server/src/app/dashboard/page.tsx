@@ -50,6 +50,10 @@ async function getMetrics() {
           COUNT(*) FILTER (WHERE (data->>'success')::boolean = true) AS success,
           COUNT(*) FILTER (WHERE (data->>'success')::boolean = false) AS failed,
           COUNT(*) FILTER (WHERE (data->>'avoid_cameras')::boolean = true) AS avoid_cameras_count,
+          (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_sheet_show') AS result_sheet_shows,
+          (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_click_navigate') AS result_navigate_clicks,
+          (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_click_replan') AS result_replan_clicks,
+          (SELECT COUNT(*) FROM event_logs WHERE event = 'route_result_click_save') AS result_save_clicks,
           ROUND(AVG((data->>'distance')::numeric) FILTER (WHERE (data->>'success')::boolean = true) / 1000, 1) AS avg_distance_km,
           ROUND(AVG((data->>'duration')::numeric) FILTER (WHERE (data->>'success')::boolean = true) / 60, 1) AS avg_duration_min
         FROM event_logs WHERE event = 'route_plan_result'
@@ -186,6 +190,14 @@ export default async function MonitorPage() {
           (Number(routePlan.avoid_cameras_count) / Number(routePlan.clicks)) * 100
         )
       : null;
+  const resultSheetNavigateRate =
+    Number(routePlan.result_sheet_shows) > 0
+      ? Math.round(
+          (Number(routePlan.result_navigate_clicks) /
+            Number(routePlan.result_sheet_shows)) *
+            100
+        )
+      : null;
 
   return (
     <main
@@ -255,6 +267,18 @@ export default async function MonitorPage() {
             title="平均预计时长"
             val={routePlan.avg_duration_min ? `${routePlan.avg_duration_min} min` : null}
           />
+          <StatCard title="结果页展示次数" val={routePlan.result_sheet_shows} />
+          <StatCard
+            title="结果页点导航"
+            val={routePlan.result_navigate_clicks}
+            hint={
+              resultSheetNavigateRate !== null
+                ? `展示后转化 ${resultSheetNavigateRate}%`
+                : undefined
+            }
+          />
+          <StatCard title="结果页点重试" val={routePlan.result_replan_clicks} />
+          <StatCard title="结果页点保存" val={routePlan.result_save_clicks} />
         </div>
       </div>
 
