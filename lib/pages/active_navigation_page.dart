@@ -16,10 +16,23 @@ import '../utils/coordinate_transform.dart';
 
 import 'save_route_dialog.dart';
 
+class _NearestSegmentMatch {
+  final int segmentIndex;
+  final double distanceMeters;
+  final LatLng snappedPoint;
+
+  const _NearestSegmentMatch({
+    required this.segmentIndex,
+    required this.distanceMeters,
+    required this.snappedPoint,
+  });
+}
+
 class ActiveNavigationPage extends StatefulWidget {
   final NavigationRoute route;
   final List<Camera> camerasOnRoute;
   final List<Camera> allCameras;
+  final Map<String, DismissedCamera> cameraMarksByCoord;
   final ApiService apiService;
   final List<PlaceResult> stops;
 
@@ -28,6 +41,7 @@ class ActiveNavigationPage extends StatefulWidget {
     required this.route,
     required this.camerasOnRoute,
     required this.allCameras,
+    required this.cameraMarksByCoord,
     required this.apiService,
     required this.stops,
   }) : super(key: key);
@@ -83,6 +97,59 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   Timer? _overviewTimer;
   int _overviewCountdown = 5;
   bool _isOverviewPinned = false;
+  DateTime? _lastGlobalMatchAt;
+
+  String _cameraCoordKey(double lat, double lng) {
+    return '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
+  }
+
+  DismissedCamera? _cameraMarkOf(Camera camera) {
+    return widget.cameraMarksByCoord[_cameraCoordKey(camera.lat, camera.lng)];
+  }
+
+  bool _isMarkedDismissed(Camera camera) => _cameraMarkOf(camera)?.type == 6;
+
+  bool _isMarkedLowRisk(Camera camera) => _cameraMarkOf(camera)?.type == 12;
+
+  String _cameraStatusLabel(Camera camera) {
+    final mark = _cameraMarkOf(camera);
+    if (mark?.type == 6) return '已标记废弃';
+    if (mark?.type == 12) return '低风险可尝试';
+    return camera.typeLabel;
+  }
+
+  _NearestSegmentMatch _findNearestSegmentOnRoute(
+    LatLng currentLoc, {
+    int? startSegmentIdx,
+    int? endSegmentIdx,
+  }) {
+    final points = widget.route.polylinePoints;
+    final maxSegIdx = math.max(0, points.length - 2);
+    final start = (startSegmentIdx ?? 0).clamp(0, maxSegIdx);
+    final end = (endSegmentIdx ?? maxSegIdx).clamp(start, maxSegIdx);
+
+    int bestIdx = start;
+    double minDistance = double.infinity;
+    LatLng bestSnapped = points[start];
+
+    for (int i = start; i <= end; i++) {
+      final p1 = points[i];
+      final p2 = points[i + 1];
+      final projected = _projectPointOnSegment(currentLoc, p1, p2);
+      final d = _distanceCalc(currentLoc, projected);
+      if (d < minDistance) {
+        minDistance = d;
+        bestIdx = i;
+        bestSnapped = projected;
+      }
+    }
+
+    return _NearestSegmentMatch(
+      segmentIndex: bestIdx,
+      distanceMeters: minDistance,
+      snappedPoint: bestSnapped,
+    );
+  }
 
   @override
   void initState() {
@@ -192,41 +259,33 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   LatLng _calculateSnappedPosition(LatLng currentLoc) {
     if (widget.route.polylinePoints.length < 2) return currentLoc;
 
-    double minDistance = double.infinity;
-    LatLng snappedPoint = currentLoc;
-    
-    // 局部搜索边界 [当前进度 - 3, 当前进度 + 15]，防止吸附到隔壁平行街道或是身后弯道
-    final int localStart = math.max(0, _routeProgressIdx - 3);
-    final int localEnd = math.min(widget.route.polylinePoints.length - 1, _routeProgressIdx + 15);
+    final maxSegIdx = widget.route.polylinePoints.length - 2;
+    final localStart = math.max(0, _routeProgressIdx - 3);
+    final localEnd = math.min(maxSegIdx, _routeProgressIdx + 15);
+    final localMatch = _findNearestSegmentOnRoute(
+      currentLoc,
+      startSegmentIdx: localStart,
+      endSegmentIdx: localEnd,
+    );
 
-    for (int i = localStart; i < localEnd; i++) {
-      final p1 = widget.route.polylinePoints[i];
-      final p2 = widget.route.polylinePoints[i + 1];
-      final projected = _projectPointOnSegment(currentLoc, p1, p2);
-      final dist = _distanceCalc(currentLoc, projected);
-      if (dist < minDistance) {
-        minDistance = dist;
-        snappedPoint = projected;
+    var selected = localMatch;
+    final needGlobalProbe =
+        localMatch.distanceMeters > 35 || _offRouteCounter > 0;
+
+    if (needGlobalProbe) {
+      final globalMatch = _findNearestSegmentOnRoute(currentLoc);
+      final globalClearlyBetter =
+          globalMatch.distanceMeters + 10 < localMatch.distanceMeters;
+      final likelyJumpedAhead =
+          globalMatch.segmentIndex > _routeProgressIdx + 18 &&
+          globalMatch.distanceMeters < 45;
+      if (globalClearlyBetter || likelyJumpedAhead) {
+        selected = globalMatch;
       }
     }
 
-    // 若局部搜索发现吸附点太远（可能漂移太多或长时间切后台移动），使用全局搜索提供吸附标
-    if (minDistance > 100) {
-      minDistance = double.infinity;
-      for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
-        final p1 = widget.route.polylinePoints[i];
-        final p2 = widget.route.polylinePoints[i + 1];
-        final projected = _projectPointOnSegment(currentLoc, p1, p2);
-        final dist = _distanceCalc(currentLoc, projected);
-        if (dist < minDistance) {
-          minDistance = dist;
-          snappedPoint = projected;
-        }
-      }
-    }
-
-    if (minDistance < 30) {
-      return snappedPoint;
+    if (selected.distanceMeters < 30) {
+      return selected.snappedPoint;
     }
     return currentLoc;
   }
@@ -256,88 +315,117 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   /// 从步骤中提取方向关键词（用于语音和显示）
   String _getDirectionLabel(RouteStep step) {
-    final text = step.action ?? step.instruction;
-    if (text.contains('左转')) return '左转';
-    if (text.contains('右转')) return '右转';
-    if (text.contains('掉头') || text.contains('调头')) return '掉头';
-    if (text.contains('靠左') || text.contains('左前')) return '靠左行驶';
-    if (text.contains('靠右') || text.contains('右前')) return '靠右行驶';
-    if (text.contains('直行') || text.contains('直走')) return '直行';
+    final text = _guidanceText(step);
+    if (_isUturnText(text)) return '掉头';
+    if (_isStraightText(text)) return '直行';
+    if (_isSlightLeftText(text) || _isKeepLeftText(text)) return '靠左行驶';
+    if (_isSlightRightText(text) || _isKeepRightText(text)) return '靠右行驶';
+    if (_isLeftTurnText(text)) return '左转';
+    if (_isRightTurnText(text)) return '右转';
     return step.instruction;
+  }
+
+  String _guidanceText(RouteStep step) {
+    final action = (step.action ?? '').trim();
+    final instruction = step.instruction.trim();
+
+    // “注意直行”优先级最高，避免和“右转车道”等文字同时出现时误判为右转。
+    if (action.contains('注意直行') || action.contains('请直行')) return action;
+    if (instruction.contains('注意直行') || instruction.contains('请直行')) {
+      return instruction;
+    }
+    return action.isNotEmpty ? action : instruction;
+  }
+
+  bool _isUturnText(String text) => text.contains('掉头') || text.contains('调头');
+  bool _isLeftTurnText(String text) => text.contains('左转');
+  bool _isRightTurnText(String text) => text.contains('右转');
+  bool _isKeepLeftText(String text) => text.contains('靠左');
+  bool _isKeepRightText(String text) => text.contains('靠右');
+  bool _isSlightLeftText(String text) =>
+      text.contains('左前方') || text.contains('左前') || text.contains('左侧');
+  bool _isSlightRightText(String text) =>
+      text.contains('右前方') || text.contains('右前') || text.contains('右侧');
+  bool _isStraightText(String text) {
+    return text.contains('注意直行') ||
+        text.contains('请直行') ||
+        text.contains('继续直行') ||
+        text.contains('直行') ||
+        text.contains('直走');
   }
 
   /// 判断步骤是否包含需要提示的转向动作（非直行/出发）
   bool _isActionableStep(RouteStep step) {
-    final text = step.action ?? step.instruction;
-    return text.contains('左转') ||
-        text.contains('右转') ||
-        text.contains('掉头') ||
-        text.contains('调头') ||
-        text.contains('靠左') ||
-        text.contains('靠右') ||
-        text.contains('左前') ||
-        text.contains('右前');
+    final text = _guidanceText(step);
+    if (_isStraightText(text)) return false;
+    return _isLeftTurnText(text) ||
+        _isRightTurnText(text) ||
+        _isUturnText(text) ||
+        _isKeepLeftText(text) ||
+        _isKeepRightText(text) ||
+        _isSlightLeftText(text) ||
+        _isSlightRightText(text);
   }
 
   void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
 
+    final now = DateTime.now();
+    final bool shouldPeriodicGlobalProbe =
+        _lastGlobalMatchAt == null ||
+        now.difference(_lastGlobalMatchAt!).inSeconds >= 2;
+    final maxSegIdx = widget.route.polylinePoints.length - 2;
+
     // 1. 局部搜索：在进度游标附近搜索最近线段 [游标-3, 游标+15]
     // 允许少量回溯（-3）以应对 GPS 抖动，但局部通常只前进不后退，防止弯道把身后路段误判为当前位置
-    final int localStart = math.max(0, _routeProgressIdx - 3);
-    final int localEnd = math.min(widget.route.polylinePoints.length - 1, _routeProgressIdx + 15);
-    
-    double localMinDist = double.infinity;
-    int localBestIdx = _routeProgressIdx;
-    LatLng localBestSnapped = currentLoc;
+    final localStart = math.max(0, _routeProgressIdx - 3);
+    final localEnd = math.min(maxSegIdx, _routeProgressIdx + 15);
+    final localMatch = _findNearestSegmentOnRoute(
+      currentLoc,
+      startSegmentIdx: localStart,
+      endSegmentIdx: localEnd,
+    );
 
-    for (int i = localStart; i < localEnd; i++) {
-      final p1 = widget.route.polylinePoints[i];
-      final p2 = widget.route.polylinePoints[i + 1];
-      final projected = _projectPointOnSegment(currentLoc, p1, p2);
-      final d = _distanceCalc(currentLoc, projected);
-      if (d < localMinDist) {
-        localMinDist = d;
-        localBestIdx = i;
-        localBestSnapped = projected;
+    var selectedMatch = localMatch;
+    bool usedGlobalMatch = false;
+
+    // 低频全局纠偏：
+    // 1) 周期性执行，避免长时间卡在旧路段
+    // 2) 偏航中或局部匹配明显不佳时立即执行
+    final needGlobalProbe =
+        shouldPeriodicGlobalProbe ||
+        localMatch.distanceMeters > 30 ||
+        _offRouteCounter > 0 ||
+        _isOffRoute;
+
+    if (needGlobalProbe) {
+      _lastGlobalMatchAt = now;
+      final globalMatch = _findNearestSegmentOnRoute(currentLoc);
+      final globalClearlyBetter =
+          globalMatch.distanceMeters + 12 < localMatch.distanceMeters;
+      final likelyRejoinedAhead =
+          globalMatch.segmentIndex > _routeProgressIdx + 18 &&
+          globalMatch.distanceMeters < 45;
+      final recoveringFromOffRoute =
+          _offRouteCounter > 0 && globalMatch.distanceMeters < 55;
+
+      if (globalClearlyBetter ||
+          likelyRejoinedAhead ||
+          recoveringFromOffRoute) {
+        selectedMatch = globalMatch;
+        usedGlobalMatch = true;
       }
     }
 
-    double minDistanceToRoute;
-    int bestSegIdx;
-    LatLng bestSnapped;
+    final minDistanceToRoute = selectedMatch.distanceMeters;
+    final bestSegIdx = selectedMatch.segmentIndex;
+    final bestSnapped = selectedMatch.snappedPoint;
 
-    // 如果局部搜索结果距离过大（>100米），说明极可能切入后台后移动了长距离或偏航
-    // 此时启用全局搜索并允许越级跳跃（更新进度游标）
-    if (localMinDist > 100) {
-      double globalMinDist = double.infinity;
-      int globalBestIdx = 0;
-      LatLng globalBestSnapped = currentLoc;
-
-      for (int i = 0; i < widget.route.polylinePoints.length - 1; i++) {
-        final p1 = widget.route.polylinePoints[i];
-        final p2 = widget.route.polylinePoints[i + 1];
-        final projected = _projectPointOnSegment(currentLoc, p1, p2);
-        final d = _distanceCalc(currentLoc, projected);
-        if (d < globalMinDist) {
-          globalMinDist = d;
-          globalBestIdx = i;
-          globalBestSnapped = projected;
-        }
-      }
-
-      minDistanceToRoute = globalMinDist;
-      bestSegIdx = globalBestIdx;
-      bestSnapped = globalBestSnapped;
-
-      // 全局搜索允许随意跳跃（包括跳后退，应对重新开始导航或严重偏航复位）
+    if (usedGlobalMatch) {
+      // 全局纠偏允许直接跳到重入路段，防止提示长期停留在旧步骤。
       _routeProgressIdx = bestSegIdx;
     } else {
-      minDistanceToRoute = localMinDist;
-      bestSegIdx = localBestIdx;
-      bestSnapped = localBestSnapped;
-
-      // 局部范围内，进度游标只前进不后退
+      // 局部模式下保持“只前进不后退”，避免抖动回跳。
       _routeProgressIdx = math.max(_routeProgressIdx, bestSegIdx);
     }
 
@@ -637,8 +725,16 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                               ],
                             ),
                             child: Icon(
-                              Icons.videocam_rounded,
-                              color: _cameraColor(cam.type),
+                              _isMarkedDismissed(cam)
+                                  ? Icons.videocam_off_rounded
+                                  : (_isMarkedLowRisk(cam)
+                                      ? Icons.eco_outlined
+                                      : Icons.videocam_rounded),
+                              color: _isMarkedDismissed(cam)
+                                  ? const Color(0xFF7C7766)
+                                  : _isMarkedLowRisk(cam)
+                                      ? const Color(0xFF2E7D32)
+                                      : _cameraColor(cam.type),
                               size: 13,
                             ),
                           ),
@@ -658,7 +754,11 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                         onTap: () => _showCameraInfo(cam),
                         child: Container(
                           decoration: BoxDecoration(
-                            color: Colors.red.withValues(alpha: 0.85),
+                            color: _isMarkedDismissed(cam)
+                                ? const Color(0xFF7C7766).withValues(alpha: 0.82)
+                                : _isMarkedLowRisk(cam)
+                                    ? const Color(0xFF2E7D32).withValues(alpha: 0.86)
+                                    : Colors.red.withValues(alpha: 0.85),
                             shape: BoxShape.circle,
                             border: Border.all(color: Colors.white, width: 1.5),
                             boxShadow: [
@@ -668,8 +768,12 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                               ),
                             ],
                           ),
-                          child: const Icon(
-                            Icons.videocam_rounded,
+                          child: Icon(
+                            _isMarkedDismissed(cam)
+                                ? Icons.videocam_off_rounded
+                                : (_isMarkedLowRisk(cam)
+                                    ? Icons.eco_outlined
+                                    : Icons.videocam_rounded),
                             color: Colors.white,
                             size: 18,
                           ),
@@ -747,13 +851,18 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     );
   }
 
-  IconData _getTurnIcon(String text) {
-    if (text.contains('左转')) return Icons.turn_left;
-    if (text.contains('右转')) return Icons.turn_right;
-    if (text.contains('掉头') || text.contains('调头')) return Icons.u_turn_left;
-    if (text.contains('左前方') || text.contains('左侧')) return Icons.turn_slight_left;
-    if (text.contains('右前方') || text.contains('右侧')) return Icons.turn_slight_right;
-    if (text.contains('直行') || text.contains('直走')) return Icons.straight;
+  IconData _getTurnIcon(RouteStep step) {
+    final text = _guidanceText(step);
+    if (_isUturnText(text)) return Icons.u_turn_left;
+    if (_isStraightText(text)) return Icons.straight;
+    if (_isSlightLeftText(text) || _isKeepLeftText(text)) {
+      return Icons.turn_slight_left;
+    }
+    if (_isSlightRightText(text) || _isKeepRightText(text)) {
+      return Icons.turn_slight_right;
+    }
+    if (_isLeftTurnText(text)) return Icons.turn_left;
+    if (_isRightTurnText(text)) return Icons.turn_right;
     return Icons.navigation;
   }
 
@@ -791,7 +900,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     // 当前步骤末端有转向动作（当前路段行驶完后需执行的操作）
     final bool isTurningSoon = _currentStep != null &&
         _isActionableStep(_currentStep!) &&
-        _distanceRemainingInStep != null;
+        _distanceRemainingInStep != null &&
+        _distanceRemainingInStep! <= 500;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -854,7 +964,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      _getTurnIcon(_currentStep!.action ?? _currentStep!.instruction),
+                      _getTurnIcon(_currentStep!),
                       size: 28,
                       color: Colors.blue[800],
                     ),
@@ -1018,6 +1128,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
+        final mark = _cameraMarkOf(camera);
+        final noteText = (mark?.note ?? '').trim();
         final sourceUri = _cameraDetailUri(camera.href);
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.of(ctx).padding.bottom + 8),
@@ -1039,8 +1151,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
               ),
               const SizedBox(height: 12),
               _infoRow('类型', camera.typeLabel),
+              _infoRow('状态', _cameraStatusLabel(camera)),
               _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
               _infoRow('更新日期', camera.localDateDisplay),
+              if (noteText.isNotEmpty) _infoRow('备注', noteText),
               const SizedBox(height: 12),
               if (sourceUri != null)
                 SizedBox(

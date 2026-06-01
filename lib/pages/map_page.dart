@@ -3093,6 +3093,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           stops: stops ?? _buildNavStopItems().map((e) => e.place).toList(),
           route: route,
           apiService: _apiService,
+          cameraMarksByCoord: Map<String, DismissedCamera>.from(
+            _cameraMarksByCoord,
+          ),
           camerasOnRoute: route.cameraIndicesOnRoute
               .where((i) => i < _cameras.length)
               .map((i) => _cameras[i])
