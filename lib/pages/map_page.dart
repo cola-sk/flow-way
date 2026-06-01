@@ -106,7 +106,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   double _cruiseHeading = 0.0;
 
   DateTime? _lastRouteHitTime;
-  final LayerHitNotifier<NavigationRoute> _routeHitNotifier = ValueNotifier(null);
+  final LayerHitNotifier<NavigationRoute> _routeHitNotifier = ValueNotifier(
+    null,
+  );
 
   // 搜索状态
   final TextEditingController _searchController = TextEditingController();
@@ -165,17 +167,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool _updatingCameras = false;
   DateTime? _cruiseStartTime;
 
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _apiService.onTokenAccessDenied = _handleTokenAccessDenied;
-    
+
     _searchFocusNode.addListener(() {
       if (_searchFocusNode.hasFocus && _searchController.text.trim().isEmpty) {
         _fetchSuggestions('');
-      } else if (!_searchFocusNode.hasFocus && _searchController.text.trim().isEmpty) {
+      } else if (!_searchFocusNode.hasFocus &&
+          _searchController.text.trim().isEmpty) {
         setState(() {
           _showSuggestions = false;
         });
@@ -200,7 +202,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _locateUser(forceRefresh: true);
     _apiService.checkAndReportFirstLaunch();
   }
-
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -244,17 +245,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         ? (isExpired ? '用户标识有效期已到，请续费。' : '用户标识非法或未开通，请检查后重试。')
         : error.message;
     final currentToken = _userTokenController.text.trim().isNotEmpty
-      ? _userTokenController.text.trim()
-      : _userToken;
+        ? _userTokenController.text.trim()
+        : _userToken;
 
     showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         title: Text(isExpired ? '有效期已到' : '用户标识无效'),
-        content: Text(
-          '$detail\n\n你仍可查看地图和摄像头数据，其他功能需续费或更换有效用户标识。',
-        ),
+        content: Text('$detail\n\n你仍可查看地图和摄像头数据，其他功能需续费或更换有效用户标识。'),
         actions: [
           TextButton(
             onPressed: () async {
@@ -393,38 +392,37 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           );
 
     await _cruisePositionStream?.cancel();
-    _cruisePositionStream = Geolocator.getPositionStream(
-      locationSettings: settings,
-    ).listen(
-      (position) {
-        if (!mounted) return;
-        final pos = CoordinateTransform.wgs84ToGcj02(
-          position.latitude,
-          position.longitude,
-        );
-        setState(() {
-          _userPosition = pos;
-          _locationResolved = true;
-          if (position.speed > 1.0 && position.heading.isFinite) {
-            _cruiseHeading = position.heading;
-          }
-          // 将走过的路标记为路线
-          if (_cruiseModeEnabled) {
-            _cruisePath.add(pos);
-          }
-        });
+    _cruisePositionStream =
+        Geolocator.getPositionStream(locationSettings: settings).listen(
+          (position) {
+            if (!mounted) return;
+            final pos = CoordinateTransform.wgs84ToGcj02(
+              position.latitude,
+              position.longitude,
+            );
+            setState(() {
+              _userPosition = pos;
+              _locationResolved = true;
+              if (position.speed > 1.0 && position.heading.isFinite) {
+                _cruiseHeading = position.heading;
+              }
+              // 将走过的路标记为路线
+              if (_cruiseModeEnabled) {
+                _cruisePath.add(pos);
+              }
+            });
 
-        if (_cruiseModeEnabled) {
-          _mapController.move(pos, 17);
-        }
-      },
-      onError: (_) {
-        if (mounted) {
-          _showToast('巡航定位中断，已自动关闭');
-          unawaited(_stopCruiseMode(silent: true));
-        }
-      },
-    );
+            if (_cruiseModeEnabled) {
+              _mapController.move(pos, 17);
+            }
+          },
+          onError: (_) {
+            if (mounted) {
+              _showToast('巡航定位中断，已自动关闭');
+              unawaited(_stopCruiseMode(silent: true));
+            }
+          },
+        );
 
     await WakelockPlus.enable();
     if (!mounted) return;
@@ -435,15 +433,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         _cruisePath.add(_userPosition!);
       }
     });
-    
+
     _cruiseStartTime = DateTime.now();
     _apiService.reportEvent('cruise_start', {
       'timestamp': _cruiseStartTime!.toIso8601String(),
     });
-    
+
     _showToast('巡航模式已开启');
   }
-
 
   Future<void> _stopCruiseMode({bool silent = false}) async {
     await _cruisePositionStream?.cancel();
@@ -460,7 +457,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (!silent) {
       _showToast('巡航模式已关闭');
     }
-    
+
     if (_cruiseStartTime != null) {
       final duration = DateTime.now().difference(_cruiseStartTime!);
       _apiService.reportEvent('cruise_end', {
@@ -471,7 +468,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _cruiseStartTime = null;
     }
   }
-
 
   Future<void> _toggleCruiseMode() async {
     if (_cruiseModeEnabled) {
@@ -580,17 +576,47 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         _userToken = userToken;
         _userTokenInputError = null;
         _ignoreOutsideSixthOnAvoid =
-            prefs.getBool(_scopedSettingsKey(_settingsIgnoreOutsideSixthOnAvoidKey, userToken)) ?? true;
+            prefs.getBool(
+              _scopedSettingsKey(
+                _settingsIgnoreOutsideSixthOnAvoidKey,
+                userToken,
+              ),
+            ) ??
+            true;
         _ignoreLowRiskOnAvoid =
-            prefs.getBool(_scopedSettingsKey(_settingsIgnoreLowRiskOnAvoidKey, userToken)) ?? true;
+            prefs.getBool(
+              _scopedSettingsKey(_settingsIgnoreLowRiskOnAvoidKey, userToken),
+            ) ??
+            true;
         _hideOutsideSixthMarkers =
-            prefs.getBool(_scopedSettingsKey(_settingsHideOutsideSixthMarkersKey, userToken)) ?? true;
+            prefs.getBool(
+              _scopedSettingsKey(
+                _settingsHideOutsideSixthMarkersKey,
+                userToken,
+              ),
+            ) ??
+            true;
         _hideInsideFourthMarkers =
-            prefs.getBool(_scopedSettingsKey(_settingsHideInsideFourthMarkersKey, userToken)) ?? true;
+            prefs.getBool(
+              _scopedSettingsKey(
+                _settingsHideInsideFourthMarkersKey,
+                userToken,
+              ),
+            ) ??
+            true;
         _hideInsideFifthMarkers =
-            prefs.getBool(_scopedSettingsKey(_settingsHideInsideFifthMarkersKey, userToken)) ?? false;
+            prefs.getBool(
+              _scopedSettingsKey(_settingsHideInsideFifthMarkersKey, userToken),
+            ) ??
+            false;
         _allowBackgroundOperations =
-            prefs.getBool(_scopedSettingsKey(_settingsAllowBackgroundOperationsKey, userToken)) ?? true;
+            prefs.getBool(
+              _scopedSettingsKey(
+                _settingsAllowBackgroundOperationsKey,
+                userToken,
+              ),
+            ) ??
+            true;
       });
       await _loadSearchHistoryPlaces();
       await _refreshTokenProfile();
@@ -748,7 +774,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (_hideInsideFifthMarkers && _isInsideRing(cam, _fifthRingRadiusMeters)) {
       return false;
     }
-    if (_hideInsideFourthMarkers && _isInsideRing(cam, _fourthRingRadiusMeters)) {
+    if (_hideInsideFourthMarkers &&
+        _isInsideRing(cam, _fourthRingRadiusMeters)) {
       return false;
     }
     return true;
@@ -759,20 +786,24 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     if (keyword.trim().isEmpty) {
       final myLocationSuggestion = _buildMyLocationSuggestion();
       final historySuggestions = _searchHistoryPlaces
-          .map((place) => PlaceResult(
-                name: place.name,
-                address: place.address.isEmpty
-                    ? '🕘 搜索历史'
-                    : '🕘 搜索历史 · ${place.address}',
-                location: place.location,
-              ))
+          .map(
+            (place) => PlaceResult(
+              name: place.name,
+              address: place.address.isEmpty
+                  ? '🕘 搜索历史'
+                  : '🕘 搜索历史 · ${place.address}',
+              location: place.location,
+            ),
+          )
           .toList();
       final favoriteSuggestions = _wayPoints
-          .map((wp) => PlaceResult(
-                name: wp.name,
-                address: '⭐ 保存的点位',
-                location: wp.location,
-              ))
+          .map(
+            (wp) => PlaceResult(
+              name: wp.name,
+              address: '⭐ 保存的点位',
+              location: wp.location,
+            ),
+          )
           .toList();
 
       final seen = <String>{};
@@ -798,39 +829,43 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _suggestDebounce = Timer(const Duration(milliseconds: 350), () async {
       if (!mounted) return;
       setState(() => _isSuggesting = true);
-      
+
       final localMatches = _wayPoints
           .where((wp) => wp.name.toLowerCase().contains(keyword.toLowerCase()))
-          .map((wp) => PlaceResult(
-                name: wp.name,
-                address: '⭐ 保存的点位',
-                location: wp.location,
-              ))
+          .map(
+            (wp) => PlaceResult(
+              name: wp.name,
+              address: '⭐ 保存的点位',
+              location: wp.location,
+            ),
+          )
           .toList();
 
-        final myLocationMatches =
-            '我的位置'.contains(keyword.trim()) || keyword.trim().contains('我')
-                ? <PlaceResult>[_buildMyLocationSuggestion()]
-                : <PlaceResult>[];
+      final myLocationMatches =
+          '我的位置'.contains(keyword.trim()) || keyword.trim().contains('我')
+          ? <PlaceResult>[_buildMyLocationSuggestion()]
+          : <PlaceResult>[];
 
-        final historyMatches = _searchHistoryPlaces
-          .where((p) =>
-            p.name.toLowerCase().contains(keyword.toLowerCase()) ||
-            p.address.toLowerCase().contains(keyword.toLowerCase()))
-          .map((p) => PlaceResult(
-            name: p.name,
-            address: p.address.isEmpty
-              ? '🕘 搜索历史'
-              : '🕘 搜索历史 · ${p.address}',
-            location: p.location,
-            ))
+      final historyMatches = _searchHistoryPlaces
+          .where(
+            (p) =>
+                p.name.toLowerCase().contains(keyword.toLowerCase()) ||
+                p.address.toLowerCase().contains(keyword.toLowerCase()),
+          )
+          .map(
+            (p) => PlaceResult(
+              name: p.name,
+              address: p.address.isEmpty ? '🕘 搜索历史' : '🕘 搜索历史 · ${p.address}',
+              location: p.location,
+            ),
+          )
           .toList();
-          
+
       final results = await _apiService.suggestPlaces(
         keyword,
         nearBy: _userPosition,
       );
-      
+
       if (mounted) {
         final seen = <String>{};
         final merged = <PlaceResult>[];
@@ -1077,11 +1112,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   PlaceResult _buildMapPointPlace(LatLng point) {
     final coordName = _formatLatLng(point);
-    return PlaceResult(
-      name: coordName,
-      address: '地图选点',
-      location: point,
-    );
+    return PlaceResult(name: coordName, address: '地图选点', location: point);
   }
 
   bool _isMyLocationPlace(PlaceResult place) {
@@ -1101,7 +1132,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     return place;
   }
 
-  Future<List<PlaceResult>> _resolvePlaceNamesForSave(List<PlaceResult> places) async {
+  Future<List<PlaceResult>> _resolvePlaceNamesForSave(
+    List<PlaceResult> places,
+  ) async {
     return Future.wait(places.map(_resolvePlaceNameForSave));
   }
 
@@ -1161,7 +1194,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       return normalized;
     }
 
-    final resolved = await _apiService.reverseGeocode(point: normalized.location);
+    final resolved = await _apiService.reverseGeocode(
+      point: normalized.location,
+    );
     if (resolved == null || resolved.name.trim().isEmpty) {
       return normalized;
     }
@@ -1171,7 +1206,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   Future<void> _backfillEndPlaceName(PlaceResult placeholder) async {
     final resolved = await _resolveMapPointPlaceName(placeholder);
     if (!mounted) return;
-    if (_samePlaceLocation(resolved, placeholder) && resolved.name == placeholder.name) {
+    if (_samePlaceLocation(resolved, placeholder) &&
+        resolved.name == placeholder.name) {
       return;
     }
 
@@ -1194,12 +1230,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   Future<void> _backfillStartPlaceName(PlaceResult placeholder) async {
     final resolved = await _resolveMapPointPlaceName(placeholder);
     if (!mounted) return;
-    if (_samePlaceLocation(resolved, placeholder) && resolved.name == placeholder.name) {
+    if (_samePlaceLocation(resolved, placeholder) &&
+        resolved.name == placeholder.name) {
       return;
     }
 
     final currentStart = _navStartPlace;
-    if (currentStart == null || !_samePlaceLocation(currentStart, placeholder)) {
+    if (currentStart == null ||
+        !_samePlaceLocation(currentStart, placeholder)) {
       return;
     }
     if (!_isMapPointLikePlace(currentStart)) {
@@ -1217,12 +1255,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   Future<void> _backfillWaypointPlaceName(PlaceResult placeholder) async {
     final resolved = await _resolveMapPointPlaceName(placeholder);
     if (!mounted) return;
-    if (_samePlaceLocation(resolved, placeholder) && resolved.name == placeholder.name) {
+    if (_samePlaceLocation(resolved, placeholder) &&
+        resolved.name == placeholder.name) {
       return;
     }
 
-    final index = _navWaypoints.indexWhere((wp) =>
-      _samePlaceLocation(wp, placeholder) && _isMapPointLikePlace(wp));
+    final index = _navWaypoints.indexWhere(
+      (wp) => _samePlaceLocation(wp, placeholder) && _isMapPointLikePlace(wp),
+    );
     if (index < 0) {
       return;
     }
@@ -1245,7 +1285,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
-        _currentRoute = null;
+      _currentRoute = null;
       _loadedSavedPlanId = null;
       _navMode = true;
       _activeTab = _BottomTab.plan;
@@ -1276,7 +1316,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
-        _currentRoute = null;
+      _currentRoute = null;
       _loadedSavedPlanId = null;
       _navMode = true;
       _activeTab = _BottomTab.plan;
@@ -1412,6 +1452,29 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ],
               ),
               const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _showAddCameraDialog(
+                          lat: place.location.latitude,
+                          lng: place.location.longitude,
+                          suggestedName: place.name,
+                        );
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF7C4DFF),
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.add_location_alt, size: 16),
+                      label: const Text('添加摄像头'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         );
@@ -1432,7 +1495,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _searchFocusNode.unfocus();
     setState(() {
       _loadedSavedRouteId = null;
-        _currentRoute = null;
+      _currentRoute = null;
       _loadedSavedPlanId = null;
       _navMode = true;
       _activeTab = _BottomTab.plan;
@@ -1560,16 +1623,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     });
 
     _stopPlanningRequested = false;
-    
+
     _apiService.reportEvent('route_plan_click', {
       'avoid_cameras': _avoidCameras,
       'has_waypoints': waypoints.isNotEmpty,
       'waypoint_count': waypoints.length,
     });
-    
+
     await _planRouteWithStops(orderedPoints, _avoidCameras);
   }
-
 
   void _toggleNavPanelCollapsed() {
     final next = !_navPanelCollapsed;
@@ -1712,12 +1774,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     final rawStart = _resolvedNavStartPlace();
     final rawWaypoints = List<PlaceResult>.from(_navWaypoints);
-    final resolved = await _resolvePlaceNamesForSave([rawStart, end, ...rawWaypoints]);
+    final resolved = await _resolvePlaceNamesForSave([
+      rawStart,
+      end,
+      ...rawWaypoints,
+    ]);
     if (!mounted) return;
     final start = resolved[0];
     final resolvedEnd = resolved[1];
     final waypoints = resolved.sublist(2);
-    final defaultName = '${start.name} -> ${resolvedEnd.name} ${_saveNameTimestamp()}';
+    final defaultName =
+        '${start.name} -> ${resolvedEnd.name} ${_saveNameTimestamp()}';
     final inputName = await _promptSaveName(
       title: '保存点位方案名称',
       initialValue: defaultName,
@@ -1884,7 +1951,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _searchController.clear();
       _loadedSavedPlanId = plan.id;
       _loadedSavedRouteId = null;
-        _currentRoute = null;
+      _currentRoute = null;
     });
     _fitPlacesToMap([start, ...waypoints, end]);
     unawaited(
@@ -2017,11 +2084,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     required bool avoidCameras,
     required String source,
   }) async {
-    final resolved = await _resolvePlaceNamesForSave([start, end, ...waypoints]);
+    final resolved = await _resolvePlaceNamesForSave([
+      start,
+      end,
+      ...waypoints,
+    ]);
     final resolvedStart = resolved[0];
     final resolvedEnd = resolved[1];
     final resolvedWaypoints = resolved.sublist(2);
-    final name = '${resolvedStart.name} -> ${resolvedEnd.name} ${_saveNameTimestamp()}';
+    final name =
+        '${resolvedStart.name} -> ${resolvedEnd.name} ${_saveNameTimestamp()}';
     await _apiService.saveRecentNavigation(
       name: name,
       start: resolvedStart,
@@ -2088,7 +2160,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             children: [
               Text(
                 record.name,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
               const SizedBox(height: 8),
               _infoRow('类型', '搜索历史'),
@@ -2170,7 +2245,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
-        _currentRoute = null;
+      _currentRoute = null;
       _loadedSavedPlanId = null;
       final items = originalItems.reversed.toList();
       final hasEnd = _navEndPlace != null && items.length >= 2;
@@ -2198,7 +2273,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     setState(() {
       _loadedSavedRouteId = null;
-        _currentRoute = null;
+      _currentRoute = null;
       _loadedSavedPlanId = null;
       if (newIndex > oldIndex) newIndex -= 1;
       final moved = items.removeAt(oldIndex);
@@ -2266,15 +2341,19 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       } else {
         mergedPoints.addAll(route.polylinePoints.skip(1));
         if (route.steps != null) {
-          final offsetSteps = route.steps!.map((s) => RouteStep(
-            instruction: s.instruction,
-            distance: s.distance,
-            duration: s.duration,
-            polylineIdxStart: s.polylineIdxStart + currentPointOffset,
-            polylineIdxEnd: s.polylineIdxEnd + currentPointOffset,
-            action: s.action,
-            direction: s.direction,
-          )).toList();
+          final offsetSteps = route.steps!
+              .map(
+                (s) => RouteStep(
+                  instruction: s.instruction,
+                  distance: s.distance,
+                  duration: s.duration,
+                  polylineIdxStart: s.polylineIdxStart + currentPointOffset,
+                  polylineIdxEnd: s.polylineIdxEnd + currentPointOffset,
+                  action: s.action,
+                  direction: s.direction,
+                ),
+              )
+              .toList();
           mergedSteps.addAll(offsetSteps);
         }
         currentPointOffset = mergedPoints.length - 1;
@@ -2318,13 +2397,20 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           child: Material(
             color: Colors.transparent,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 12.0,
+              ),
               decoration: BoxDecoration(
                 color: const Color(0xFF323232),
                 borderRadius: BorderRadius.circular(12.0),
                 boxShadow: const [
-                  BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2))
-                ]
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
               child: Text(
                 message,
@@ -2426,6 +2512,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   DismissedCamera? _cameraMarkOf(Camera camera) {
     return _cameraMarksByCoord[_cameraCoordKey(camera.lat, camera.lng)];
+  }
+
+  String _cameraStatusLabel(Camera camera) {
+    final mark = _cameraMarkOf(camera);
+    if (mark?.type == 6) return '已标记废弃';
+    if (mark?.type == 12) return '低风险可尝试';
+    return camera.typeLabel;
   }
 
   Uri? _cameraDetailUri(String href) {
@@ -2719,7 +2812,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         'is_retry': excludePolylines != null,
       });
       if (_isRequestCancelled(e)) {
-
         if (mounted && _stopPlanningRequested) {
           _showToast('已停止当前规划');
         }
@@ -2770,7 +2862,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _handleReplanOrRetry();
   }
 
-
   /// 路线规划结果弹窗：告知用户绕开了几个摄像头、哪些无法绕开
   void _showRouteResult(NavigationRoute route, bool avoidCameras) {
     final onRouteCount = route.cameraIndicesOnRoute.length;
@@ -2808,261 +2899,282 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            // 标题行
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: onRouteCount == 0
-                        ? Colors.green.withValues(alpha: 0.12)
-                        : const Color(0xFFBA1A1A).withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(12),
+              // 标题行
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: onRouteCount == 0
+                          ? Colors.green.withValues(alpha: 0.12)
+                          : const Color(0xFFBA1A1A).withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      onRouteCount == 0
+                          ? Icons.verified_rounded
+                          : Icons.warning_amber_rounded,
+                      color: onRouteCount == 0
+                          ? Colors.green[700]
+                          : const Color(0xFFBA1A1A),
+                      size: 22,
+                    ),
                   ),
-                  child: Icon(
-                    onRouteCount == 0
-                        ? Icons.verified_rounded
-                        : Icons.warning_amber_rounded,
-                    color: onRouteCount == 0
-                        ? Colors.green[700]
-                        : const Color(0xFFBA1A1A),
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        avoidCameras
-                            ? (onRouteCount == 0 ? '已完全绕开所有摄像头！' : '路线规划完成')
-                            : '路线规划完成',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: _onSurface,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${(route.distance / 1000).toStringAsFixed(1)} km · '
-                        '约 ${(route.duration / 60).round()} 分钟',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: _onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // 摄像头绕行结果
-            if (avoidCameras) ...[
-              if (onRouteCount == 0)
-                _routeResultRow(
-                  icon: Icons.check_circle_outline_rounded,
-                  iconColor: Colors.green[700]!,
-                  text: '路线上 0 个摄像头，已完全绕开',
-                )
-              else ...[
-                _routeResultRow(
-                  icon: Icons.videocam_off_rounded,
-                  iconColor: const Color(0xFFBA1A1A),
-                  text: '路线上仍有 $onRouteCount 个摄像头无法绕开（已标红）',
-                ),
-                const SizedBox(height: 10),
-                const Text(
-                  '无法绕开的摄像头：',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                ...unavoidableCameras.map(
-                  (cam) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
-                          Icons.videocam_rounded,
-                          size: 14,
-                          color: Color(0xFFBA1A1A),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            cam.name,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: _onSurface,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          avoidCameras
+                              ? (onRouteCount == 0 ? '已完全绕开所有摄像头！' : '路线规划完成')
+                              : '路线规划完成',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: _onSurface,
                           ),
                         ),
+                        const SizedBox(height: 2),
                         Text(
-                          cam.typeLabel,
+                          '${(route.distance / 1000).toStringAsFixed(1)} km · '
+                          '约 ${(route.duration / 60).round()} 分钟',
                           style: const TextStyle(
-                            fontSize: 11,
+                            fontSize: 13,
                             color: _onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
-              ],
-            ] else
-              _routeResultRow(
-                icon: Icons.videocam_rounded,
-                iconColor: _onSurfaceVariant,
-                text: '普通路线，途经 $onRouteCount 个摄像头',
+                ],
               ),
+              const SizedBox(height: 16),
 
-            const SizedBox(height: 16),
-
-            // "再尝试一次"按钮：仅在规划失败时显示
-            if (planningFailed) ...[
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () {
-                    dismissReason = 'click_replan_failure_banner';
-                    _apiService.reportEvent('route_result_click_replan', {
-                      'source': 'failure_banner',
-                      'avoid_cameras': avoidCameras,
-                      'camera_count': onRouteCount,
-                      'distance': route.distance,
-                      'duration': route.duration,
-                      'previous_attempt_count': _previousRoutePolylines.length,
-                    });
-                    Navigator.pop(ctx);
-                    _retryRouteWithDifferentCorridor();
-                  },
-                  icon: const Icon(Icons.alt_route_rounded, size: 18),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF1565C0),
-                    side: const BorderSide(color: Color(0xFF1565C0), width: 1.2),
-                    minimumSize: const Size.fromHeight(42),
+              // 摄像头绕行结果
+              if (avoidCameras) ...[
+                if (onRouteCount == 0)
+                  _routeResultRow(
+                    icon: Icons.check_circle_outline_rounded,
+                    iconColor: Colors.green[700]!,
+                    text: '路线上 0 个摄像头，已完全绕开',
+                  )
+                else ...[
+                  _routeResultRow(
+                    icon: Icons.videocam_off_rounded,
+                    iconColor: const Color(0xFFBA1A1A),
+                    text: '路线上仍有 $onRouteCount 个摄像头无法绕开（已标红）',
                   ),
-                  label: const Text(
-                    '找不到路线？点击重试（添加途径点成功率会变高）',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      _apiService.reportEvent('route_result_click_save', {
-                        'source': 'footer',
-                        'avoid_cameras': avoidCameras,
-                        'planning_failed': planningFailed,
-                        'camera_count': onRouteCount,
-                        'distance': route.distance,
-                        'duration': route.duration,
-                        'previous_attempt_count': _previousRoutePolylines.length,
-                      });
-                      final rawStops = _buildNavStopItems().map((e) => e.place).toList();
-                      final resolvedStops = await _resolvePlaceNamesForSave(rawStops);
-                      if (!mounted) return;
-                      showDialog(
-                        context: context,
-                        builder: (context) => SaveRouteDialog(
-                          route: route,
-                          apiService: _apiService, stops: resolvedStops,
-                        ),
-                      );
-                    },
-                    icon: const Icon(Icons.bookmark_add_outlined, size: 16),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(42),
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                    ),
-                    label: const Text(
-                      '保存路线',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  const SizedBox(height: 10),
+                  const Text(
+                    '无法绕开的摄像头：',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _onSurfaceVariant,
                     ),
                   ),
+                  const SizedBox(height: 6),
+                  ...unavoidableCameras.map(
+                    (cam) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.videocam_rounded,
+                            size: 14,
+                            color: Color(0xFFBA1A1A),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              cam.name,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: _onSurface,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          Text(
+                            _cameraStatusLabel(cam),
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: _onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ] else
+                _routeResultRow(
+                  icon: Icons.videocam_rounded,
+                  iconColor: _onSurfaceVariant,
+                  text: '普通路线，途经 $onRouteCount 个摄像头',
                 ),
-                const SizedBox(width: 6),
-                Expanded(
+
+              const SizedBox(height: 16),
+
+              // "再尝试一次"按钮：仅在规划失败时显示
+              if (planningFailed) ...[
+                SizedBox(
+                  width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: () {
-                      dismissReason = 'click_replan_footer';
+                      dismissReason = 'click_replan_failure_banner';
                       _apiService.reportEvent('route_result_click_replan', {
-                        'source': 'footer',
+                        'source': 'failure_banner',
                         'avoid_cameras': avoidCameras,
                         'camera_count': onRouteCount,
                         'distance': route.distance,
                         'duration': route.duration,
-                        'previous_attempt_count': _previousRoutePolylines.length,
+                        'previous_attempt_count':
+                            _previousRoutePolylines.length,
                       });
                       Navigator.pop(ctx);
                       _retryRouteWithDifferentCorridor();
                     },
-                    icon: const Icon(Icons.alt_route_rounded, size: 16),
+                    icon: const Icon(Icons.alt_route_rounded, size: 18),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: _onSurfaceVariant,
-                      side: BorderSide(
-                        color: _onSurfaceVariant.withValues(alpha: 0.35),
-                        width: 1,
+                      foregroundColor: const Color(0xFF1565C0),
+                      side: const BorderSide(
+                        color: Color(0xFF1565C0),
+                        width: 1.2,
                       ),
                       minimumSize: const Size.fromHeight(42),
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
                     label: const Text(
-                      '重新规划',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                      '找不到路线？点击重试（添加途径点成功率会变高）',
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () async {
-                      dismissReason = 'click_navigate';
-                      _apiService.reportEvent('route_result_click_navigate', {
-                        'source': 'footer',
-                        'avoid_cameras': avoidCameras,
-                        'planning_failed': planningFailed,
-                        'camera_count': onRouteCount,
-                        'distance': route.distance,
-                        'duration': route.duration,
-                        'previous_attempt_count': _previousRoutePolylines.length,
-                      });
-                      Navigator.pop(ctx);
-                      await _openActiveNavigation(route);
-                    },
-                    icon: const Icon(Icons.navigation, size: 16),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _primary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(42),
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                    ),
-                    label: const Text(
-                      '导航',
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                    ),
-                  ),
-                ),
+                const SizedBox(height: 10),
               ],
-            ),
-          ],
+
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        _apiService.reportEvent('route_result_click_save', {
+                          'source': 'footer',
+                          'avoid_cameras': avoidCameras,
+                          'planning_failed': planningFailed,
+                          'camera_count': onRouteCount,
+                          'distance': route.distance,
+                          'duration': route.duration,
+                          'previous_attempt_count':
+                              _previousRoutePolylines.length,
+                        });
+                        final rawStops = _buildNavStopItems()
+                            .map((e) => e.place)
+                            .toList();
+                        final resolvedStops = await _resolvePlaceNamesForSave(
+                          rawStops,
+                        );
+                        if (!mounted) return;
+                        showDialog(
+                          context: context,
+                          builder: (context) => SaveRouteDialog(
+                            route: route,
+                            apiService: _apiService,
+                            stops: resolvedStops,
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(42),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
+                      label: const Text(
+                        '保存路线',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        dismissReason = 'click_replan_footer';
+                        _apiService.reportEvent('route_result_click_replan', {
+                          'source': 'footer',
+                          'avoid_cameras': avoidCameras,
+                          'camera_count': onRouteCount,
+                          'distance': route.distance,
+                          'duration': route.duration,
+                          'previous_attempt_count':
+                              _previousRoutePolylines.length,
+                        });
+                        Navigator.pop(ctx);
+                        _retryRouteWithDifferentCorridor();
+                      },
+                      icon: const Icon(Icons.alt_route_rounded, size: 16),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: _onSurfaceVariant,
+                        side: BorderSide(
+                          color: _onSurfaceVariant.withValues(alpha: 0.35),
+                          width: 1,
+                        ),
+                        minimumSize: const Size.fromHeight(42),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
+                      label: const Text(
+                        '重新规划',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        dismissReason = 'click_navigate';
+                        _apiService.reportEvent('route_result_click_navigate', {
+                          'source': 'footer',
+                          'avoid_cameras': avoidCameras,
+                          'planning_failed': planningFailed,
+                          'camera_count': onRouteCount,
+                          'distance': route.distance,
+                          'duration': route.duration,
+                          'previous_attempt_count':
+                              _previousRoutePolylines.length,
+                        });
+                        Navigator.pop(ctx);
+                        await _openActiveNavigation(route);
+                      },
+                      icon: const Icon(Icons.navigation, size: 16),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primary,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(42),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                      ),
+                      label: const Text(
+                        '导航',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-      ),
       ),
     ).whenComplete(() {
       _apiService.reportEvent('route_result_sheet_dismiss', {
@@ -3093,7 +3205,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           stops: stops ?? _buildNavStopItems().map((e) => e.place).toList(),
           route: route,
           apiService: _apiService,
-          cameraMarksByCoord: Map<String, DismissedCamera>.from(_cameraMarksByCoord),
+          cameraMarksByCoord: Map<String, DismissedCamera>.from(
+            _cameraMarksByCoord,
+          ),
           camerasOnRoute: route.cameraIndicesOnRoute
               .where((i) => i < _cameras.length)
               .map((i) => _cameras[i])
@@ -3156,7 +3270,23 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
   }
 
-  Color _cameraColor(int type) {
+  Color _cameraColor(int type, {bool isCustom = false}) {
+    // 自定义摄像头使用紫色系区分
+    if (isCustom) {
+      switch (type) {
+        case 1:
+          return const Color(0xFF7C4DFF); // 紫色 - 只拍晚高峰
+        case 2:
+          return const Color(0xFF5E35B1); // 深紫色 - 六环内
+        case 5:
+          return const Color(0xFF512DA8); // 更深的紫色 - 晚高峰 + 六环内
+        case 6:
+          return const Color(0xFF4527A0); // 最深紫色 - 六环外
+        default:
+          return const Color(0xFF7C4DFF);
+      }
+    }
+    // 原始摄像头颜色
     switch (type) {
       case 1:
         return const Color(0xFFBA1A1A);
@@ -3218,6 +3348,46 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
+  /// 自定义摄像头标记：紫色边框 + 特殊标识
+  Widget _buildCustomCameraMarker(Camera cam) {
+    final color = _cameraColor(cam.type, isCustom: true);
+    return Stack(
+      clipBehavior: Clip.none,
+      fit: StackFit.expand,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.95),
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2.2),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.4),
+                blurRadius: 10,
+                spreadRadius: 1.5,
+              ),
+            ],
+          ),
+          child: Icon(Icons.videocam_rounded, color: color, size: 18),
+        ),
+        // 右上角添加自定义标识
+        Positioned(
+          top: -4,
+          right: -4,
+          child: Container(
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 1.5),
+            ),
+            child: const Icon(Icons.star, color: Colors.white, size: 10),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildUnavoidableCameraMarker(Camera cam) {
     return Container(
       decoration: BoxDecoration(
@@ -3256,6 +3426,189 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         size: 16,
       ),
     );
+  }
+
+  /// 显示添加摄像头对话框
+  Future<void> _showAddCameraDialog({
+    required double lat,
+    required double lng,
+    required String suggestedName,
+  }) async {
+    final nameCtrl = TextEditingController(text: suggestedName);
+    int selectedType = 6; // 默认六环外
+
+    try {
+      await showDialog(
+        context: context,
+        builder: (ctx) => StatefulBuilder(
+          builder: (ctx, setDialogState) => AlertDialog(
+            title: const Text('添加自定义摄像头'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '摄像头名称',
+                      hintText: '请输入摄像头位置描述',
+                      border: OutlineInputBorder(),
+                    ),
+                    autofocus: true,
+                  ),
+                  const SizedBox(height: 16),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '摄像头类型:',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RadioListTile<int>(
+                          title: const Text(
+                            '只拍晚高峰',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          value: 1,
+                          groupValue: selectedType,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedType = value ?? 6;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<int>(
+                          title: const Text(
+                            '六环内',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          value: 2,
+                          groupValue: selectedType,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedType = value ?? 6;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: RadioListTile<int>(
+                          title: const Text(
+                            '晚高峰 + 六环内',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          value: 5,
+                          groupValue: selectedType,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedType = value ?? 6;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      Expanded(
+                        child: RadioListTile<int>(
+                          title: const Text(
+                            '六环外',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          value: 6,
+                          groupValue: selectedType,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedType = value ?? 6;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '坐标信息:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text('经度：${lng.toStringAsFixed(6)}'),
+                        Text('纬度：${lat.toStringAsFixed(6)}'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) {
+                    Navigator.pop(ctx);
+                    if (mounted) {
+                      _showToast('请输入摄像头名称');
+                    }
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  final ok = await _apiService.addCustomCamera(
+                    name: name,
+                    lng: lng,
+                    lat: lat,
+                    type: selectedType,
+                  );
+                  if (ok && mounted) {
+                    // 自定义摄像头增删后强制优先走远端，避免命中本地24小时缓存。
+                    await _loadCameras(preferRemote: true);
+                    _showToast('自定义摄像头已添加');
+                  } else if (mounted) {
+                    _showToast('添加失败，请重试');
+                  }
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF7C4DFF),
+                ),
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      nameCtrl.dispose();
+    }
   }
 
   Future<bool> _promptEditCameraMarkNote({
@@ -3317,12 +3670,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         final isMarked = mark != null;
         final isDismissed = mark?.type == 6;
         final isType12 = mark?.type == 12;
-        final tagText = isDismissed
-            ? '已废弃'
-          : (isType12 ? '低风险可尝试' : '已标记');
-        final tagColor = isDismissed
-            ? Colors.grey
-            : const Color(0xFF2E7D32);
+        final tagText = isDismissed ? '已废弃' : (isType12 ? '低风险可尝试' : '已标记');
+        final tagColor = isDismissed ? Colors.grey : const Color(0xFF2E7D32);
         final noteText = mark?.note.trim() ?? '';
         final sourceUri = _cameraDetailUri(camera.href);
         final bottomInset = MediaQuery.of(ctx).padding.bottom;
@@ -3338,7 +3687,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     Icons.videocam,
                     color: isMarked
                         ? tagColor
-                        : _cameraColor(camera.type),
+                        : _cameraColor(camera.type, isCustom: camera.isCustom),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -3372,12 +3721,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ],
               ),
               const SizedBox(height: 12),
+              _infoRow('状态', _cameraStatusLabel(camera)),
               _infoRow('类型', camera.typeLabel),
               _infoRow('坐标', '${camera.lng}, ${camera.lat}'),
               _infoRow('更新日期', camera.localDateDisplay),
               if (isMarked) _infoRow('标记类型', '${mark.type}'),
-              if (isMarked)
-                _infoRow('备注', noteText.isEmpty ? '-' : noteText),
+              if (isMarked) _infoRow('备注', noteText.isEmpty ? '-' : noteText),
               const SizedBox(height: 12),
               if (sourceUri != null)
                 SizedBox(
@@ -3417,7 +3766,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       child: FilledButton.icon(
                         icon: const Icon(Icons.edit_note_rounded),
                         label: const Text('编辑备注'),
-                        style: FilledButton.styleFrom(backgroundColor: _primary),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _primary,
+                        ),
                         onPressed: () async {
                           Navigator.pop(ctx);
                           final ok = await _promptEditCameraMarkNote(
@@ -3433,7 +3784,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ],
                 ),
                 if (noteText.isNotEmpty) ...[
-                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -3455,53 +3805,152 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ),
                 ],
               ] else ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('标记为废弃'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.grey.shade600,
+                // 自定义摄像头：提供删除选项
+                if (camera.isCustom) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.delete_forever),
+                      label: const Text('删除自定义摄像头'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.red.shade700,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('确认删除'),
+                            content: Text(
+                              '确定删除自定义摄像头 "${camera.name}" 吗？此操作不可恢复。',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, false),
+                                child: const Text('取消'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(ctx, true),
+                                child: const Text(
+                                  '删除',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed == true && mounted) {
+                          final ok = await _apiService.deleteCustomCamera(
+                            lat: camera.lat,
+                            lng: camera.lng,
+                          );
+                          if (ok && mounted) {
+                            // 自定义摄像头增删后强制优先走远端，避免命中本地24小时缓存。
+                            await _loadCameras(preferRemote: true);
+                            _showToast('自定义摄像头已删除');
+                          }
+                        }
+                      },
                     ),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      final ok = await _apiService.markCameraDismissed(
-                        lat: camera.lat,
-                        lng: camera.lng,
-                        name: camera.name,
-                        type: 6,
-                      );
-                      if (ok && mounted) {
-                        await _loadDismissedCameras();
-                        _showToast('已标记为废弃，路线规划将自动排除此摄像头');
-                      }
-                    },
                   ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.eco_outlined),
-                    label: const Text('标记为低风险可尝试'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF81C784),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('标记为废弃'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey.shade700,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final ok = await _apiService.markCameraDismissed(
+                          lat: camera.lat,
+                          lng: camera.lng,
+                          name: camera.name,
+                          type: 6,
+                        );
+                        if (ok && mounted) {
+                          await _loadDismissedCameras();
+                          _showToast('已标记为废弃，路线规划将自动排除此摄像头');
+                        }
+                      },
                     ),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      final ok = await _apiService.markCameraDismissed(
-                        lat: camera.lat,
-                        lng: camera.lng,
-                        name: camera.name,
-                        type: 12,
-                      );
-                      if (ok && mounted) {
-                        await _loadDismissedCameras();
-                        _showToast('已标记为低风险可尝试，路线规划将自动排除此摄像头');
-                      }
-                    },
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.eco_outlined),
+                      label: const Text('标记为低风险可尝试'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF81C784),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final ok = await _apiService.markCameraDismissed(
+                          lat: camera.lat,
+                          lng: camera.lng,
+                          name: camera.name,
+                          type: 12,
+                        );
+                        if (ok && mounted) {
+                          await _loadDismissedCameras();
+                          _showToast('已标记为低风险可尝试，路线规划将自动排除此摄像头');
+                        }
+                      },
+                    ),
+                  ),
+                ] else ...[
+                  // 抓取摄像头：支持标记废弃/低风险尝试
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('标记为废弃'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.grey.shade600,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final ok = await _apiService.markCameraDismissed(
+                          lat: camera.lat,
+                          lng: camera.lng,
+                          name: camera.name,
+                          type: 6,
+                        );
+                        if (ok && mounted) {
+                          await _loadDismissedCameras();
+                          _showToast('已标记为废弃，路线规划将自动排除此摄像头');
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.eco_outlined),
+                      label: const Text('标记为低风险可尝试'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF81C784),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final ok = await _apiService.markCameraDismissed(
+                          lat: camera.lat,
+                          lng: camera.lng,
+                          name: camera.name,
+                          type: 12,
+                        );
+                        if (ok && mounted) {
+                          await _loadDismissedCameras();
+                          _showToast('已标记为低风险可尝试，路线规划将自动排除此摄像头');
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ],
               const SizedBox(height: 8),
             ],
@@ -3531,7 +3980,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             onPressed: () async {
               Navigator.pop(ctx);
               final ok = await _apiService.saveWayPoint(
-                name: nameCtrl.text.trim().isEmpty ? place.name : nameCtrl.text.trim(),
+                name: nameCtrl.text.trim().isEmpty
+                    ? place.name
+                    : nameCtrl.text.trim(),
                 location: place.location,
               );
               if (ok) {
@@ -3721,7 +4172,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.my_location_rounded, size: 18),
+                            icon: const Icon(
+                              Icons.my_location_rounded,
+                              size: 18,
+                            ),
                             color: _primary,
                             onPressed: _refreshMyLocationInInput,
                             tooltip: '刷新定位',
@@ -3742,24 +4196,27 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         ],
                       )
                     : (_showSuggestions || _selectedPlace != null
-                        ? IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 18),
-                            color: _onSurfaceVariant,
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {
-                                _showSuggestions = false;
-                                _suggestions = [];
-                                _selectedPlace = null;
-                              });
-                              _searchFocusNode.unfocus();
-                            },
-                          )
-                        : IconButton(
-                            onPressed: () {},
-                            icon: const Icon(Icons.mic_none_rounded, size: 18),
-                            color: _onSurfaceVariant.withValues(alpha: 0.5),
-                          )),
+                          ? IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              color: _onSurfaceVariant,
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() {
+                                  _showSuggestions = false;
+                                  _suggestions = [];
+                                  _selectedPlace = null;
+                                });
+                                _searchFocusNode.unfocus();
+                              },
+                            )
+                          : IconButton(
+                              onPressed: () {},
+                              icon: const Icon(
+                                Icons.mic_none_rounded,
+                                size: 18,
+                              ),
+                              color: _onSurfaceVariant.withValues(alpha: 0.5),
+                            )),
                 border: InputBorder.none,
                 focusedBorder: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -3792,8 +4249,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxHeight:
-                    standalone ? MediaQuery.of(context).size.height - 140 : 430,
+                maxHeight: standalone
+                    ? MediaQuery.of(context).size.height - 140
+                    : 430,
               ),
               child: _loadingSaved
                   ? const Center(
@@ -3823,7 +4281,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                               ),
                             ],
                           )
-                        : (_savedRoutes.isEmpty && _savedRoutePlans.isEmpty && _wayPoints.isEmpty
+                        : (_savedRoutes.isEmpty &&
+                                  _savedRoutePlans.isEmpty &&
+                                  _wayPoints.isEmpty
                               ? const Center(
                                   child: Padding(
                                     padding: EdgeInsets.all(18),
@@ -3935,10 +4395,13 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                         item.route,
                                                         stops: item.stops
                                                             .map(
-                                                              (s) => PlaceResult(
+                                                              (
+                                                                s,
+                                                              ) => PlaceResult(
                                                                 name: s.name,
                                                                 address: '',
-                                                                location: s.location,
+                                                                location:
+                                                                    s.location,
                                                               ),
                                                             )
                                                             .toList(),
@@ -4059,30 +4522,48 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                         const SizedBox(height: 6),
                                         ..._wayPoints.map((item) {
                                           return Padding(
-                                            padding: const EdgeInsets.only(bottom: 6),
+                                            padding: const EdgeInsets.only(
+                                              bottom: 6,
+                                            ),
                                             child: _buildNavRow(
                                               icon: Icons.bookmark,
                                               iconColor: Colors.amber,
                                               label: item.name,
-                                              subtitle: '${item.location.latitude.toStringAsFixed(6)}, ${item.location.longitude.toStringAsFixed(6)}',
+                                              subtitle:
+                                                  '${item.location.latitude.toStringAsFixed(6)}, ${item.location.longitude.toStringAsFixed(6)}',
                                               isPlaceholder: false,
                                               onTap: () {
-                                                setState(() => _activeTab = _BottomTab.explore);
-                                                _mapController.move(item.location, 16);
-                                                _showPlaceActions(PlaceResult(name: item.name, location: item.location, address: '收藏点'));
+                                                setState(
+                                                  () => _activeTab =
+                                                      _BottomTab.explore,
+                                                );
+                                                _mapController.move(
+                                                  item.location,
+                                                  16,
+                                                );
+                                                _showPlaceActions(
+                                                  PlaceResult(
+                                                    name: item.name,
+                                                    location: item.location,
+                                                    address: '收藏点',
+                                                  ),
+                                                );
                                               },
                                               trailing: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   IconButton(
                                                     padding: EdgeInsets.zero,
-                                                    constraints: const BoxConstraints(),
+                                                    constraints:
+                                                        const BoxConstraints(),
                                                     icon: const Icon(
-                                                      Icons.delete_outline_rounded,
+                                                      Icons
+                                                          .delete_outline_rounded,
                                                       size: 16,
                                                       color: Color(0xFFBA1A1A),
                                                     ),
-                                                    onPressed: () => _deleteWayPoint(item),
+                                                    onPressed: () =>
+                                                        _deleteWayPoint(item),
                                                   ),
                                                 ],
                                               ),
@@ -4112,8 +4593,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxHeight:
-                    standalone ? MediaQuery.of(context).size.height - 140 : 430,
+                maxHeight: standalone
+                    ? MediaQuery.of(context).size.height - 140
+                    : 430,
               ),
               child: _loadingRecent
                   ? const Center(
@@ -4260,13 +4742,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxHeight:
-                    standalone ? MediaQuery.of(context).size.height - 140 : 430,
+                maxHeight: standalone
+                    ? MediaQuery.of(context).size.height - 140
+                    : 430,
               ),
               child: SingleChildScrollView(
-                padding: EdgeInsets.only(
-                  bottom: standalone ? 76 : 16,
-                ),
+                padding: EdgeInsets.only(bottom: standalone ? 76 : 16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -4301,7 +4782,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 child: SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                               )
                             : null,
@@ -4313,19 +4796,29 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
-                        onPressed: _savingUserToken ? null : _saveUserTokenFromInput,
-                        icon: const Icon(Icons.verified_user_outlined, size: 18),
+                        onPressed: _savingUserToken
+                            ? null
+                            : _saveUserTokenFromInput,
+                        icon: const Icon(
+                          Icons.verified_user_outlined,
+                          size: 18,
+                        ),
                         label: const Text('保存并切换用户配置'),
                       ),
                     ),
                     const SizedBox(height: 8),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
                       decoration: BoxDecoration(
                         color: _surface.withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: _surfaceVariant.withValues(alpha: 0.9)),
+                        border: Border.all(
+                          color: _surfaceVariant.withValues(alpha: 0.9),
+                        ),
                       ),
                       child: _loadingTokenProfile
                           ? const SizedBox(
@@ -4335,7 +4828,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 child: SizedBox(
                                   width: 16,
                                   height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                               ),
                             )
@@ -4353,18 +4848,27 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 const SizedBox(height: 4),
                                 Text(
                                   '到期时间: $_tokenExpireAtText',
-                                  style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: _onSurfaceVariant,
+                                  ),
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   '剩余天数: $_tokenRemainingText',
-                                  style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: _onSurfaceVariant,
+                                  ),
                                 ),
                                 if (_tokenAccessReason.trim().isNotEmpty) ...[
                                   const SizedBox(height: 2),
                                   Text(
                                     '说明: $_tokenAccessReason',
-                                    style: const TextStyle(fontSize: 12, color: _onSurfaceVariant),
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: _onSurfaceVariant,
+                                    ),
                                   ),
                                 ],
                               ],
@@ -4385,7 +4889,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
                         '允许后台继续运行',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       subtitle: const Text(
                         '默认开启。开启后，应用切到后台不会自动停止路线规划和巡航。',
@@ -4402,7 +4909,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
                         '避让导航时忽略六环外摄像头',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       subtitle: const Text(
                         '默认开启。开启后，避让算法不会把六环外摄像头作为避让目标。',
@@ -4419,7 +4929,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
                         '避让导航时忽略标记为低风险摄像头',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       subtitle: const Text(
                         '默认开启。开启后，避让算法不会把标记为“低风险可尝试”的摄像头作为避让目标。',
@@ -4436,9 +4949,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
                         '地图隐藏六环外摄像头',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      subtitle: const Text('默认开启。', style: TextStyle(fontSize: 12)),
+                      subtitle: const Text(
+                        '默认开启。',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       onChanged: (value) {
                         setState(() => _hideOutsideSixthMarkers = value);
                         unawaited(_saveUserSettings());
@@ -4449,9 +4968,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
                         '地图隐藏四环内摄像头',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      subtitle: const Text('默认开启。', style: TextStyle(fontSize: 12)),
+                      subtitle: const Text(
+                        '默认开启。',
+                        style: TextStyle(fontSize: 12),
+                      ),
                       onChanged: (value) {
                         setState(() => _hideInsideFourthMarkers = value);
                         unawaited(_saveUserSettings());
@@ -4462,7 +4987,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       contentPadding: EdgeInsets.zero,
                       title: const Text(
                         '地图隐藏五环内摄像头',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                       subtitle: const Text(
                         '默认关闭。开启后会同时隐藏四环内。',
@@ -4477,9 +5005,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed:
-                            _updatingCameras ? null : _refreshCamerasManually,
-                        style: FilledButton.styleFrom(backgroundColor: _primary),
+                        onPressed: _updatingCameras
+                            ? null
+                            : _refreshCamerasManually,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _primary,
+                        ),
                         icon: _updatingCameras
                             ? const SizedBox(
                                 width: 16,
@@ -4609,7 +5140,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       hintText: '搜索途径点...',
                     )
                   else ...[
-                     Builder(
+                    Builder(
                       builder: (context) {
                         final stops = _buildNavStopItems();
                         return Row(
@@ -4623,97 +5154,105 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 itemCount: stops.length,
                                 onReorder: _reorderNavStops,
                                 itemBuilder: (context, index) {
-                            final item = stops[index];
-                            final total = stops.length;
-                            final hasEnd = _navEndPlace != null;
-                            final isStart = index == 0;
-                            final isEnd = hasEnd && index == total - 1;
-                            final isWaypoint = !isStart && !isEnd;
+                                  final item = stops[index];
+                                  final total = stops.length;
+                                  final hasEnd = _navEndPlace != null;
+                                  final isStart = index == 0;
+                                  final isEnd = hasEnd && index == total - 1;
+                                  final isWaypoint = !isStart && !isEnd;
 
-                            final waypointIndex = index - 1;
+                                  final waypointIndex = index - 1;
 
-                            return Padding(
-                              key: ValueKey(item.id),
-                              padding: EdgeInsets.only(
-                                bottom: index == total - 1 ? 0 : 8,
-                              ),
-                              child: _buildNavRow(
-                                icon: _stopIcon(index, total),
-                                iconColor: _stopColor(index, total),
-                                label:
-                                    '${_stopLabel(index, total)} · ${item.place.name}',
-                                subtitle: item.place.address.isNotEmpty
-                                    ? item.place.address
-                                    : _formatLatLng(item.place.location),
-                                isPlaceholder: false,
-                                onTap: isStart
-                                    ? () {
-                                        if (_navStartIsMyLocation) {
-                                          unawaited(_locateUser(forceRefresh: true));
-                                        }
-                                        setState(
-                                          () => _navSearchTarget = 'start',
-                                        );
-                                        _searchController.clear();
-                                        _searchFocusNode.requestFocus();
-                                      }
-                                    : (isEnd
+                                  return Padding(
+                                    key: ValueKey(item.id),
+                                    padding: EdgeInsets.only(
+                                      bottom: index == total - 1 ? 0 : 8,
+                                    ),
+                                    child: _buildNavRow(
+                                      icon: _stopIcon(index, total),
+                                      iconColor: _stopColor(index, total),
+                                      label:
+                                          '${_stopLabel(index, total)} · ${item.place.name}',
+                                      subtitle: item.place.address.isNotEmpty
+                                          ? item.place.address
+                                          : _formatLatLng(item.place.location),
+                                      isPlaceholder: false,
+                                      onTap: isStart
                                           ? () {
+                                              if (_navStartIsMyLocation) {
+                                                unawaited(
+                                                  _locateUser(
+                                                    forceRefresh: true,
+                                                  ),
+                                                );
+                                              }
                                               setState(
-                                                () => _navSearchTarget = 'end',
+                                                () =>
+                                                    _navSearchTarget = 'start',
                                               );
                                               _searchController.clear();
                                               _searchFocusNode.requestFocus();
                                             }
-                                          : null),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    if (isWaypoint)
-                                      IconButton(
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                        icon: const Icon(
-                                          Icons.close_rounded,
-                                          size: 16,
-                                          color: _onSurfaceVariant,
-                                        ),
-                                        onPressed: () {
-                                          if (waypointIndex < 0 ||
-                                              waypointIndex >=
-                                                  _navWaypoints.length) {
-                                            return;
-                                          }
-                                          setState(
-                                            () {
-                                              _loadedSavedRouteId = null;
-        _currentRoute = null;
-                                              _loadedSavedPlanId = null;
-                                              _navWaypoints.removeAt(waypointIndex);
-                                            },
-                                          );
-                                        },
-                                      ),
-                                    const SizedBox(width: 4),
-                                    ReorderableDragStartListener(
-                                      index: index,
-                                      child: const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                          horizontal: 2,
-                                        ),
-                                        child: Icon(
-                                          Icons.drag_indicator_rounded,
-                                          size: 18,
-                                          color: _onSurfaceVariant,
-                                        ),
+                                          : (isEnd
+                                                ? () {
+                                                    setState(
+                                                      () => _navSearchTarget =
+                                                          'end',
+                                                    );
+                                                    _searchController.clear();
+                                                    _searchFocusNode
+                                                        .requestFocus();
+                                                  }
+                                                : null),
+                                      trailing: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (isWaypoint)
+                                            IconButton(
+                                              padding: EdgeInsets.zero,
+                                              constraints:
+                                                  const BoxConstraints(),
+                                              icon: const Icon(
+                                                Icons.close_rounded,
+                                                size: 16,
+                                                color: _onSurfaceVariant,
+                                              ),
+                                              onPressed: () {
+                                                if (waypointIndex < 0 ||
+                                                    waypointIndex >=
+                                                        _navWaypoints.length) {
+                                                  return;
+                                                }
+                                                setState(() {
+                                                  _loadedSavedRouteId = null;
+                                                  _currentRoute = null;
+                                                  _loadedSavedPlanId = null;
+                                                  _navWaypoints.removeAt(
+                                                    waypointIndex,
+                                                  );
+                                                });
+                                              },
+                                            ),
+                                          const SizedBox(width: 4),
+                                          ReorderableDragStartListener(
+                                            index: index,
+                                            child: const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: 2,
+                                              ),
+                                              child: Icon(
+                                                Icons.drag_indicator_rounded,
+                                                size: 18,
+                                                color: _onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  );
+                                },
                               ),
-                            );
-                          },
-                        ),
                             ),
                             if (stops.length >= 2)
                               Padding(
@@ -4797,13 +5336,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       Switch(
                         value: _avoidCameras,
                         activeThumbColor: _primary,
-                        onChanged: (value) =>
-                            setState(() {
-                              _loadedSavedRouteId = null;
-        _currentRoute = null;
-                              _loadedSavedPlanId = null;
-                              _avoidCameras = value;
-                            }),
+                        onChanged: (value) => setState(() {
+                          _loadedSavedRouteId = null;
+                          _currentRoute = null;
+                          _loadedSavedPlanId = null;
+                          _avoidCameras = value;
+                        }),
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                     ],
@@ -4825,7 +5363,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                               label: const Text('保存线路'),
                             ),
                           ),
-                        if (_loadedSavedRouteId == null && _loadedSavedPlanId == null)
+                        if (_loadedSavedRouteId == null &&
+                            _loadedSavedPlanId == null)
                           const SizedBox(width: 8),
                         if (_loadedSavedPlanId == null)
                           Expanded(
@@ -4869,7 +5408,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           children: [
                             Expanded(
                               child: FilledButton(
-                                onPressed: () => _openActiveNavigation(_currentRoute!),
+                                onPressed: () =>
+                                    _openActiveNavigation(_currentRoute!),
                                 style: FilledButton.styleFrom(
                                   backgroundColor: const Color(0xFF34C759),
                                   foregroundColor: Colors.white,
@@ -4884,11 +5424,19 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                             const SizedBox(width: 8),
                             Expanded(
                               child: OutlinedButton.icon(
-                                onPressed: _isNavigating ? null : _retryRouteWithDifferentCorridor,
-                                icon: const Icon(Icons.alt_route_rounded, size: 18),
+                                onPressed: _isNavigating
+                                    ? null
+                                    : _retryRouteWithDifferentCorridor,
+                                icon: const Icon(
+                                  Icons.alt_route_rounded,
+                                  size: 18,
+                                ),
                                 style: OutlinedButton.styleFrom(
                                   foregroundColor: _primary,
-                                  side: const BorderSide(color: _primary, width: 1.2),
+                                  side: const BorderSide(
+                                    color: _primary,
+                                    width: 1.2,
+                                  ),
                                   minimumSize: const Size.fromHeight(42),
                                 ),
                                 label: const Text(
@@ -4902,7 +5450,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       : FilledButton(
                           onPressed: _isNavigating
                               ? _requestStopPlanning
-                              : (_navEndPlace != null ? _startNavigation : null),
+                              : (_navEndPlace != null
+                                    ? _startNavigation
+                                    : null),
                           style: FilledButton.styleFrom(
                             backgroundColor: _isNavigating
                                 ? const Color(0xFFBA1A1A)
@@ -4985,8 +5535,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               tooltip: '刷新定位',
               onPressed: _refreshMyLocationInInput,
             ),
-          if (_searchController.text.trim() == '我的位置')
-            const SizedBox(width: 6),
+          if (_searchController.text.trim() == '我的位置') const SizedBox(width: 6),
           IconButton(
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -5135,7 +5684,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   itemBuilder: (context, index) {
                     final suggestion = _suggestions[index];
                     final isMyLocation = _isMyLocationSuggestion(suggestion);
-                    final isSearchHistory = suggestion.address.startsWith('🕘 搜索历史');
+                    final isSearchHistory = suggestion.address.startsWith(
+                      '🕘 搜索历史',
+                    );
                     final isFavorite = suggestion.address.startsWith('⭐ 保存的点位');
                     return ListTile(
                       dense: true,
@@ -5143,31 +5694,33 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                            color: isMyLocation
+                          color: isMyLocation
                               ? const Color(0xFFE8F5E9)
                               : (isSearchHistory
-                                ? const Color(0xFFE8F0FE)
-                                : (isFavorite
-                                  ? const Color(0xFFFFF3CD)
-                                  : _primaryContainer.withValues(alpha: 0.7))),
+                                    ? const Color(0xFFE8F0FE)
+                                    : (isFavorite
+                                          ? const Color(0xFFFFF3CD)
+                                          : _primaryContainer.withValues(
+                                              alpha: 0.7,
+                                            ))),
                           borderRadius: BorderRadius.circular(999),
                         ),
                         child: Icon(
-                            isMyLocation
+                          isMyLocation
                               ? Icons.my_location_rounded
                               : (isSearchHistory
-                                ? Icons.history_rounded
-                                : (isFavorite
-                                  ? Icons.bookmark_rounded
-                                  : Icons.place_outlined)),
+                                    ? Icons.history_rounded
+                                    : (isFavorite
+                                          ? Icons.bookmark_rounded
+                                          : Icons.place_outlined)),
                           size: 16,
-                            color: isMyLocation
+                          color: isMyLocation
                               ? const Color(0xFF2E7D32)
                               : (isSearchHistory
-                                ? const Color(0xFF1A73E8)
-                                : (isFavorite
-                                  ? const Color(0xFFB96A00)
-                                  : _primary)),
+                                    ? const Color(0xFF1A73E8)
+                                    : (isFavorite
+                                          ? const Color(0xFFB96A00)
+                                          : _primary)),
                         ),
                       ),
                       title: Text(
@@ -5295,18 +5848,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     return Container(
       color: _surface,
-      child: SafeArea(
-        bottom: true,
-        child: panel,
-      ),
+      child: SafeArea(bottom: true, child: panel),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final canShowCruiseButton =
-      (_activeTab == _BottomTab.explore && !_navMode) ||
-      (_navMode && _currentRoute != null && !_isNavigating);
+        (_activeTab == _BottomTab.explore && !_navMode) ||
+        (_navMode && _currentRoute != null && !_isNavigating);
     final isStandaloneTab =
         _activeTab == _BottomTab.saved ||
         _activeTab == _BottomTab.recent ||
@@ -5316,8 +5866,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       return Scaffold(
         resizeToAvoidBottomInset: false,
         body: _buildStandaloneTabBody(),
-        bottomNavigationBar:
-            SafeArea(top: false, child: _buildBottomNavigationBar()),
+        bottomNavigationBar: SafeArea(
+          top: false,
+          child: _buildBottomNavigationBar(),
+        ),
       );
     }
 
@@ -5339,8 +5891,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               onTap: (tapPosition, point) {
                 Future.delayed(const Duration(milliseconds: 150), () {
                   if (!mounted) return;
-                  if (_lastRouteHitTime != null && 
-                      DateTime.now().difference(_lastRouteHitTime!).inMilliseconds.abs() < 500) {
+                  if (_lastRouteHitTime != null &&
+                      DateTime.now()
+                              .difference(_lastRouteHitTime!)
+                              .inMilliseconds
+                              .abs() <
+                          500) {
                     // Ignore map tap if a route tap occurred around the same time
                     return;
                   }
@@ -5413,85 +5969,100 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ),
               // 摄像头标记层
               MarkerLayer(
-                  markers: _cameras
-                      .asMap()
-                      .entries
-                      .where((entry) => _shouldShowCameraMarker(entry.value))
-                      .map((entry) {
-                    final idx = entry.key;
-                    final cam = entry.value;
-                    final isUnavoidable = _unavoidableCameraIndices.contains(
-                      idx,
-                    );
-                    final mark = _cameraMarkOf(cam);
-                    final isDismissed = mark?.type == 6;
-                    final isType12 = mark?.type == 12;
-                    return Marker(
-                      point: LatLng(cam.lat, cam.lng),
-                      width: isUnavoidable ? 38 : (cam.isNewlyAdded ? 36 : 30),
-                      height: isUnavoidable ? 38 : (cam.isNewlyAdded ? 36 : 30),
-                      child: GestureDetector(
-                        onTap: () => _showCameraInfo(cam),
-                        child: isDismissed
-                            ? Opacity(
-                                opacity: 0.55,
-                                child: Container(
+                markers: _cameras
+                    .asMap()
+                    .entries
+                    .where((entry) => _shouldShowCameraMarker(entry.value))
+                    .map((entry) {
+                      final idx = entry.key;
+                      final cam = entry.value;
+                      final isUnavoidable = _unavoidableCameraIndices.contains(
+                        idx,
+                      );
+                      final mark = _cameraMarkOf(cam);
+                      final isDismissed = mark?.type == 6;
+                      final isType12 = mark?.type == 12;
+                      return Marker(
+                        point: LatLng(cam.lat, cam.lng),
+                        width: isUnavoidable
+                            ? 38
+                            : (cam.isNewlyAdded ? 36 : 30),
+                        height: isUnavoidable
+                            ? 38
+                            : (cam.isNewlyAdded ? 36 : 30),
+                        child: GestureDetector(
+                          onTap: () => _showCameraInfo(cam),
+                          child: isDismissed
+                              ? Opacity(
+                                  opacity: 0.55,
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.92,
+                                      ),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: const Color(0xFF7C7766),
+                                        width: 1.3,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.08,
+                                          ),
+                                          blurRadius: 4,
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.videocam_off_rounded,
+                                      color: Color(0xFF7C7766),
+                                      size: 16,
+                                    ),
+                                  ),
+                                )
+                              : isType12
+                              ? _buildType12MarkedCameraMarker()
+                              : isUnavoidable
+                              ? _buildUnavoidableCameraMarker(cam)
+                              : cam.isNewlyAdded
+                              ? _buildNewlyAddedMarker(cam)
+                              : cam.isCustom
+                              ? _buildCustomCameraMarker(cam)
+                              : Container(
                                   decoration: BoxDecoration(
                                     color: Colors.white.withValues(alpha: 0.92),
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: const Color(0xFF7C7766),
+                                      color: _cameraColor(
+                                        cam.type,
+                                        isCustom: cam.isCustom,
+                                      ),
                                       width: 1.3,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
                                         color: Colors.black.withValues(
-                                          alpha: 0.08,
+                                          alpha: 0.12,
                                         ),
-                                        blurRadius: 4,
+                                        blurRadius: 8,
                                       ),
                                     ],
                                   ),
-                                  child: const Icon(
-                                    Icons.videocam_off_rounded,
-                                    color: Color(0xFF7C7766),
+                                  child: Icon(
+                                    Icons.videocam_rounded,
+                                    color: _cameraColor(
+                                      cam.type,
+                                      isCustom: cam.isCustom,
+                                    ),
                                     size: 16,
                                   ),
                                 ),
-                              )
-                            : isType12
-                            ? _buildType12MarkedCameraMarker()
-                            : isUnavoidable
-                            ? _buildUnavoidableCameraMarker(cam)
-                            : cam.isNewlyAdded
-                            ? _buildNewlyAddedMarker(cam)
-                            : Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: _cameraColor(cam.type),
-                                    width: 1.3,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.12,
-                                      ),
-                                      blurRadius: 8,
-                                    ),
-                                  ],
-                                ),
-                                child: Icon(
-                                  Icons.videocam_rounded,
-                                  color: _cameraColor(cam.type),
-                                  size: 16,
-                                ),
-                              ),
-                      ),
-                    );
-                  }).toList(),
-                ),
+                        ),
+                      );
+                    })
+                    .toList(),
+              ),
               // 用户标记点层
               MarkerLayer(
                 markers: _wayPoints.map((wayPoint) {
@@ -5601,11 +6172,11 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ? _buildSavedPanel()
                 : (_activeTab == _BottomTab.recent
                       ? _buildRecentPanel()
-                  : (_activeTab == _BottomTab.settings
-                    ? _buildSettingsPanel()
-                    : (_navMode
-                      ? _buildNavPanel()
-                      : _buildSearchBar()))),
+                      : (_activeTab == _BottomTab.settings
+                            ? _buildSettingsPanel()
+                            : (_navMode
+                                  ? _buildNavPanel()
+                                  : _buildSearchBar()))),
           ),
 
           // 加载指示器
@@ -5714,7 +6285,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       color: Colors.black26,
                       blurRadius: 4,
                       offset: Offset(0, 2),
-                    )
+                    ),
                   ],
                 ),
                 child: const Text(
@@ -5738,8 +6309,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 backgroundColor: _cruiseModeEnabled
                     ? const Color(0xFF2E7D32)
                     : _primaryContainer,
-                foregroundColor:
-                    _cruiseModeEnabled ? Colors.white : _primary,
+                foregroundColor: _cruiseModeEnabled ? Colors.white : _primary,
                 elevation: 2,
                 onPressed: _toggleCruiseMode,
                 child: Icon(
