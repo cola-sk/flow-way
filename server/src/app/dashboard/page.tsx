@@ -230,7 +230,7 @@ export default async function MonitorPage() {
             val={overview.active_users_7d}
             hint="by userToken"
           />
-          <StatCard title="累计安装" val={installs.total} hint={`Native ${installs.native} / Web ${installs.web}`} />
+          <StatCard title="累计安装" val={installs.native} hint={`已过滤 Web 平台 (${installs.web})`} />
           <StatCard title="累计事件数" val={overview.total_events} />
           <StatCard
             title="App 启动次数"
