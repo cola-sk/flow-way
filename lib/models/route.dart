@@ -100,16 +100,36 @@ class NavigationRoute {
     required this.createdAt,
   });
 
+  NavigationRoute copyWith({
+    String? id,
+    LatLng? startPoint,
+    LatLng? endPoint,
+    List<LatLng>? polylinePoints,
+    double? distance,
+    int? duration,
+    String? routeType,
+    List<int>? cameraIndicesOnRoute,
+    List<RouteStep>? steps,
+    DateTime? createdAt,
+  }) {
+    return NavigationRoute(
+      id: id ?? this.id,
+      startPoint: startPoint ?? this.startPoint,
+      endPoint: endPoint ?? this.endPoint,
+      polylinePoints: polylinePoints ?? this.polylinePoints,
+      distance: distance ?? this.distance,
+      duration: duration ?? this.duration,
+      routeType: routeType ?? this.routeType,
+      cameraIndicesOnRoute: cameraIndicesOnRoute ?? this.cameraIndicesOnRoute,
+      steps: steps ?? this.steps,
+      createdAt: createdAt ?? this.createdAt,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
-    'startPoint': {
-      'lat': startPoint.latitude,
-      'lng': startPoint.longitude,
-    },
-    'endPoint': {
-      'lat': endPoint.latitude,
-      'lng': endPoint.longitude,
-    },
+    'startPoint': {'lat': startPoint.latitude, 'lng': startPoint.longitude},
+    'endPoint': {'lat': endPoint.latitude, 'lng': endPoint.longitude},
     'polylinePoints': polylinePoints
         .map((p) => {'lat': p.latitude, 'lng': p.longitude})
         .toList(),
@@ -121,36 +141,41 @@ class NavigationRoute {
     'createdAt': createdAt.toIso8601String(),
   };
 
-  factory NavigationRoute.fromJson(Map<String, dynamic> json) => NavigationRoute(
-    id: json['id'] as String? ?? '',
-    startPoint: LatLng(
-      (json['startPoint']?['lat'] as num?)?.toDouble() ?? 0.0,
-      (json['startPoint']?['lng'] as num?)?.toDouble() ?? 0.0,
-    ),
-    endPoint: LatLng(
-      (json['endPoint']?['lat'] as num?)?.toDouble() ?? 0.0,
-      (json['endPoint']?['lng'] as num?)?.toDouble() ?? 0.0,
-    ),
-    polylinePoints: (json['polylinePoints'] as List?)
-            ?.cast<Map<String, dynamic>>()
-            .map((p) => LatLng(
-                (p['lat'] as num?)?.toDouble() ?? 0.0,
-                (p['lng'] as num?)?.toDouble() ?? 0.0))
-            .toList() ??
-        [],
-    distance: (json['distance'] as num?)?.toDouble() ?? 0.0,
-    duration: (json['duration'] as num?)?.toInt() ?? 0,
-    routeType: json['routeType'] as String? ?? 'normal',
-    cameraIndicesOnRoute: json['cameraIndicesOnRoute'] != null
-        ? List<int>.from(json['cameraIndicesOnRoute'] as List)
-        : [],
-    steps: json['steps'] != null
-        ? (json['steps'] as List)
-            .map((s) => RouteStep.fromJson(s as Map<String, dynamic>))
-            .toList()
-        : null,
-    createdAt: DateTime.parse(json['createdAt'] as String),
-  );
+  factory NavigationRoute.fromJson(Map<String, dynamic> json) =>
+      NavigationRoute(
+        id: json['id'] as String? ?? '',
+        startPoint: LatLng(
+          (json['startPoint']?['lat'] as num?)?.toDouble() ?? 0.0,
+          (json['startPoint']?['lng'] as num?)?.toDouble() ?? 0.0,
+        ),
+        endPoint: LatLng(
+          (json['endPoint']?['lat'] as num?)?.toDouble() ?? 0.0,
+          (json['endPoint']?['lng'] as num?)?.toDouble() ?? 0.0,
+        ),
+        polylinePoints:
+            (json['polylinePoints'] as List?)
+                ?.cast<Map<String, dynamic>>()
+                .map(
+                  (p) => LatLng(
+                    (p['lat'] as num?)?.toDouble() ?? 0.0,
+                    (p['lng'] as num?)?.toDouble() ?? 0.0,
+                  ),
+                )
+                .toList() ??
+            [],
+        distance: (json['distance'] as num?)?.toDouble() ?? 0.0,
+        duration: (json['duration'] as num?)?.toInt() ?? 0,
+        routeType: json['routeType'] as String? ?? 'normal',
+        cameraIndicesOnRoute: json['cameraIndicesOnRoute'] != null
+            ? List<int>.from(json['cameraIndicesOnRoute'] as List)
+            : [],
+        steps: json['steps'] != null
+            ? (json['steps'] as List)
+                  .map((s) => RouteStep.fromJson(s as Map<String, dynamic>))
+                  .toList()
+            : null,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
 }
 
 /// 路线规划 API 响应
@@ -158,14 +183,33 @@ class RouteResponse {
   final NavigationRoute? route;
   final String? errorMessage;
 
-  RouteResponse({
-    this.route,
-    this.errorMessage,
-  });
+  RouteResponse({this.route, this.errorMessage});
 
   factory RouteResponse.fromJson(Map<String, dynamic> json) {
     return RouteResponse(
-      route: json['route'] != null ? NavigationRoute.fromJson(json['route']) : null,
+      route: json['route'] != null
+          ? NavigationRoute.fromJson(json['route'])
+          : null,
+      errorMessage: json['errorMessage'] as String?,
+    );
+  }
+}
+
+/// 已有路线折线的摄像头重新检测响应
+class RouteCameraDetectionResponse {
+  final List<int> cameraIndicesOnRoute;
+  final String? errorMessage;
+
+  RouteCameraDetectionResponse({
+    this.cameraIndicesOnRoute = const [],
+    this.errorMessage,
+  });
+
+  factory RouteCameraDetectionResponse.fromJson(Map<String, dynamic> json) {
+    return RouteCameraDetectionResponse(
+      cameraIndicesOnRoute: json['cameraIndicesOnRoute'] != null
+          ? List<int>.from(json['cameraIndicesOnRoute'] as List)
+          : [],
       errorMessage: json['errorMessage'] as String?,
     );
   }
@@ -194,7 +238,9 @@ class RouteStepResponse {
   factory RouteStepResponse.fromJson(Map<String, dynamic> json) {
     return RouteStepResponse(
       currentRoute: json['currentRoute'] != null
-          ? NavigationRoute.fromJson(json['currentRoute'] as Map<String, dynamic>)
+          ? NavigationRoute.fromJson(
+              json['currentRoute'] as Map<String, dynamic>,
+            )
           : null,
       bestRoute: json['bestRoute'] != null
           ? NavigationRoute.fromJson(json['bestRoute'] as Map<String, dynamic>)

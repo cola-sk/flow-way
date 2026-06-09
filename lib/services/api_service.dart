@@ -17,14 +17,13 @@ const int _localRecentKeepLimit = 10;
 const int _localSearchHistoryKeepLimit = 5;
 const String _firstLaunchReportedKey = 'first_launch_reported_v1';
 
-
 String _resolveBaseUrl() {
   // 优先取编译期传进来的 BASE URL
   const customUrl = String.fromEnvironment('API_BASE_URL');
   if (customUrl.isNotEmpty) {
     return customUrl;
   }
-  
+
   if (kIsWeb) {
     // Web 端：Chrome 本地开发用 localhost:3000，部署到生产域名时用当前 origin 的 server
     final origin = Uri.base.origin;
@@ -100,11 +99,13 @@ class ApiService {
   Future<String>? _resolvingUserToken;
 
   ApiService()
-      : _dio = Dio(BaseOptions(
+    : _dio = Dio(
+        BaseOptions(
           baseUrl: _resolveBaseUrl(),
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 60),
-        )) {
+        ),
+      ) {
     _dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
@@ -137,7 +138,8 @@ class ApiService {
         path.startsWith('/api/route/plan-step') ||
         path.startsWith('/api/route/plan-simple') ||
         path.startsWith('/api/route/plan-advanced') ||
-      path.startsWith('/api/user-profile') ||
+        path.startsWith('/api/route/detect-cameras') ||
+        path.startsWith('/api/user-profile') ||
         path.startsWith('/api/waypoints') ||
         path.startsWith('/api/saved-routes') ||
         path.startsWith('/api/saved-route-plans') ||
@@ -228,11 +230,10 @@ class ApiService {
   Future<void> reportEvent(String event, [Map<String, dynamic>? data]) async {
     try {
       final userToken = await ensureUserToken();
-      await _dio.post('/api/logs', data: {
-        'event': event,
-        'data': data ?? {},
-        'userToken': userToken,
-      });
+      await _dio.post(
+        '/api/logs',
+        data: {'event': event, 'data': data ?? {}, 'userToken': userToken},
+      );
     } catch (e) {
       // 日志上报失败不影响主流程
       print('上报事件 [$event] 失败: $e');
@@ -255,7 +256,6 @@ class ApiService {
       print('首次安装上报失败: $e');
     }
   }
-
 
   Future<void> setUserToken(String userToken) async {
     final token = userToken.trim();
@@ -350,7 +350,10 @@ class ApiService {
     }
   }
 
-  Future<void> _writeLocalList(String key, List<Map<String, dynamic>> value) async {
+  Future<void> _writeLocalList(
+    String key,
+    List<Map<String, dynamic>> value,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(key, jsonEncode(value));
   }
@@ -364,11 +367,11 @@ class ApiService {
   }) async {
     try {
       Map<String, dynamic> toPoint(PlaceResult p) => {
-            'name': p.name,
-            'address': p.address,
-            'lat': p.location.latitude,
-            'lng': p.location.longitude,
-          };
+        'name': p.name,
+        'address': p.address,
+        'lat': p.location.latitude,
+        'lng': p.location.longitude,
+      };
 
       final localRoutePlansKey = await _activeLocalRoutePlansKey();
       final list = await _readLocalList(localRoutePlansKey);
@@ -411,11 +414,11 @@ class ApiService {
   }
 
   Map<String, dynamic> _placeToPoint(PlaceResult p) => {
-        'name': p.name,
-        'address': p.address,
-        'lat': p.location.latitude,
-        'lng': p.location.longitude,
-      };
+    'name': p.name,
+    'address': p.address,
+    'lat': p.location.latitude,
+    'lng': p.location.longitude,
+  };
 
   DateTime _safeParseCreatedAt(Object? value) {
     if (value is String) {
@@ -425,8 +428,10 @@ class ApiService {
   }
 
   bool _isSamePlace(PlaceResult a, PlaceResult b) {
-    return a.location.latitude.toStringAsFixed(6) == b.location.latitude.toStringAsFixed(6) &&
-        a.location.longitude.toStringAsFixed(6) == b.location.longitude.toStringAsFixed(6) &&
+    return a.location.latitude.toStringAsFixed(6) ==
+            b.location.latitude.toStringAsFixed(6) &&
+        a.location.longitude.toStringAsFixed(6) ==
+            b.location.longitude.toStringAsFixed(6) &&
         a.name.trim() == b.name.trim();
   }
 
@@ -443,8 +448,11 @@ class ApiService {
   Future<void> _saveLocalRecentRecord(Map<String, dynamic> item) async {
     final list = await _readLocalRecentRaw();
     list.insert(0, item);
-    list.sort((a, b) =>
-        _safeParseCreatedAt(b['createdAt']).compareTo(_safeParseCreatedAt(a['createdAt'])));
+    list.sort(
+      (a, b) => _safeParseCreatedAt(
+        b['createdAt'],
+      ).compareTo(_safeParseCreatedAt(a['createdAt'])),
+    );
 
     // 分开维护搜索历史与路线记录，确保搜索历史不被大量路线记录挤出
     final searchHistories = list
@@ -453,12 +461,20 @@ class ApiService {
         .toList();
     final others = list
         .where((e) => (e['source'] as String?) != 'search_history')
-        .take((_localRecentKeepLimit - searchHistories.length).clamp(0, _localRecentKeepLimit))
+        .take(
+          (_localRecentKeepLimit - searchHistories.length).clamp(
+            0,
+            _localRecentKeepLimit,
+          ),
+        )
         .toList();
 
     final merged = [...searchHistories, ...others]
-      ..sort((a, b) => _safeParseCreatedAt(b['createdAt'])
-          .compareTo(_safeParseCreatedAt(a['createdAt'])));
+      ..sort(
+        (a, b) => _safeParseCreatedAt(
+          b['createdAt'],
+        ).compareTo(_safeParseCreatedAt(a['createdAt'])),
+      );
 
     await _writeLocalRecentRaw(merged);
   }
@@ -522,7 +538,9 @@ class ApiService {
 
     try {
       final response = await _dio.get('/api/cameras');
-      final parsed = CamerasResponse.fromJson(response.data as Map<String, dynamic>);
+      final parsed = CamerasResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      );
       await _writeCachedCameras(parsed);
       return parsed;
     } catch (e) {
@@ -546,19 +564,17 @@ class ApiService {
     CancelToken? cancelToken,
   }) async {
     try {
-      final response = await _dio.post('/api/route/plan', data: {
-        'start': {
-          'lat': start.latitude,
-          'lng': start.longitude,
+      final response = await _dio.post(
+        '/api/route/plan',
+        data: {
+          'start': {'lat': start.latitude, 'lng': start.longitude},
+          'end': {'lat': end.latitude, 'lng': end.longitude},
+          'avoidCameras': avoidCameras,
+          'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
+          'ignoreLowRiskCameras': ignoreLowRiskCameras,
         },
-        'end': {
-          'lat': end.latitude,
-          'lng': end.longitude,
-        },
-        'avoidCameras': avoidCameras,
-        'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
-        'ignoreLowRiskCameras': ignoreLowRiskCameras,
-      }, cancelToken: cancelToken);
+        cancelToken: cancelToken,
+      );
       return RouteResponse.fromJson(response.data);
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
@@ -567,6 +583,35 @@ class ApiService {
       final msg = '路线规划失败: ${_formatError(e)}';
       print(msg);
       return RouteResponse(errorMessage: msg);
+    }
+  }
+
+  /// 对已有路线折线重新检测当前摄像头命中情况
+  Future<RouteCameraDetectionResponse> detectCamerasOnRoute({
+    required NavigationRoute route,
+    bool avoidCameras = true,
+    bool ignoreOutsideSixthRing = true,
+    bool ignoreLowRiskCameras = true,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '/api/route/detect-cameras',
+        data: {
+          'polylinePoints': route.polylinePoints
+              .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+              .toList(),
+          'avoidCameras': avoidCameras,
+          'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
+          'ignoreLowRiskCameras': ignoreLowRiskCameras,
+        },
+      );
+      return RouteCameraDetectionResponse.fromJson(
+        response.data as Map<String, dynamic>,
+      );
+    } catch (e) {
+      final msg = '重新检测摄像头失败: ${_formatError(e)}';
+      print(msg);
+      return RouteCameraDetectionResponse(errorMessage: msg);
     }
   }
 
@@ -588,39 +633,42 @@ class ApiService {
     CancelToken? cancelToken,
   }) async {
     try {
-      final response = await _dio.post('/api/route/plan-step', data: {
-        'start': {
-          'lat': start.latitude,
-          'lng': start.longitude,
+      final response = await _dio.post(
+        '/api/route/plan-step',
+        data: {
+          'start': {'lat': start.latitude, 'lng': start.longitude},
+          'end': {'lat': end.latitude, 'lng': end.longitude},
+          'iteration': iteration,
+          'maxIterations': maxIterations,
+          if (waypoints != null)
+            'waypoints': waypoints
+                .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+                .toList(),
+          if (legIndex != null) 'legIndex': legIndex,
+          if (totalLegs != null) 'totalLegs': totalLegs,
+          if (anchorDistance != null) 'anchorDistance': anchorDistance,
+          'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
+          'ignoreLowRiskCameras': ignoreLowRiskCameras,
+          if (bestRoute != null)
+            'bestRoute': {
+              'polylinePoints': bestRoute.polylinePoints
+                  .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+                  .toList(),
+              'distance': bestRoute.distance,
+              'duration': bestRoute.duration,
+              'cameraIndicesOnRoute': bestRoute.cameraIndicesOnRoute,
+            },
+          if (excludePolylines != null && excludePolylines.isNotEmpty)
+            'excludePolylines': excludePolylines
+                .map(
+                  (pl) => pl
+                      .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+                      .toList(),
+                )
+                .toList(),
         },
-        'end': {
-          'lat': end.latitude,
-          'lng': end.longitude,
-        },
-        'iteration': iteration,
-        'maxIterations': maxIterations,
-        if (waypoints != null)
-          'waypoints': waypoints
-              .map((p) => {'lat': p.latitude, 'lng': p.longitude})
-              .toList(),
-        if (legIndex != null) 'legIndex': legIndex,
-        if (totalLegs != null) 'totalLegs': totalLegs,
-        if (anchorDistance != null) 'anchorDistance': anchorDistance,
-        'ignoreOutsideSixthRing': ignoreOutsideSixthRing,
-        'ignoreLowRiskCameras': ignoreLowRiskCameras,
-        if (bestRoute != null) 'bestRoute': {
-          'polylinePoints': bestRoute.polylinePoints
-              .map((p) => {'lat': p.latitude, 'lng': p.longitude})
-              .toList(),
-          'distance': bestRoute.distance,
-          'duration': bestRoute.duration,
-          'cameraIndicesOnRoute': bestRoute.cameraIndicesOnRoute,
-        },
-        if (excludePolylines != null && excludePolylines.isNotEmpty)
-          'excludePolylines': excludePolylines
-              .map((pl) => pl.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList())
-              .toList(),
-      }, cancelToken: cancelToken);
+        cancelToken: cancelToken,
+      );
       return RouteStepResponse.fromJson(response.data as Map<String, dynamic>);
     } catch (e) {
       if (e is DioException && e.type == DioExceptionType.cancel) {
@@ -643,11 +691,14 @@ class ApiService {
     required LatLng location,
   }) async {
     try {
-      await _dio.post('/api/waypoints', data: {
-        'name': name,
-        'lat': location.latitude,
-        'lng': location.longitude,
-      });
+      await _dio.post(
+        '/api/waypoints',
+        data: {
+          'name': name,
+          'lat': location.latitude,
+          'lng': location.longitude,
+        },
+      );
       return true;
     } catch (e) {
       print('保存标记点失败: ${_formatError(e)}');
@@ -725,16 +776,11 @@ class ApiService {
   }
 
   /// 逆地理编码：通过坐标反查地点名称
-  Future<PlaceResult?> reverseGeocode({
-    required LatLng point,
-  }) async {
+  Future<PlaceResult?> reverseGeocode({required LatLng point}) async {
     try {
       final response = await _dio.get(
         '/api/reverse-geocode',
-        queryParameters: {
-          'lat': point.latitude,
-          'lng': point.longitude,
-        },
+        queryParameters: {'lat': point.latitude, 'lng': point.longitude},
       );
       final data = response.data['place'];
       if (data is! Map<String, dynamic>) return null;
@@ -752,21 +798,24 @@ class ApiService {
     List<PlaceResult>? stops,
   }) async {
     try {
-      await _dio.post('/api/saved-routes', data: {
-        'name': name,
-        'route': route.toJson(),
-        if (stops != null)
-          'stops': stops
-              .map(
-                (p) => {
-                  'name': p.name,
-                  'address': p.address,
-                  'lat': p.location.latitude,
-                  'lng': p.location.longitude,
-                },
-              )
-              .toList(),
-      });
+      await _dio.post(
+        '/api/saved-routes',
+        data: {
+          'name': name,
+          'route': route.toJson(),
+          if (stops != null)
+            'stops': stops
+                .map(
+                  (p) => {
+                    'name': p.name,
+                    'address': p.address,
+                    'lat': p.location.latitude,
+                    'lng': p.location.longitude,
+                  },
+                )
+                .toList(),
+        },
+      );
       return true;
     } catch (e) {
       print('保存导航线路失败: ${_formatError(e)}');
@@ -792,19 +841,22 @@ class ApiService {
 
     try {
       Map<String, dynamic> toPoint(PlaceResult p) => {
-            'name': p.name,
-            'address': p.address,
-            'lat': p.location.latitude,
-            'lng': p.location.longitude,
-          };
+        'name': p.name,
+        'address': p.address,
+        'lat': p.location.latitude,
+        'lng': p.location.longitude,
+      };
 
-      await _dio.post('/api/saved-route-plans', data: {
-        'name': name,
-        'start': toPoint(start),
-        'end': toPoint(end),
-        'waypoints': waypoints.map(toPoint).toList(),
-        'avoidCameras': avoidCameras,
-      });
+      await _dio.post(
+        '/api/saved-route-plans',
+        data: {
+          'name': name,
+          'start': toPoint(start),
+          'end': toPoint(end),
+          'waypoints': waypoints.map(toPoint).toList(),
+          'avoidCameras': avoidCameras,
+        },
+      );
       return true;
     } catch (e) {
       print('保存点位方案失败: ${_formatError(e)}');
@@ -818,7 +870,10 @@ class ApiService {
       final response = await _dio.get('/api/saved-routes');
       final List<dynamic> data = response.data['routes'] ?? [];
       return data
-          .map((e) => SavedNavigationRouteRecord.fromJson(e as Map<String, dynamic>))
+          .map(
+            (e) =>
+                SavedNavigationRouteRecord.fromJson(e as Map<String, dynamic>),
+          )
           .toList();
     } catch (e) {
       print('获取已保存线路失败: ${_formatError(e)}');
@@ -851,9 +906,13 @@ class ApiService {
       final merged = <String, SavedRoutePlanRecord>{};
       for (final plan in [...remote, ...local]) {
         final wpKey = plan.waypoints
-            .map((w) => '${w.location.latitude.toStringAsFixed(6)},${w.location.longitude.toStringAsFixed(6)}')
+            .map(
+              (w) =>
+                  '${w.location.latitude.toStringAsFixed(6)},${w.location.longitude.toStringAsFixed(6)}',
+            )
             .join(';');
-        final key = '${plan.name}_${plan.start.location.latitude.toStringAsFixed(6)},${plan.start.location.longitude.toStringAsFixed(6)}_${plan.end.location.latitude.toStringAsFixed(6)},${plan.end.location.longitude.toStringAsFixed(6)}_${plan.avoidCameras}_$wpKey';
+        final key =
+            '${plan.name}_${plan.start.location.latitude.toStringAsFixed(6)},${plan.start.location.longitude.toStringAsFixed(6)}_${plan.end.location.latitude.toStringAsFixed(6)},${plan.end.location.longitude.toStringAsFixed(6)}_${plan.avoidCameras}_$wpKey';
         merged[key] = plan;
       }
       final result = merged.values.toList()
@@ -941,7 +1000,9 @@ class ApiService {
     }
   }
 
-  Future<List<PlaceResult>> getSearchHistoryPlaces({int limit = _localSearchHistoryKeepLimit}) async {
+  Future<List<PlaceResult>> getSearchHistoryPlaces({
+    int limit = _localSearchHistoryKeepLimit,
+  }) async {
     try {
       final records = await getRecentNavigations();
       final places = records
@@ -961,40 +1022,49 @@ class ApiService {
   Future<List<RecentNavigationRecord>> getRecentNavigations() async {
     try {
       final list = await _readLocalRecentRaw();
-      final records = list
-          .map((e) => RecentNavigationRecord.fromJson(e))
-          .toList()
-        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      final records =
+          list.map((e) => RecentNavigationRecord.fromJson(e)).toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       final trimmed = records.take(_localRecentKeepLimit).toList();
 
       // Keep local storage compact and ordered.
       if (trimmed.length != list.length) {
-        await _writeLocalRecentRaw(trimmed.map((e) => {
-          'id': e.id,
-          'name': e.name,
-          'start': {
-            'name': e.start.name,
-            'address': e.start.address,
-            'lat': e.start.location.latitude,
-            'lng': e.start.location.longitude,
-          },
-          'end': {
-            'name': e.end.name,
-            'address': e.end.address,
-            'lat': e.end.location.latitude,
-            'lng': e.end.location.longitude,
-          },
-          'waypoints': e.waypoints.map((w) => {
-            'name': w.name,
-            'address': w.address,
-            'lat': w.location.latitude,
-            'lng': w.location.longitude,
-          }).toList(),
-          'avoidCameras': e.avoidCameras,
-          'source': e.source,
-          'createdAt': e.createdAt.toIso8601String(),
-        }).toList());
+        await _writeLocalRecentRaw(
+          trimmed
+              .map(
+                (e) => {
+                  'id': e.id,
+                  'name': e.name,
+                  'start': {
+                    'name': e.start.name,
+                    'address': e.start.address,
+                    'lat': e.start.location.latitude,
+                    'lng': e.start.location.longitude,
+                  },
+                  'end': {
+                    'name': e.end.name,
+                    'address': e.end.address,
+                    'lat': e.end.location.latitude,
+                    'lng': e.end.location.longitude,
+                  },
+                  'waypoints': e.waypoints
+                      .map(
+                        (w) => {
+                          'name': w.name,
+                          'address': w.address,
+                          'lat': w.location.latitude,
+                          'lng': w.location.longitude,
+                        },
+                      )
+                      .toList(),
+                  'avoidCameras': e.avoidCameras,
+                  'source': e.source,
+                  'createdAt': e.createdAt.toIso8601String(),
+                },
+              )
+              .toList(),
+        );
       }
 
       return trimmed;
@@ -1044,14 +1114,16 @@ class ApiService {
     String? note,
   }) async {
     try {
-      await _dio.post('/api/dismissed-cameras',
-          data: {
-            'lat': lat,
-            'lng': lng,
-            'name': name,
-            'type': type,
-            if (note != null) 'note': note,
-          });
+      await _dio.post(
+        '/api/dismissed-cameras',
+        data: {
+          'lat': lat,
+          'lng': lng,
+          'name': name,
+          'type': type,
+          if (note != null) 'note': note,
+        },
+      );
       return true;
     } catch (e) {
       print('标记废弃失败: ${_formatError(e)}');
@@ -1066,8 +1138,10 @@ class ApiService {
     required String note,
   }) async {
     try {
-      await _dio.patch('/api/dismissed-cameras',
-          data: {'lat': lat, 'lng': lng, 'note': note});
+      await _dio.patch(
+        '/api/dismissed-cameras',
+        data: {'lat': lat, 'lng': lng, 'note': note},
+      );
       return true;
     } catch (e) {
       print('更新标记备注失败: ${_formatError(e)}');
@@ -1081,8 +1155,10 @@ class ApiService {
     required double lng,
   }) async {
     try {
-      await _dio.delete('/api/dismissed-cameras',
-          data: {'lat': lat, 'lng': lng});
+      await _dio.delete(
+        '/api/dismissed-cameras',
+        data: {'lat': lat, 'lng': lng},
+      );
       return true;
     } catch (e) {
       print('取消废弃失败: ${_formatError(e)}');
@@ -1136,11 +1212,8 @@ class SavedCoordinate {
     );
   }
 
-  PlaceResult toPlaceResult() => PlaceResult(
-        name: name,
-        address: address,
-        location: location,
-      );
+  PlaceResult toPlaceResult() =>
+      PlaceResult(name: name, address: address, location: location);
 }
 
 class SavedNavigationRouteRecord {
