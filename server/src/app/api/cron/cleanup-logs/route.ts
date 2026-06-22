@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
 
+const LOG_RETENTION_DAYS = 7;
+
 /**
  * Vercel Cron Job：每天凌晨3点清理7天前的事件日志
  * 配置见 vercel.json 中的 crons
@@ -17,12 +19,18 @@ export async function GET(request: Request) {
 
   try {
     const result = await sql`
-      DELETE FROM event_logs
-      WHERE created_at < NOW() - INTERVAL '6 months'
+      WITH deleted AS (
+        DELETE FROM event_logs
+        WHERE created_at < NOW() - INTERVAL '7 days'
+        RETURNING 1
+      )
+      SELECT COUNT(*)::int AS deleted FROM deleted
     `;
-    const deleted = result.length ?? 0;
-    console.info(`[cleanup-logs] deleted ${deleted} rows older than 7 days`);
-    return NextResponse.json({ ok: true, deleted });
+    const deleted = Number(result[0]?.deleted ?? 0);
+    console.info(
+      `[cleanup-logs] deleted ${deleted} rows older than ${LOG_RETENTION_DAYS} days`
+    );
+    return NextResponse.json({ ok: true, deleted, retentionDays: LOG_RETENTION_DAYS });
   } catch (error) {
     console.error('[cleanup-logs] failed:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
