@@ -2238,12 +2238,23 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             _infoRow('终点', record.end.name),
             _infoRow('途径点', '${record.waypoints.length} 个'),
             _infoRow('避开摄像头', record.avoidCameras ? '是' : '否'),
-            _infoRow('来源', record.source.isEmpty ? '未知' : record.source),
+            _infoRow('来源', _recentSourceLabel(record.source)),
             _infoRow('记录时间', _formatRecentCreatedAt(record.createdAt)),
           ],
         ),
       ),
     );
+  }
+
+  String _recentSourceLabel(String source) {
+    return switch (source) {
+      'apply_saved_route' => '已保存线路',
+      'apply_saved_plan' => '已保存点位方案',
+      'manual' => '手动规划',
+      'search_history' => '搜索历史',
+      '' => '未知',
+      _ => source,
+    };
   }
 
   PlaceResult _resolvedNavStartPlace() {
@@ -5519,27 +5530,27 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             _buildBottomTab(
               tab: _BottomTab.explore,
               icon: Icons.explore_rounded,
-              label: 'Explore',
+              label: '探索',
             ),
             _buildBottomTab(
               tab: _BottomTab.plan,
               icon: Icons.route_rounded,
-              label: 'Plan',
+              label: '规划',
             ),
             _buildBottomTab(
               tab: _BottomTab.saved,
               icon: Icons.bookmark_outline_rounded,
-              label: 'Saved',
+              label: '已保存',
             ),
             _buildBottomTab(
               tab: _BottomTab.recent,
               icon: Icons.history_rounded,
-              label: 'Recent',
+              label: '最近',
             ),
             _buildBottomTab(
               tab: _BottomTab.settings,
               icon: Icons.tune_rounded,
-              label: 'Settings',
+              label: '设置',
             ),
           ],
         ),
@@ -6042,7 +6053,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ],
                 ),
                 child: const Text(
-                  'BETA',
+                  '测试版',
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,

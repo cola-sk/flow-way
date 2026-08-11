@@ -38,6 +38,12 @@ void main() {
     await tester.tap(find.text('音频播放测试'));
     await tester.pumpAndSettle();
 
+    expect(find.text('设备语音环境'), findsOneWidget);
+    expect(find.byIcon(Icons.expand_more_rounded), findsOneWidget);
+    await tester.tap(find.text('设备语音环境'));
+    await tester.pump();
+    expect(find.byIcon(Icons.expand_less_rounded), findsOneWidget);
+
     expect(find.text('基础文字转语音'), findsOneWidget);
     expect(find.text('导航音频通道'), findsOneWidget);
 

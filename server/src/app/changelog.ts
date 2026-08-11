@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.1.7',
+    date: '2026-08-11',
+    title: '测试信息更清爽',
+    highlights: [
+      '音频测试页面默认收起设备语音环境，打开页面后可以更快开始测试。',
+      '点击设备语音环境即可展开查看详细信息，刷新和测试功能保持不变。',
+    ],
+  },
+  {
     version: '1.1.6',
     date: '2026-08-11',
     title: '新增音频诊断工具',

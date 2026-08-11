@@ -132,6 +132,7 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
 
   String? _activeTestId;
   bool _loadingEnvironment = true;
+  bool _environmentExpanded = false;
 
   bool get _isAndroid =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -178,9 +179,27 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
     return value.toString();
   }
 
+  String _platformLabel() {
+    if (kIsWeb) return '网页端';
+    return switch (defaultTargetPlatform) {
+      TargetPlatform.android => 'Android',
+      TargetPlatform.iOS => 'iOS',
+      TargetPlatform.macOS => 'macOS',
+      TargetPlatform.windows => 'Windows',
+      TargetPlatform.linux => 'Linux',
+      TargetPlatform.fuchsia => 'Fuchsia',
+    };
+  }
+
+  String _testLabel(String testId) {
+    for (final test in _tests) {
+      if (test.id == testId) return test.title;
+    }
+    return testId;
+  }
+
   Future<void> _loadEnvironment() async {
-    final platform = kIsWeb ? 'Web' : defaultTargetPlatform.name;
-    final values = <String, String>{'平台': platform};
+    final values = <String, String>{'平台': _platformLabel()};
     if (_isAndroid) {
       values['默认 TTS 引擎'] = await _readValue(
         () => _flutterTts.getDefaultEngine,
@@ -212,7 +231,9 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
     final testId = _activeTestId!;
     setState(() {
       _statuses[testId] = message;
-      _logs.add('${DateTime.now().toIso8601String()} [$testId] $message');
+      _logs.add(
+        '${DateTime.now().toIso8601String()} [${_testLabel(testId)}] $message',
+      );
     });
   }
 
@@ -222,7 +243,7 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
     setState(() {
       _activeTestId = test.id;
       _statuses[test.id] = '正在准备播放…';
-      _logs.add('${DateTime.now().toIso8601String()} [${test.id}] 开始测试');
+      _logs.add('${DateTime.now().toIso8601String()} [${test.title}] 开始测试');
     });
 
     try {
@@ -241,9 +262,10 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
       setState(() {
         _statuses[test.id] = '播放请求已发送，请根据实际听感选择结果';
         _logs.add(
-          '${DateTime.now().toIso8601String()} [${test.id}] '
-          'setLanguage=$languageResult, speak=$speakResult, '
-          'navigation=${test.navigationAttributes}, focus=${test.requestAudioFocus}',
+          '${DateTime.now().toIso8601String()} [${test.title}] '
+          '设置语言=$languageResult，播放=$speakResult，'
+          '导航通道=${test.navigationAttributes ? '是' : '否'}，'
+          '申请音频焦点=${test.requestAudioFocus ? '是' : '否'}',
         );
       });
     } catch (error) {
@@ -251,7 +273,7 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
       setState(() {
         _statuses[test.id] = '调用异常：$error';
         _logs.add(
-          '${DateTime.now().toIso8601String()} [${test.id}] 调用异常：$error',
+          '${DateTime.now().toIso8601String()} [${test.title}] 调用异常：$error',
         );
       });
     }
@@ -367,10 +389,32 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
           children: [
             Row(
               children: [
-                const Expanded(
-                  child: Text(
-                    '设备语音环境',
-                    style: TextStyle(fontWeight: FontWeight.w800),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(
+                        () => _environmentExpanded = !_environmentExpanded,
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Row(
+                        children: [
+                          const Text(
+                            '设备语音环境',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            _environmentExpanded
+                                ? Icons.expand_less_rounded
+                                : Icons.expand_more_rounded,
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 IconButton(
@@ -385,28 +429,30 @@ class _AudioTestToolPageState extends State<AudioTestToolPage> {
                 ),
               ],
             ),
-            if (_loadingEnvironment)
-              const LinearProgressIndicator()
-            else
-              for (final entry in _environment.entries)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '${entry.key}：',
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        TextSpan(text: entry.value),
-                      ],
-                    ),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: scheme.onSurfaceVariant,
+            if (_environmentExpanded) ...[
+              if (_loadingEnvironment)
+                const LinearProgressIndicator()
+              else
+                for (final entry in _environment.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '${entry.key}：',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          TextSpan(text: entry.value),
+                        ],
+                      ),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: scheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
+            ],
           ],
         ),
       ),
