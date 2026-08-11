@@ -22,7 +22,39 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(blob.url);
     }
 
-    // 未指定版本：读取 version.json 获取最新版本的 APK URL
+    // 未指定版本：直接从版本化 APK 中选择最高版本。
+    // Blob 覆盖同名 version.json 后 CDN 可能短时间返回旧内容，
+    // 版本化 APK 的路径不会复用，因此可避免最新版入口命中旧清单。
+    const { blobs: releaseBlobs } = await list({
+      prefix: 'flow-way-',
+      limit: 1000,
+    });
+    let latestRelease:
+      | { blob: (typeof releaseBlobs)[number]; version: number[] }
+      | undefined;
+    for (const blob of releaseBlobs) {
+      const match = blob.pathname.match(
+        /^flow-way-(\d+)\.(\d+)\.(\d+)\.apk$/
+      );
+      if (!match) continue;
+      const candidate = match.slice(1).map(Number);
+      if (
+        !latestRelease ||
+        candidate[0] > latestRelease.version[0] ||
+        (candidate[0] === latestRelease.version[0] &&
+          candidate[1] > latestRelease.version[1]) ||
+        (candidate[0] === latestRelease.version[0] &&
+          candidate[1] === latestRelease.version[1] &&
+          candidate[2] > latestRelease.version[2])
+      ) {
+        latestRelease = { blob, version: candidate };
+      }
+    }
+    if (latestRelease) {
+      return NextResponse.redirect(latestRelease.blob.url);
+    }
+
+    // 兼容尚未使用版本化 APK 的旧发布记录。
     const { blobs: manifestBlobs } = await list({
       prefix: 'flow-way-version.json',
       limit: 1,

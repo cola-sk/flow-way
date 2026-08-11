@@ -9,6 +9,18 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.1.4',
+    date: '2026-08-11',
+    title: '语音状态提示更准确',
+    highlights: [
+      '手机能够正常播报导航语音时，不再错误提示系统语音服务不可用。',
+      '三星等使用系统默认中文音色的 Android 手机，也能正常识别语音服务状态。',
+    ],
+    fixes: [
+      '修复部分 Android 语音引擎未声明精确中文语言支持时触发错误提示的问题。',
+    ],
+  },
+  {
     version: '1.1.3',
     date: '2026-08-11',
     title: '导航语音提示更稳定',
