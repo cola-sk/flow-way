@@ -68,7 +68,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   bool _isOffRoute = false;
   int _offRouteCounter = 0; // 连续偏离计数器
   bool _muteVoiceGuidance = false;
-  bool _hasShownTtsError = false;
   bool _showAllCameras = false;
 
   // 记录已经播报过的摄像头 ID/名称，避免重复播报
@@ -170,10 +169,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
 
   Future<void> _initTts() async {
-    _flutterTts.setErrorHandler((message) {
-      _handleTtsError('语音播报失败：$message');
-    });
-
     try {
       final isAndroid =
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
@@ -189,7 +184,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       await _flutterTts.setPitch(1.0);
       await _speak('开始导航，请沿路线行驶。');
     } catch (error) {
-      _handleTtsError('语音服务初始化失败：$error');
+      debugPrint('语音服务初始化失败：$error');
     }
   }
 
@@ -198,30 +193,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       return;
     }
     try {
-      final result = await _flutterTts.speak(text, focus: true);
-      if (!kIsWeb &&
-          defaultTargetPlatform == TargetPlatform.android &&
-          result != 1) {
-        _handleTtsError('系统语音服务未能开始播报');
-      }
+      await _flutterTts.speak(text, focus: true);
     } catch (error) {
-      _handleTtsError('语音播报失败：$error');
+      debugPrint('语音播报失败：$error');
     }
-  }
-
-  void _handleTtsError(String message) {
-    debugPrint(message);
-    if (_hasShownTtsError || !mounted) return;
-    _hasShownTtsError = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('语音播报失败，请检查系统文字转语音（TTS）设置'),
-          duration: Duration(seconds: 6),
-        ),
-      );
-    });
   }
 
   Future<void> _toggleVoiceMute() async {

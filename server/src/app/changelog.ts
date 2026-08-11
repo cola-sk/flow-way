@@ -9,6 +9,18 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.1.5',
+    date: '2026-08-11',
+    title: '导航语音更专注',
+    highlights: [
+      '导航语音会专注于播报路线、摄像头和偏航提醒，不再弹出干扰驾驶的系统状态提示。',
+      '继续使用系统默认语音和导航音频通道，保持原有播报体验。',
+    ],
+    fixes: [
+      '移除 TTS 返回状态判断，避免正常播报时误显示语音服务错误。',
+    ],
+  },
+  {
     version: '1.1.4',
     date: '2026-08-11',
     title: '语音状态提示更准确',
