@@ -9,6 +9,16 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.1.6',
+    date: '2026-08-11',
+    title: '新增音频诊断工具',
+    highlights: [
+      '在设置中新增测试工具入口，遇到导航语音问题时可以自行完成音频检查。',
+      '音频测试会分别验证基础 TTS、导航音频通道和完整导航播报链路。',
+      '测试结果包含设备语音环境和系统回调记录，可一键复制后反馈。',
+    ],
+  },
+  {
     version: '1.1.5',
     date: '2026-08-11',
     title: '导航语音更专注',

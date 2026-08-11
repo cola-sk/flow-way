@@ -74,3 +74,4 @@ debug*
 demo*
 .claude
 .flutter-plugins-dependencies
+release

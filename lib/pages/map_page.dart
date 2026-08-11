@@ -19,6 +19,7 @@ import '../widgets/contact_me_dialog.dart';
 import '../widgets/jinjing_marker.dart';
 import 'active_navigation_page.dart';
 import 'save_route_dialog.dart';
+import 'test_tools_page.dart';
 
 enum _BottomTab { explore, plan, saved, recent, settings }
 
@@ -4724,6 +4725,39 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                         fontSize: 12,
                         color: _onSurfaceVariant,
                         fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Divider(height: 24),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _primaryContainer.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.science_outlined,
+                          color: _primary,
+                        ),
+                      ),
+                      title: const Text(
+                        '测试工具',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        '音频播放诊断等设备测试',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const TestToolsPage(),
+                        ),
                       ),
                     ),
                   ],
