@@ -181,10 +181,9 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         await _flutterTts.setAudioAttributesForNavigation();
       }
 
-      final languageResult = await _flutterTts.setLanguage('zh-CN');
-      if (isAndroid && languageResult != 1) {
-        _handleTtsError('系统未提供可用的中文语音服务');
-      }
+      // 部分 Android TTS 引擎不声明精确的 zh-CN 支持，但仍能使用
+      // 系统默认中文声音正常播报，因此不能仅凭返回值判定服务不可用。
+      await _flutterTts.setLanguage('zh-CN');
       await _flutterTts.setSpeechRate(0.5);
       await _flutterTts.setVolume(1.0);
       await _flutterTts.setPitch(1.0);
@@ -218,7 +217,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('系统语音服务不可用，请在系统设置中安装或启用文字转语音（TTS）'),
+          content: Text('语音播报失败，请检查系统文字转语音（TTS）设置'),
           duration: Duration(seconds: 6),
         ),
       );
