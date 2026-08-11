@@ -9,6 +9,20 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.1.3',
+    date: '2026-08-11',
+    title: '导航语音提示更稳定',
+    highlights: [
+      '导航过程中的转向、偏航和摄像头提醒，在更多 Android 手机上都能稳定播报。',
+      '语音会优先使用导航音频通道，减少播放音乐或连接蓝牙时听不到提示的情况。',
+      '如果手机没有可用的中文语音服务，App 会明确提示你进行设置。',
+    ],
+    fixes: [
+      '修复部分 Android 11 及以上设备无法发现系统 TTS 引擎的问题。',
+      '修复语音初始化或播报失败时没有任何反馈的问题。',
+    ],
+  },
+  {
     version: '1.1.2',
     date: '2026-06-09',
     title: '保存线路也能随时复查摄像头',

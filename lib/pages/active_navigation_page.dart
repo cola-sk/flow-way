@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
@@ -67,6 +68,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   bool _isOffRoute = false;
   int _offRouteCounter = 0; // 连续偏离计数器
   bool _muteVoiceGuidance = false;
+  bool _hasShownTtsError = false;
   bool _showAllCameras = false;
 
   // 记录已经播报过的摄像头 ID/名称，避免重复播报
@@ -155,7 +157,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   void initState() {
     super.initState();
     unawaited(WakelockPlus.enable());
-    _initTts();
+    unawaited(_initTts());
     _startNavigation();
     _navStartTime = DateTime.now();
     widget.apiService.reportEvent('navigation_start', {
@@ -168,18 +170,59 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
 
   Future<void> _initTts() async {
-    await _flutterTts.setLanguage("zh-CN");
-    await _flutterTts.setSpeechRate(0.5);
-    await _flutterTts.setVolume(1.0);
-    await _flutterTts.setPitch(1.0);
-    _speak("开始导航，请沿路线行驶。");
+    _flutterTts.setErrorHandler((message) {
+      _handleTtsError('语音播报失败：$message');
+    });
+
+    try {
+      final isAndroid =
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      if (isAndroid) {
+        await _flutterTts.setAudioAttributesForNavigation();
+      }
+
+      final languageResult = await _flutterTts.setLanguage('zh-CN');
+      if (isAndroid && languageResult != 1) {
+        _handleTtsError('系统未提供可用的中文语音服务');
+      }
+      await _flutterTts.setSpeechRate(0.5);
+      await _flutterTts.setVolume(1.0);
+      await _flutterTts.setPitch(1.0);
+      await _speak('开始导航，请沿路线行驶。');
+    } catch (error) {
+      _handleTtsError('语音服务初始化失败：$error');
+    }
   }
 
   Future<void> _speak(String text) async {
     if (_muteVoiceGuidance) {
       return;
     }
-    await _flutterTts.speak(text);
+    try {
+      final result = await _flutterTts.speak(text, focus: true);
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          result != 1) {
+        _handleTtsError('系统语音服务未能开始播报');
+      }
+    } catch (error) {
+      _handleTtsError('语音播报失败：$error');
+    }
+  }
+
+  void _handleTtsError(String message) {
+    debugPrint(message);
+    if (_hasShownTtsError || !mounted) return;
+    _hasShownTtsError = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('系统语音服务不可用，请在系统设置中安装或启用文字转语音（TTS）'),
+          duration: Duration(seconds: 6),
+        ),
+      );
+    });
   }
 
   Future<void> _toggleVoiceMute() async {
