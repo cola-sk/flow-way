@@ -208,6 +208,24 @@ function getEventColor(event: string): string {
   return eventColors[event] || '#6b7280';
 }
 
+function formatBeijingTime(value: string): string {
+  // 接口已将 created_at 转换为 Asia/Shanghai 并以无时区字符串返回，避免浏览器重复换算。
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return value;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+}
+
 export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -273,7 +291,7 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
         position: 'fixed',
         inset: 0,
         zIndex: 1000,
-        background: 'rgba(0,0,0,0.5)',
+        background: 'rgba(15, 23, 42, 0.58)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -284,14 +302,14 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
         onClick={(e) => e.stopPropagation()}
         style={{
           background: '#fff',
-          borderRadius: 12,
+          borderRadius: 16,
           width: '100%',
-          maxWidth: 760,
-          maxHeight: '86vh',
+          maxWidth: 900,
+          maxHeight: '88vh',
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          boxShadow: '0 24px 80px rgba(15,23,42,0.35)',
         }}
       >
         <div
@@ -299,37 +317,38 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '16px 20px',
-            borderBottom: '1px solid #e5e7eb',
+            padding: '18px 24px',
+            background: 'linear-gradient(135deg, #0f766e, #0f4c5c)',
           }}
         >
           <div>
             <div
               style={{
-                fontSize: 14,
-                fontWeight: 600,
-                color: '#0f766e',
+                fontSize: 18,
+                fontWeight: 700,
+                color: '#fff',
               }}
             >
-              事件时间线
+              用户行为日志
             </div>
             <div
               style={{
-                fontSize: 11,
-                color: '#9ca3af',
+                fontSize: 12,
+                color: '#ccfbf1',
                 fontFamily: 'monospace',
                 marginTop: 2,
               }}
             >
-              {token} · 共 {total} 条
+              {token} · 共 {total} 条 · 北京时间（UTC+8）
             </div>
           </div>
           <button
             onClick={onClose}
+            aria-label="关闭行为日志"
             style={{
-              background: '#f3f4f6',
-              border: 'none',
-              borderRadius: 6,
+              background: 'rgba(255,255,255,0.16)',
+              border: '1px solid rgba(255,255,255,0.2)',
+              borderRadius: 8,
               width: 32,
               height: 32,
               fontSize: 16,
@@ -337,7 +356,7 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#6b7280',
+              color: '#fff',
             }}
           >
             ✕
@@ -348,7 +367,8 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
           style={{
             overflowY: 'auto',
             flex: 1,
-            padding: '12px 20px',
+            padding: '20px 24px',
+            background: '#f8fafc',
           }}
         >
           {loading ? (
@@ -377,11 +397,11 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
             <>
               <div
                 style={{
-                  background: '#f8fafc',
+                  background: '#fff',
                   border: '1px solid #e2e8f0',
-                  borderRadius: 10,
-                  padding: 12,
-                  marginBottom: 12,
+                  borderRadius: 12,
+                  padding: 14,
+                  marginBottom: 18,
                   display: 'grid',
                   gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
                   gap: 8,
@@ -470,9 +490,11 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
                       />
                       <div
                         style={{
-                          background: '#f9fafb',
-                          borderRadius: 8,
-                          padding: '8px 10px',
+                          background: '#fff',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 10,
+                          padding: '11px 12px',
+                          boxShadow: '0 1px 2px rgba(15,23,42,0.04)',
                         }}
                       >
                         <div
@@ -487,8 +509,8 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
                           <span
                             style={{
                               display: 'inline-block',
-                              padding: '1px 6px',
-                              borderRadius: 3,
+                              padding: '3px 8px',
+                              borderRadius: 999,
                               fontSize: 11,
                               fontWeight: 600,
                               color: '#fff',
@@ -500,12 +522,12 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
                           </span>
                           <span
                             style={{
-                              fontSize: 11,
-                              color: '#9ca3af',
+                              fontSize: 12,
+                              color: '#64748b',
                               whiteSpace: 'nowrap',
                             }}
                           >
-                            {event.created_at}
+                            {formatBeijingTime(event.created_at)}
                           </span>
                         </div>
                         {details.length > 0 && (
@@ -520,10 +542,10 @@ export function EventTimelineModal({ token, onClose }: EventTimelineModalProps) 
                               <div
                                 key={`${event.id}-${detail.key}`}
                                 style={{
-                                  border: '1px solid #e5e7eb',
-                                  borderRadius: 6,
-                                  background: '#fff',
-                                  padding: '6px 8px',
+                                  border: '1px solid #e2e8f0',
+                                  borderRadius: 8,
+                                  background: '#f8fafc',
+                                  padding: '7px 9px',
                                 }}
                               >
                                 <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 2 }}>{detail.label}</div>

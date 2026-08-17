@@ -20,7 +20,7 @@ export async function GET(
         event,
         user_token,
         data,
-        created_at AT TIME ZONE 'Asia/Shanghai' AS created_at
+        TO_CHAR(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD HH24:MI:SS') AS created_at
       FROM event_logs
       WHERE user_token = ${token}
       ORDER BY created_at DESC

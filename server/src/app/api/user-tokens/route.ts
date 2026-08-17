@@ -8,8 +8,8 @@ export async function GET() {
     const rows = await sql`
       SELECT
         user_token,
-        MIN(created_at AT TIME ZONE 'Asia/Shanghai') AS first_event_date,
-        MAX(created_at AT TIME ZONE 'Asia/Shanghai') AS last_event_date,
+        TO_CHAR(MIN(created_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD HH24:MI:SS') AS first_event_date,
+        TO_CHAR(MAX(created_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD HH24:MI:SS') AS last_event_date,
         COUNT(*) AS total_events
       FROM event_logs
       WHERE user_token IS NOT NULL

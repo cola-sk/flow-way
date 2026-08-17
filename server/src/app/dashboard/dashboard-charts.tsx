@@ -23,6 +23,8 @@ const cardStyle: React.CSSProperties = {
 
 function formatDate(value: string | null, options?: Intl.DateTimeFormatOptions) {
   if (!value) return '暂无记录';
+  // Token API 返回的无时区时间已在服务端固定转换为北京时间，不能再按浏览器时区解析。
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) return value;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '暂无记录';
   return date.toLocaleString('zh-CN', {
