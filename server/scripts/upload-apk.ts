@@ -83,23 +83,10 @@ async function uploadApk() {
         console.warn(`⚠️  跳过更新 version.json：指定版本 ${versionTag} 低于当前记录版本 ${currentVersion}`);
         console.warn('   若确实要回滚，请手动修改 version.json。');
       } else {
-        const contactPath = path.resolve(__dirname, '../src/config/contact.json');
-        let wechatId = 'kero_wi';
-        let xianyuUrl = 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA';
-        try {
-          if (fs.existsSync(contactPath)) {
-            const data = JSON.parse(fs.readFileSync(contactPath, 'utf-8'));
-            if (data.wechatId) wechatId = data.wechatId;
-            if (data.xianyuUrl) xianyuUrl = data.xianyuUrl;
-          }
-        } catch { /* ignore */ }
-
         const manifest = JSON.stringify({
           version: versionTag,
           apkUrl: blob.url,
           releasedAt: new Date().toISOString(),
-          wechatId,
-          xianyuUrl,
         });
         const manifestResult = await put('flow-way-version.json', manifest, {
           access: 'public',

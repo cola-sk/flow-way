@@ -90,7 +90,7 @@ export function ContactMeButton() {
           >
             <h3 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem', fontWeight: 700 }}>联系我</h3>
             <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: '#555' }}>
-              微信号: <strong>{WECHAT_ID}</strong>
+              微信号: <strong>{wechatId}</strong>
             </p>
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
               <button

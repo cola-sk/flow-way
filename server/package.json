@@ -16,7 +16,8 @@
     "release": "tsx scripts/release.ts",
     "release:minor": "tsx scripts/release.ts minor",
     "release:major": "tsx scripts/release.ts major",
-    "init-db": "tsx scripts/init-db.ts"
+    "init-db": "tsx scripts/init-db.ts",
+    "sync-contact": "tsx scripts/sync-contact.ts"
   },
   "keywords": [],
   "author": "",
