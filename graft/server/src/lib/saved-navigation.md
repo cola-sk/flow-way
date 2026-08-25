@@ -1,0 +1,21 @@
+# server/src/lib/saved-navigation.ts
+
+- NamedCoordinate · interface · L9-L12 — interface NamedCoordinate extends Coordinate
+- SavedRouteRecord · interface · L14-L20 — interface SavedRouteRecord
+- SavedRoutePlanRecord · interface · L22-L30 — interface SavedRoutePlanRecord
+- RecentNavigationRecord · interface · L32-L41 — interface RecentNavigationRecord
+- routesHashKey · function · L56-L58 — function routesHashKey(userToken: string): string
+- plansHashKey · function · L60-L62 — function plansHashKey(userToken: string): string
+- recentHashKey · function · L64-L66 — function recentHashKey(userToken: string): string
+- sortedByTimeDesc · function · L68-L72 — function sortedByTimeDesc<T extends { createdAt: string }>(items: T[]): T[]
+- migrateLegacyHashIfNeeded · function · L74-L106 — async function migrateLegacyHashIfNeeded<T extends { id: string }>( userToken: string, legacyHashKey: string, targetHashKey: string, migrationField: string ): Promise<void>
+- ensureLegacyMigrated · function · L108-L127 — async function ensureLegacyMigrated(userToken: string): Promise<void>
+- saveRouteRecord · function · L129-L149 — async function saveRouteRecord(input: { userToken: string; name?: string; route: Route; stops?: NamedCoordinate[]; }): Promise<SavedRouteRecord>
+- listRouteRecords · function · L151-L158 — async function listRouteRecords(userToken: string): Promise<SavedRouteRecord[]>
+- deleteRouteRecord · function · L160-L166 — async function deleteRouteRecord(userToken: string, id: string): Promise<boolean>
+- saveRoutePlanRecord · function · L168-L192 — async function saveRoutePlanRecord(input: { userToken: string; name?: string; start: NamedCoordinate; end: NamedCoordinate; waypoints?: NamedCoordinate[]; avoidCameras?: boolean; }): Promise<SavedRoutePlanRecord>
+- listRoutePlanRecords · function · L194-L201 — async function listRoutePlanRecords(userToken: string): Promise<SavedRoutePlanRecord[]>
+- deleteRoutePlanRecord · function · L203-L209 — async function deleteRoutePlanRecord(userToken: string, id: string): Promise<boolean>
+- saveRecentNavigationRecord · function · L211-L249 — async function saveRecentNavigationRecord(input: { userToken: string; name?: string; start: NamedCoordinate; end: NamedCoordinate; waypoints?: NamedCoordinate[]; avoidCameras?: boolean; source?: string; }): Promise<RecentNavigationRecord>
+- listRecentNavigationRecords · function · L251-L267 — async function listRecentNavigationRecords(userToken: string): Promise<RecentNavigationRecord[]>
+- deleteRecentNavigationRecord · function · L269-L275 — async function deleteRecentNavigationRecord(userToken: string, id: string): Promise<boolean>

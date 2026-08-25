@@ -1,0 +1,138 @@
+# lib/services/api_service.dart
+
+- customUrl · variable · L22-L22 — const customUrl = String.fromEnvironment('API_BASE_URL');
+- origin · variable · L29-L29 — final origin = Uri.base.origin;
+- customUrl · variable · L40-L40 — const customUrl = String.fromEnvironment('API_BASE_URL');
+- resp · variable · L46-L46 — final resp = e.response;
+- String · class · L55-L67 — class TokenAccessDeniedError
+- TokenAccessDeniedError · class · L55-L67 — class TokenAccessDeniedError
+- String · class · L69-L86 — class UserTokenProfile
+- UserTokenProfile · class · L69-L86 — class UserTokenProfile
+- ApiService · class · L88-L1168 — class ApiService
+- String · class · L88-L1168 — class ApiService
+- token · variable · L113-L113 — final token = await ensureUserToken();
+- denied · variable · L119-L119 — final denied = _extractTokenAccessDenied(error);
+- path · variable · L130-L130 — final path = options.path;
+- method · variable · L131-L131 — final method = options.method.toUpperCase();
+- data · variable · L154-L154 — final data = error.response?.data;
+- code · variable · L159-L159 — final code = data['errorCode'];
+- message · variable · L164-L164 — final message = data['errorMessage'];
+- chars · variable · L185-L185 — const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+- random · variable · L186-L186 — final random = Random();
+- cached · variable · L196-L196 — final cached = _cachedUserToken;
+- inflight · variable · L201-L201 — final inflight = _resolvingUserToken;
+- prefs · variable · L207-L207 — final prefs = await SharedPreferences.getInstance();
+- local · variable · L208-L208 — final local = prefs.getString(userTokenPrefsKey);
+- token · variable · L215-L215 — final token = firstLaunchDefaultUserToken;
+- userToken · variable · L232-L232 — final userToken = await ensureUserToken();
+- prefs · variable · L246-L246 — final prefs = await SharedPreferences.getInstance();
+- reported · variable · L247-L247 — final reported = prefs.getBool(_firstLaunchReportedKey) ?? false;
+- token · variable · L261-L261 — final token = userToken.trim();
+- prefs · variable · L266-L266 — final prefs = await SharedPreferences.getInstance();
+- prefs · variable · L272-L272 — final prefs = await SharedPreferences.getInstance();
+- scopedKey · variable · L273-L273 — final scopedKey = _localRoutePlansKeyFor(userToken);
+- legacy · variable · L278-L278 — final legacy = prefs.getString(_legacyLocalRoutePlansKey);
+- userToken · variable · L285-L285 — final userToken = await ensureUserToken();
+- userToken · variable · L291-L291 — final userToken = await ensureUserToken();
+- response · variable · L297-L297 — final response = await _dio.get('/api/user-profile');
+- data · variable · L298-L298 — final data = response.data;
+- token · variable · L303-L303 — final token = data['userToken'];
+- String · variable · L308-L308 — String? validity;
+- String · variable · L309-L309 — String? expiresAt;
+- tokenPolicy · variable · L310-L310 — final tokenPolicy = data['tokenPolicy'];
+- v · variable · L312-L312 — final v = tokenPolicy['validity'];
+- e · variable · L313-L313 — final e = tokenPolicy['expiresAt'];
+- now · variable · L332-L332 — final now = DateTime.now().microsecondsSinceEpoch;
+- rnd · variable · L333-L333 — final rnd = Random().nextInt(1 << 20);
+- prefs · variable · L339-L339 — final prefs = await SharedPreferences.getInstance();
+- raw · variable · L340-L340 — final raw = prefs.getString(key);
+- decoded · variable · L342-L342 — final decoded = jsonDecode(raw);
+- prefs · variable · L357-L357 — final prefs = await SharedPreferences.getInstance();
+- Map · function · L369-L374 — Map<String, dynamic> toPoint(PlaceResult p) =>
+- localRoutePlansKey · variable · L376-L376 — final localRoutePlansKey = await _activeLocalRoutePlansKey();
+- list · variable · L377-L377 — final list = await _readLocalList(localRoutePlansKey);
+- item · variable · L378-L386 — final item = <String, dynamic>
+- localRoutePlansKey · variable · L397-L397 — final localRoutePlansKey = await _activeLocalRoutePlansKey();
+- list · variable · L398-L398 — final list = await _readLocalList(localRoutePlansKey);
+- localRoutePlansKey · variable · L404-L404 — final localRoutePlansKey = await _activeLocalRoutePlansKey();
+- list · variable · L405-L405 — final list = await _readLocalList(localRoutePlansKey);
+- before · variable · L406-L406 — final before = list.length;
+- key · variable · L439-L439 — final key = await _activeLocalRecentNavigationsKey();
+- key · variable · L444-L444 — final key = await _activeLocalRecentNavigationsKey();
+- list · variable · L449-L449 — final list = await _readLocalRecentRaw();
+- searchHistories · variable · L458-L461 — final searchHistories = list
+- others · variable · L462-L470 — final others = list
+- merged · variable · L472-L477 — final merged = [...searchHistories, ...others]
+- prefs · variable · L486-L486 — final prefs = await SharedPreferences.getInstance();
+- raw · variable · L487-L487 — final raw = prefs.getString(_cameraCacheKey);
+- parsed · variable · L490-L490 — final parsed = jsonDecode(raw);
+- savedAtUtcMs · variable · L493-L493 — final savedAtUtcMs = parsed['savedAtUtcMs'];
+- expiresAtUtcMs · variable · L494-L494 — final expiresAtUtcMs = parsed['expiresAtUtcMs'];
+- data · variable · L495-L495 — final data = parsed['data'];
+- nowUtcMs · variable · L498-L498 — final nowUtcMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+- bool · variable · L499-L499 — bool isExpired;
+- prefs · variable · L518-L518 — final prefs = await SharedPreferences.getInstance();
+- nowUtc · variable · L519-L519 — final nowUtc = DateTime.now().toUtc();
+- payload · variable · L520-L523 — final payload = <String, dynamic>
+- cachedFresh · variable · L535-L535 — final cachedFresh = await _readCachedCameras(allowExpired: false);
+- response · variable · L540-L540 — final response = await _dio.get('/api/cameras');
+- parsed · variable · L541-L543 — final parsed = CamerasResponse.fromJson(
+- cachedExpired · variable · L547-L547 — final cachedExpired = await _readCachedCameras(allowExpired: true);
+- response · variable · L567-L577 — final response = await _dio.post(
+- msg · variable · L583-L583 — final msg = '路线规划失败: ${_formatError(e)}';
+- response · variable · L597-L607 — final response = await _dio.post(
+- msg · variable · L612-L612 — final msg = '重新检测摄像头失败: ${_formatError(e)}';
+- response · variable · L636-L671 — final response = await _dio.post(
+- msg · variable · L677-L677 — final msg = '路线单步规划失败: ${_formatError(e)}';
+- response · variable · L712-L712 — final response = await _dio.get('/api/waypoints');
+- List · variable · L713-L713 — final List<dynamic> data = response.data['waypoints'] ?? [];
+- params · variable · L740-L740 — final params = <String, dynamic>{'keyword': keyword};
+- response · variable · L745-L745 — final response = await _dio.get('/api/suggest', queryParameters: params);
+- List · variable · L746-L746 — final List<dynamic> data = response.data['suggestions'] ?? [];
+- params · variable · L762-L762 — final params = <String, dynamic>{'keyword': keyword};
+- response · variable · L767-L767 — final response = await _dio.get('/api/search', queryParameters: params);
+- List · variable · L768-L768 — final List<dynamic> data = response.data['results'] ?? [];
+- response · variable · L781-L784 — final response = await _dio.get(
+- data · variable · L785-L785 — final data = response.data['place'];
+- localSaved · variable · L834-L840 — final localSaved = await _saveRoutePlanToLocal(
+- Map · function · L843-L848 — Map<String, dynamic> toPoint(PlaceResult p) =>
+- response · variable · L870-L870 — final response = await _dio.get('/api/saved-routes');
+- List · variable · L871-L871 — final List<dynamic> data = response.data['routes'] ?? [];
+- local · variable · L897-L897 — final local = await _getLocalRoutePlans();
+- response · variable · L900-L900 — final response = await _dio.get('/api/saved-route-plans');
+- List · variable · L901-L901 — final List<dynamic> data = response.data['plans'] ?? [];
+- remote · variable · L902-L904 — final remote = data
+- merged · variable · L906-L906 — final merged = <String, SavedRoutePlanRecord>{};
+- wpKey · variable · L908-L913 — final wpKey = plan.waypoints
+- key · variable · L914-L915 — final key =
+- result · variable · L918-L919 — final result = merged.values.toList()
+- localDeleted · variable · L933-L933 — final localDeleted = await _deleteLocalRoutePlan(id);
+- list · variable · L972-L972 — final list = await _readLocalRecentRaw();
+- start · variable · L977-L977 — final start = item['start'];
+- existing · variable · L981-L981 — final existing = PlaceResult.fromJson(Map<String, dynamic>.from(start));
+- records · variable · L1007-L1007 — final records = await getRecentNavigations();
+- places · variable · L1008-L1011 — final places = records
+- list · variable · L1024-L1024 — final list = await _readLocalRecentRaw();
+- records · variable · L1025-L1027 — final records =
+- trimmed · variable · L1029-L1029 — final trimmed = records.take(_localRecentKeepLimit).toList();
+- list · variable · L1080-L1080 — final list = await _readLocalRecentRaw();
+- before · variable · L1081-L1081 — final before = list.length;
+- response · variable · L1097-L1097 — final response = await _dio.get('/api/dismissed-cameras');
+- List · variable · L1098-L1098 — final List<dynamic> data = response.data['dismissed'] ?? [];
+- PlaceResult · class · L1170-L1191 — class PlaceResult
+- String · class · L1170-L1191 — class PlaceResult
+- SavedCoordinate · class · L1193-L1217 — class SavedCoordinate
+- String · class · L1193-L1217 — class SavedCoordinate
+- SavedNavigationRouteRecord · class · L1219-L1246 — class SavedNavigationRouteRecord
+- String · class · L1219-L1246 — class SavedNavigationRouteRecord
+- List · variable · L1235-L1235 — final List<dynamic> stopsData = json['stops'] as List<dynamic>? ?? const [];
+- SavedRoutePlanRecord · class · L1248-L1282 — class SavedRoutePlanRecord
+- String · class · L1248-L1282 — class SavedRoutePlanRecord
+- List · variable · L1268-L1269 — final List<dynamic> waypointsData =
+- RecentNavigationRecord · class · L1284-L1321 — class RecentNavigationRecord
+- String · class · L1284-L1321 — class RecentNavigationRecord
+- List · variable · L1306-L1307 — final List<dynamic> waypointsData =
+- DismissedCamera · class · L1323-L1354 — class DismissedCamera
+- double · class · L1323-L1354 — class DismissedCamera
+- rawType · variable · L1341-L1341 — final rawType = json['type'];
+- parsedType · variable · L1342-L1344 — final parsedType = rawType is num

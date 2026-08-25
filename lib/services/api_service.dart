@@ -17,7 +17,7 @@ const int _localRecentKeepLimit = 10;
 const int _localSearchHistoryKeepLimit = 5;
 const String _firstLaunchReportedKey = 'first_launch_reported_v1';
 
-String _resolveBaseUrl() {
+String resolveApiBaseUrl() {
   // 优先取编译期传进来的 BASE URL
   const customUrl = String.fromEnvironment('API_BASE_URL');
   if (customUrl.isNotEmpty) {
@@ -25,10 +25,24 @@ String _resolveBaseUrl() {
   }
 
   if (kIsWeb) {
-    // Web 端：Chrome 本地开发用 localhost:3000，部署到生产域名时用当前 origin 的 server
-    final origin = Uri.base.origin;
-    if (origin.contains('localhost') || origin.contains('127.0.0.1')) {
-      return 'http://localhost:3000';
+    // Web 本地开发时，Flutter Web 可能通过 localhost 或局域网 IP 提供页面；
+    // API 服务固定运行在同一主机的 3000 端口。
+    final pageUri = Uri.base;
+    final host = pageUri.host.toLowerCase();
+    final ipv4 = host.split('.').map(int.tryParse).toList();
+    final isPrivateIpv4 =
+        ipv4.length == 4 &&
+        ipv4.every((part) => part != null) &&
+        (ipv4[0] == 10 ||
+            ipv4[0] == 127 ||
+            (ipv4[0] == 192 && ipv4[1] == 168) ||
+            (ipv4[0] == 172 &&
+                ipv4[1] != null &&
+                ipv4[1]! >= 16 &&
+                ipv4[1]! <= 31));
+    final isLocalHost = host == 'localhost' || host == '::1' || isPrivateIpv4;
+    if (isLocalHost) {
+      return Uri(scheme: pageUri.scheme, host: pageUri.host, port: 3000).origin;
     }
     return 'https://flow-way.tz0618.uk';
   }
@@ -101,7 +115,7 @@ class ApiService {
   ApiService()
     : _dio = Dio(
         BaseOptions(
-          baseUrl: _resolveBaseUrl(),
+          baseUrl: resolveApiBaseUrl(),
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 60),
         ),

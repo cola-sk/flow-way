@@ -1,0 +1,26 @@
+# lib/pages/test_tools_page.dart
+
+- override · class · L9-L68 — class TestToolsPage extends StatelessWidget
+- TestToolsPage · class · L9-L68 — class TestToolsPage extends StatelessWidget
+- _AudioVerdict · enum · L70-L70 — enum _AudioVerdict { untested, heard, notHeard }
+- heard · enum · L70-L70 — enum _AudioVerdict { untested, heard, notHeard }
+- notHeard · enum · L70-L70 — enum _AudioVerdict { untested, heard, notHeard }
+- untested · enum · L70-L70 — enum _AudioVerdict { untested, heard, notHeard }
+- untested · enum · L70-L70 — enum _AudioVerdict { untested, heard, notHeard }
+- _AudioTestCase · class · L72-L88 — class _AudioTestCase
+- String · class · L72-L88 — class _AudioTestCase
+- AudioTestToolPage · class · L90-L95 — class AudioTestToolPage extends StatefulWidget
+- override · class · L90-L95 — class AudioTestToolPage extends StatefulWidget
+- _AudioTestToolPageState · class · L97-L550 — class _AudioTestToolPageState extends State<AudioTestToolPage>
+- FlutterTts · class · L97-L550 — class _AudioTestToolPageState extends State<AudioTestToolPage>
+- value · variable · L166-L166 — final value = await read();
+- values · variable · L202-L202 — final values = <String, String>{'平台': _platformLabel()};
+- testId · variable · L231-L231 — final testId = _activeTestId!;
+- languageResult · variable · L250-L250 — final languageResult = await _flutterTts.setLanguage('zh-CN');
+- speakResult · variable · L257-L260 — final speakResult = await _flutterTts.speak(
+- buffer · variable · L293-L297 — final buffer = StringBuffer()
+- scheme · variable · L333-L333 — final scheme = Theme.of(context).colorScheme;
+- i · variable · L359-L359 — for (var i = 0; i < _tests.length; i++) ...[
+- scheme · variable · L383-L383 — final scheme = Theme.of(context).colorScheme;
+- scheme · variable · L463-L463 — final scheme = Theme.of(context).colorScheme;
+- verdict · variable · L464-L464 — final verdict = _verdicts[test.id]!;

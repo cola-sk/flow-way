@@ -18,6 +18,7 @@ import '../utils/coordinate_transform.dart';
 import '../widgets/contact_me_dialog.dart';
 import '../widgets/jinjing_marker.dart';
 import 'active_navigation_page.dart';
+import 'beijing_pass_page.dart';
 import 'save_route_dialog.dart';
 import 'test_tools_page.dart';
 
@@ -4749,6 +4750,39 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
+                          Icons.badge_outlined,
+                          color: _primary,
+                        ),
+                      ),
+                      title: const Text(
+                        '进京证助手',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        '状态查询 / 预填信息 / 一键续签',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => const BeijingPassPage(),
+                        ),
+                      ),
+                    ),
+                    const Divider(height: 24),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: _primaryContainer.withValues(alpha: 0.75),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
                           Icons.science_outlined,
                           color: _primary,
                         ),
@@ -5616,7 +5650,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     return Container(
       color: _surface,
-      child: SafeArea(bottom: true, child: panel),
+      // Scaffold 的 bottomNavigationBar 已经单独处理底部安全区；
+      // 这里不要再次添加 bottom padding，避免设置页底部溢出。
+      child: SafeArea(bottom: false, child: panel),
     );
   }
 
@@ -5632,7 +5668,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     if (isStandaloneTab) {
       return Scaffold(
-        resizeToAvoidBottomInset: false,
+        resizeToAvoidBottomInset: true,
         body: _buildStandaloneTabBody(),
         bottomNavigationBar: SafeArea(
           top: false,

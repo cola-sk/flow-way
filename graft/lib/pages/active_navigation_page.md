@@ -1,0 +1,100 @@
+# lib/pages/active_navigation_page.dart
+
+- _NearestSegmentMatch · class · L20-L30 — class _NearestSegmentMatch
+- int · class · L20-L30 — class _NearestSegmentMatch
+- ActiveNavigationPage · class · L32-L52 — class ActiveNavigationPage extends StatefulWidget
+- NavigationRoute · class · L32-L52 — class ActiveNavigationPage extends StatefulWidget
+- _ActiveNavigationPageState · class · L54-L1232 — class _ActiveNavigationPageState extends State<ActiveNavigationPage>
+- MapController · class · L54-L1232 — class _ActiveNavigationPageState extends State<ActiveNavigationPage>
+- mark · variable · L116-L116 — final mark = _cameraMarkOf(camera);
+- points · variable · L127-L127 — final points = widget.route.polylinePoints;
+- maxSegIdx · variable · L128-L128 — final maxSegIdx = math.max(0, points.length - 2);
+- start · variable · L129-L129 — final start = (startSegmentIdx ?? 0).clamp(0, maxSegIdx);
+- end · variable · L130-L130 — final end = (endSegmentIdx ?? maxSegIdx).clamp(start, maxSegIdx);
+- int · variable · L132-L132 — int bestIdx = start;
+- double · variable · L133-L133 — double minDistance = double.infinity;
+- LatLng · variable · L134-L134 — LatLng bestSnapped = points[start];
+- int · variable · L136-L136 — for (int i = start; i <= end; i++)
+- p1 · variable · L137-L137 — final p1 = points[i];
+- p2 · variable · L138-L138 — final p2 = points[i + 1];
+- projected · variable · L139-L139 — final projected = _projectPointOnSegment(currentLoc, p1, p2);
+- d · variable · L140-L140 — final d = _distanceCalc(currentLoc, projected);
+- isAndroid · variable · L173-L174 — final isAndroid =
+- next · variable · L203-L203 — final next = !_muteVoiceGuidance;
+- bool · variable · L214-L214 — bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+- LocationPermission · variable · L217-L217 — LocationPermission permission = await Geolocator.checkPermission();
+- LocationSettings · variable · L223-L233 — final LocationSettings settings = kIsWeb
+- mapPos · variable · L238-L241 — final mapPos = CoordinateTransform.wgs84ToGcj02(
+- snappedPos · variable · L244-L244 — final snappedPos = _calculateSnappedPosition(mapPos);
+- double · variable · L258-L258 — double targetZoom = 17.0;
+- maxSegIdx · variable · L279-L279 — final maxSegIdx = widget.route.polylinePoints.length - 2;
+- localStart · variable · L280-L280 — final localStart = math.max(0, _routeProgressIdx - 3);
+- localEnd · variable · L281-L281 — final localEnd = math.min(maxSegIdx, _routeProgressIdx + 15);
+- localMatch · variable · L282-L286 — final localMatch = _findNearestSegmentOnRoute(
+- selected · variable · L288-L288 — var selected = localMatch;
+- needGlobalProbe · variable · L289-L290 — final needGlobalProbe =
+- globalMatch · variable · L293-L293 — final globalMatch = _findNearestSegmentOnRoute(currentLoc);
+- globalClearlyBetter · variable · L294-L295 — final globalClearlyBetter =
+- likelyJumpedAhead · variable · L296-L298 — final likelyJumpedAhead =
+- double · variable · L312-L312 — double x = p.longitude;
+- double · variable · L313-L313 — double y = p.latitude;
+- double · variable · L314-L314 — double x1 = a.longitude;
+- double · variable · L315-L315 — double y1 = a.latitude;
+- double · variable · L316-L316 — double x2 = b.longitude;
+- double · variable · L317-L317 — double y2 = b.latitude;
+- double · variable · L319-L319 — double dx = x2 - x1;
+- double · variable · L320-L320 — double dy = y2 - y1;
+- double · variable · L325-L325 — double t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
+- text · variable · L335-L335 — final text = _guidanceText(step);
+- action · variable · L346-L346 — final action = (step.action ?? '').trim();
+- instruction · variable · L347-L347 — final instruction = step.instruction.trim();
+- text · variable · L376-L376 — final text = _guidanceText(step);
+- now · variable · L390-L390 — final now = DateTime.now();
+- bool · variable · L391-L393 — final bool shouldPeriodicGlobalProbe =
+- maxSegIdx · variable · L394-L394 — final maxSegIdx = widget.route.polylinePoints.length - 2;
+- localStart · variable · L398-L398 — final localStart = math.max(0, _routeProgressIdx - 3);
+- localEnd · variable · L399-L399 — final localEnd = math.min(maxSegIdx, _routeProgressIdx + 15);
+- localMatch · variable · L400-L404 — final localMatch = _findNearestSegmentOnRoute(
+- selectedMatch · variable · L406-L406 — var selectedMatch = localMatch;
+- bool · variable · L407-L407 — bool usedGlobalMatch = false;
+- needGlobalProbe · variable · L412-L416 — final needGlobalProbe =
+- globalMatch · variable · L420-L420 — final globalMatch = _findNearestSegmentOnRoute(currentLoc);
+- globalClearlyBetter · variable · L421-L422 — final globalClearlyBetter =
+- likelyRejoinedAhead · variable · L423-L425 — final likelyRejoinedAhead =
+- recoveringFromOffRoute · variable · L426-L427 — final recoveringFromOffRoute =
+- minDistanceToRoute · variable · L437-L437 — final minDistanceToRoute = selectedMatch.distanceMeters;
+- bestSegIdx · variable · L438-L438 — final bestSegIdx = selectedMatch.segmentIndex;
+- bestSnapped · variable · L439-L439 — final bestSnapped = selectedMatch.snappedPoint;
+- nearestSegIdx · variable · L449-L449 — final nearestSegIdx = _routeProgressIdx;
+- LatLng · variable · L452-L452 — final LatLng snappedOnRoute;
+- offRoute · variable · L471-L471 — final offRoute = _offRouteCounter >= 3;
+- Camera · variable · L478-L478 — Camera? nearestCam;
+- double · variable · L479-L479 — double minCamDist = double.infinity;
+- camLoc · variable · L481-L481 — final camLoc = LatLng(cam.lat, cam.lng);
+- d · variable · L482-L482 — final d = _distanceCalc(currentLoc, camLoc);
+- camId · variable · L493-L493 — final camId = "${nearestCam.lat}_${nearestCam.lng}";
+- int · variable · L503-L503 — int currentStepIndex = widget.route.steps!.length - 1;
+- int · variable · L504-L504 — for (int i = 0; i < widget.route.steps!.length; i++)
+- curStep · variable · L511-L511 — final curStep = widget.route.steps![currentStepIndex];
+- RouteStep · variable · L514-L514 — RouteStep? nextStep;
+- double · variable · L515-L515 — double distToNext = 0.0;
+- targetIdx · variable · L518-L518 — final targetIdx = nextStep.polylineIdxStart;
+- int · variable · L522-L522 — for (int i = nearestSegIdx + 1;
+- double · variable · L532-L532 — double remainingInStep = 0.0;
+- endIdx · variable · L533-L533 — final endIdx = curStep.polylineIdxEnd;
+- int · variable · L538-L538 — for (int i = nearestSegIdx + 1;
+- stepId · variable · L555-L555 — final stepId = curStep.polylineIdxStart.toString();
+- dirLabel · variable · L556-L556 — final dirLabel = _getDirectionLabel(curStep);
+- key150 · variable · L558-L558 — final key150 = "${stepId}_150m";
+- key30 · variable · L564-L564 — final key30 = "${stepId}_30m";
+- targetPos · variable · L606-L608 — final targetPos = _snappedMapPosition ??
+- bounds · variable · L632-L632 — final bounds = LatLngBounds.fromPoints(widget.route.polylinePoints);
+- duration · variable · L659-L659 — final duration = DateTime.now().difference(_navStartTime!);
+- text · variable · L872-L872 — final text = _guidanceText(step);
+- bool · variable · L918-L921 — final bool isTurningSoon = _currentStep != null &&
+- mark · variable · L1148-L1148 — final mark = _cameraMarkOf(camera);
+- noteText · variable · L1149-L1149 — final noteText = (mark?.note ?? '').trim();
+- sourceUri · variable · L1150-L1150 — final sourceUri = _cameraDetailUri(camera.href);
+- ok · variable · L1184-L1184 — final ok = await launchUrl(sourceUri, mode: LaunchMode.platformDefault);
+- trimmed · variable · L1197-L1197 — final trimmed = href.trim();
+- normalized · variable · L1202-L1202 — final normalized = trimmed.startsWith('/') ? trimmed : '/$trimmed';

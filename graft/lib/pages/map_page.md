@@ -1,0 +1,279 @@
+# lib/pages/map_page.dart
+
+- _BottomTab · enum · L24-L24 — enum _BottomTab { explore, plan, saved, recent, settings }
+- explore · enum · L24-L24 — enum _BottomTab { explore, plan, saved, recent, settings }
+- explore · enum · L24-L24 — enum _BottomTab { explore, plan, saved, recent, settings }
+- plan · enum · L24-L24 — enum _BottomTab { explore, plan, saved, recent, settings }
+- recent · enum · L24-L24 — enum _BottomTab { explore, plan, saved, recent, settings }
+- saved · enum · L24-L24 — enum _BottomTab { explore, plan, saved, recent, settings }
+- settings · enum · L24-L24 — enum _BottomTab { explore, plan, saved, recent, settings }
+- _NavStopItem · class · L26-L34 — class _NavStopItem
+- PlaceResult · class · L26-L34 — class _NavStopItem
+- MapPage · class · L36-L41 — class MapPage extends StatefulWidget
+- override · class · L36-L41 — class MapPage extends StatefulWidget
+- _MapPageState · class · L43-L6118 — class _MapPageState extends State<MapPage> with WidgetsBindingObserver
+- Color · class · L43-L6118 — class _MapPageState extends State<MapPage> with WidgetsBindingObserver
+- hitValues · variable · L190-L190 — final hitValues = _routeHitNotifier.value?.hitValues ?? [];
+- r · variable · L193-L193 — final r = hitValues.first;
+- isExpired · variable · L245-L245 — final isExpired = error.isExpired;
+- detail · variable · L246-L248 — final detail = error.message.trim().isEmpty
+- currentToken · variable · L249-L251 — final currentToken = _userTokenController.text.trim().isNotEmpty
+- String · function · L300-L300 — String two(int n) => n.toString().padLeft(2, '0');
+- profile · variable · L311-L311 — final profile = await _apiService.getCurrentUserTokenProfile();
+- String · variable · L325-L325 — String expireAtText = '永久';
+- String · variable · L326-L326 — String remainingText = '--';
+- expireAt · variable · L329-L329 — final expireAt = DateTime.tryParse(profile.expiresAt!);
+- now · variable · L331-L331 — final now = DateTime.now().toUtc();
+- expireUtc · variable · L332-L332 — final expireUtc = expireAt.toUtc();
+- diff · variable · L333-L333 — final diff = expireUtc.difference(now);
+- remainingDays · variable · L334-L336 — final remainingDays = diff.inSeconds <= 0
+- serviceEnabled · variable · L368-L368 — final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+- permission · variable · L374-L374 — var permission = await Geolocator.checkPermission();
+- LocationSettings · variable · L384-L394 — final LocationSettings settings = kIsWeb
+- pos · variable · L401-L404 — final pos = CoordinateTransform.wgs84ToGcj02(
+- duration · variable · L464-L464 — final duration = DateTime.now().difference(_cruiseStartTime!);
+- serviceEnabled · variable · L488-L488 — final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+- LocationPermission · variable · L497-L497 — LocationPermission permission = await Geolocator.checkPermission();
+- lastKnown · variable · L509-L509 — final lastKnown = await Geolocator.getLastKnownPosition();
+- pos · variable · L511-L514 — final pos = CoordinateTransform.wgs84ToGcj02(
+- LocationSettings · variable · L524-L524 — final LocationSettings locationSettings;
+- Position · variable · L546-L548 — final Position position = await Geolocator.getCurrentPosition(
+- pos · variable · L550-L553 — final pos = CoordinateTransform.wgs84ToGcj02(
+- userToken · variable · L571-L571 — final userToken = await _apiService.ensureUserToken();
+- prefs · variable · L572-L572 — final prefs = await SharedPreferences.getInstance();
+- token · variable · L631-L631 — final token = (userToken ?? _userToken).trim();
+- migrationFlag · variable · L646-L646 — final migrationFlag = '$_settingsScopedMigrationFlagPrefix$userToken';
+- Future · function · L651-L659 — Future<void> migrateBool(String baseKey) async
+- scopedKey · variable · L652-L652 — final scopedKey = _scopedSettingsKey(baseKey, userToken);
+- legacy · variable · L654-L654 — final legacy = prefs.getBool(baseKey);
+- prefs · variable · L677-L677 — final prefs = await SharedPreferences.getInstance();
+- candidate · variable · L708-L708 — final candidate = _userTokenController.text.trim();
+- prefs · variable · L730-L730 — final prefs = await SharedPreferences.getInstance();
+- cameraPoint · variable · L767-L767 — final cameraPoint = LatLng(cam.lat, cam.lng);
+- d · variable · L768-L768 — final d = _distance(_beijingCenter, cameraPoint);
+- myLocationSuggestion · variable · L789-L789 — final myLocationSuggestion = _buildMyLocationSuggestion();
+- historySuggestions · variable · L790-L800 — final historySuggestions = _searchHistoryPlaces
+- favoriteSuggestions · variable · L801-L809 — final favoriteSuggestions = _wayPoints
+- seen · variable · L811-L811 — final seen = <String>{};
+- merged · variable · L812-L812 — final merged = <PlaceResult>[];
+- key · variable · L818-L819 — final key =
+- localMatches · variable · L835-L844 — final localMatches = _wayPoints
+- myLocationMatches · variable · L846-L849 — final myLocationMatches =
+- historyMatches · variable · L851-L864 — final historyMatches = _searchHistoryPlaces
+- results · variable · L866-L869 — final results = await _apiService.suggestPlaces(
+- seen · variable · L872-L872 — final seen = <String>{};
+- merged · variable · L873-L873 — final merged = <PlaceResult>[];
+- key · variable · L880-L881 — final key =
+- list · variable · L897-L897 — final list = await _apiService.getSearchHistoryPlaces();
+- historyPrefix · variable · L914-L914 — const historyPrefix = '🕘 搜索历史 · ';
+- historyOnly · variable · L915-L915 — const historyOnly = '🕘 搜索历史';
+- favoriteOnly · variable · L916-L916 — const favoriteOnly = '⭐ 保存的点位';
+- String · variable · L917-L917 — String address = p.address;
+- pos · variable · L930-L930 — final pos = _userPosition ?? _beijingCenter;
+- pos · variable · L953-L953 — final pos = _userPosition;
+- place · variable · L968-L968 — final place = await _refreshMyLocationPlace();
+- place · variable · L1020-L1020 — final place = await _refreshMyLocationPlace();
+- i · variable · L1033-L1033 — for (var i = 0; i < _navWaypoints.length; i++)
+- place · variable · L1063-L1063 — final place = _stripSuggestionDisplayAddress(suggestion);
+- coordName · variable · L1116-L1116 — final coordName = _formatLatLng(point);
+- resolved · variable · L1126-L1126 — final resolved = await _apiService.reverseGeocode(point: place.location);
+- coordName · variable · L1144-L1144 — final coordName = _formatLatLng(place.location);
+- coordName · variable · L1155-L1155 — final coordName = _formatLatLng(place.location);
+- waypoint · variable · L1168-L1168 — final waypoint = _normalizeMapPointPlaceholder(place);
+- normalized · variable · L1194-L1194 — final normalized = _normalizeMapPointPlaceholder(place);
+- resolved · variable · L1199-L1201 — final resolved = await _apiService.reverseGeocode(
+- resolved · variable · L1209-L1209 — final resolved = await _resolveMapPointPlaceName(placeholder);
+- currentEnd · variable · L1216-L1216 — final currentEnd = _navEndPlace;
+- resolved · variable · L1233-L1233 — final resolved = await _resolveMapPointPlaceName(placeholder);
+- currentStart · variable · L1240-L1240 — final currentStart = _navStartPlace;
+- resolved · variable · L1258-L1258 — final resolved = await _resolveMapPointPlaceName(placeholder);
+- index · variable · L1265-L1267 — final index = _navWaypoints.indexWhere(
+- immediatePlace · variable · L1281-L1281 — final immediatePlace = _normalizeMapPointPlaceholder(place);
+- wasNavMode · variable · L1284-L1284 — final wasNavMode = _navMode;
+- immediatePlace · variable · L1312-L1312 — final immediatePlace = _normalizeMapPointPlaceholder(place);
+- wasNavMode · variable · L1315-L1315 — final wasNavMode = _navMode;
+- bottomInset · variable · L1350-L1350 — final bottomInset = MediaQuery.of(ctx).padding.bottom;
+- stopItems · variable · L1571-L1571 — final stopItems = _buildNavStopItems();
+- orderedPoints · variable · L1572-L1572 — final orderedPoints = stopItems.map((item) => item.place.location).toList();
+- start · variable · L1578-L1578 — final start = stopItems.first.place;
+- end · variable · L1579-L1579 — final end = stopItems.last.place;
+- waypoints · variable · L1580-L1585 — final waypoints = stopItems.length > 2
+- next · variable · L1616-L1616 — final next = !_navPanelCollapsed;
+- startName · variable · L1631-L1631 — final startName = _resolvedNavStartPlace().name;
+- endName · variable · L1632-L1632 — final endName = _navEndPlace?.name ?? '未设置终点';
+- wpCount · variable · L1633-L1633 — final wpCount = _navWaypoints.length;
+- wpText · variable · L1634-L1634 — final wpText = wpCount == 0 ? '' : ' · $wpCount个途径点';
+- token · variable · L1648-L1648 — final token = _planningCancelToken;
+- now · variable · L1658-L1658 — final now = DateTime.now();
+- String · function · L1659-L1659 — String two(int n) => n.toString().padLeft(2, '0');
+- String · function · L1664-L1664 — String two(int n) => n.toString().padLeft(2, '0');
+- controller · variable · L1672-L1672 — final controller = TextEditingController(text: initialValue);
+- result · variable · L1673-L1699 — final result = await showDialog<String>(
+- route · variable · L1719-L1719 — final route = _currentRoute;
+- rawStops · variable · L1725-L1725 — final rawStops = _buildNavStopItems().map((item) => item.place).toList();
+- stops · variable · L1726-L1726 — final stops = await _resolvePlaceNamesForSave(rawStops);
+- startName · variable · L1728-L1728 — final startName = stops.isNotEmpty ? stops.first.name : '起点';
+- endName · variable · L1729-L1729 — final endName = stops.length >= 2 ? stops.last.name : '终点';
+- defaultName · variable · L1730-L1730 — final defaultName = '$startName -> $endName ${_saveNameTimestamp()}';
+- inputName · variable · L1731-L1734 — final inputName = await _promptSaveName(
+- routeName · variable · L1736-L1736 — final routeName = inputName.trim().isEmpty ? defaultName : inputName.trim();
+- ok · variable · L1738-L1742 — final ok = await _apiService.saveNavigationRoute(
+- end · variable · L1748-L1748 — final end = _navEndPlace;
+- rawStart · variable · L1754-L1754 — final rawStart = _resolvedNavStartPlace();
+- rawWaypoints · variable · L1755-L1755 — final rawWaypoints = List<PlaceResult>.from(_navWaypoints);
+- resolved · variable · L1756-L1760 — final resolved = await _resolvePlaceNamesForSave([
+- start · variable · L1762-L1762 — final start = resolved[0];
+- resolvedEnd · variable · L1763-L1763 — final resolvedEnd = resolved[1];
+- waypoints · variable · L1764-L1764 — final waypoints = resolved.sublist(2);
+- defaultName · variable · L1765-L1766 — final defaultName =
+- inputName · variable · L1767-L1770 — final inputName = await _promptSaveName(
+- planName · variable · L1772-L1772 — final planName = inputName.trim().isEmpty ? defaultName : inputName.trim();
+- ok · variable · L1774-L1780 — final ok = await _apiService.saveRoutePlanPoints(
+- results · variable · L1816-L1819 — final results = await Future.wait([
+- ok · variable · L1839-L1839 — final ok = await _apiService.deleteSavedNavigationRoute(record.id);
+- ok · variable · L1852-L1852 — final ok = await _apiService.deleteSavedRoutePlan(plan.id);
+- stops · variable · L1865-L1865 — final stops = _stopsFromSavedRoute(record);
+- start · variable · L1866-L1866 — final start = stops.first;
+- end · variable · L1867-L1867 — final end = stops.length >= 2 ? stops.last : start;
+- waypoints · variable · L1868-L1870 — final waypoints = stops.length > 2
+- route · variable · L1908-L1908 — final route = _currentRoute;
+- cameraLoaded · variable · L1916-L1919 — final cameraLoaded = await _loadCameras(
+- result · variable · L1927-L1932 — final result = await _apiService.detectCamerasOnRoute(
+- updatedRoute · variable · L1940-L1942 — final updatedRoute = route.copyWith(
+- start · variable · L1970-L1970 — final start = _placeFromSavedCoordinate(plan.start);
+- end · variable · L1971-L1971 — final end = _placeFromSavedCoordinate(plan.end);
+- waypoints · variable · L1972-L1972 — final waypoints = plan.waypoints.map(_placeFromSavedCoordinate).toList();
+- stops · variable · L2011-L2011 — final stops = _stopsFromSavedRoute(record);
+- data · variable · L2092-L2092 — final data = await _apiService.getRecentNavigations();
+- ok · variable · L2109-L2109 — final ok = await _apiService.deleteRecentNavigation(record.id);
+- resolved · variable · L2128-L2132 — final resolved = await _resolvePlaceNamesForSave([
+- resolvedStart · variable · L2133-L2133 — final resolvedStart = resolved[0];
+- resolvedEnd · variable · L2134-L2134 — final resolvedEnd = resolved[1];
+- resolvedWaypoints · variable · L2135-L2135 — final resolvedWaypoints = resolved.sublist(2);
+- name · variable · L2136-L2137 — final name =
+- place · variable · L2150-L2150 — final place = _placeFromSavedCoordinate(record.end);
+- place · variable · L2190-L2190 — final place = record.end;
+- pos · variable · L2262-L2262 — final pos = _userPosition ?? _beijingCenter;
+- items · variable · L2279-L2285 — final items = <_NavStopItem>[
+- originalItems · variable · L2295-L2295 — final originalItems = _buildNavStopItems();
+- items · variable · L2302-L2302 — final items = originalItems.reversed.toList();
+- hasEnd · variable · L2303-L2303 — final hasEnd = _navEndPlace != null && items.length >= 2;
+- first · variable · L2304-L2304 — final first = items.first;
+- middle · variable · L2313-L2315 — final middle = hasEnd
+- items · variable · L2323-L2323 — final items = _buildNavStopItems();
+- moved · variable · L2331-L2331 — final moved = items.removeAt(oldIndex);
+- hasEnd · variable · L2334-L2334 — final hasEnd = _navEndPlace != null && items.length >= 2;
+- first · variable · L2335-L2335 — final first = items.first;
+- middle · variable · L2344-L2346 — final middle = hasEnd
+- hasEnd · variable · L2354-L2354 — final hasEnd = _navEndPlace != null;
+- hasEnd · variable · L2361-L2361 — final hasEnd = _navEndPlace != null;
+- hasEnd · variable · L2368-L2368 — final hasEnd = _navEndPlace != null;
+- mergedPoints · variable · L2378-L2378 — final mergedPoints = <LatLng>[];
+- mergedCameraIndices · variable · L2379-L2379 — final mergedCameraIndices = <int>{};
+- mergedSteps · variable · L2380-L2380 — final mergedSteps = <RouteStep>[];
+- double · variable · L2381-L2381 — double distance = 0;
+- int · variable · L2382-L2382 — int duration = 0;
+- int · variable · L2383-L2383 — int currentPointOffset = 0;
+- i · variable · L2385-L2385 — for (var i = 0; i < segments.length; i++)
+- route · variable · L2386-L2386 — final route = segments[i];
+- offsetSteps · variable · L2396-L2408 — final offsetSteps = route.steps!
+- topInset · variable · L2441-L2441 — final topInset = MediaQuery.of(context).padding.top;
+- response · variable · L2501-L2504 — final response = await _apiService.getCameras(
+- ok · variable · L2529-L2529 — final ok = await _loadCameras(forceRefresh: true, showLoading: false);
+- waypoints · variable · L2538-L2538 — final waypoints = await _apiService.getWayPoints();
+- list · variable · L2549-L2549 — final list = await _apiService.getDismissedCameras();
+- trimmed · variable · L2570-L2570 — final trimmed = href.trim();
+- normalized · variable · L2577-L2577 — final normalized = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+- uri · variable · L2582-L2582 — final uri = _cameraDetailUri(camera.href);
+- ok · variable · L2588-L2588 — final ok = await launchUrl(uri, mode: LaunchMode.platformDefault);
+- points · variable · L2599-L2599 — final points = route.polylinePoints;
+- points · variable · L2613-L2613 — final points = places.map((e) => e.location).toList();
+- NavigationRoute · variable · L2638-L2638 — NavigationRoute? bestRoute;
+- NavigationRoute · variable · L2639-L2639 — NavigationRoute? currentRoute;
+- double · variable · L2640-L2640 — double? anchorDistance;
+- i · variable · L2642-L2642 — var i = 0;
+- now · variable · L2644-L2644 — final now = DateTime.now().millisecondsSinceEpoch;
+- elapsed · variable · L2645-L2645 — final elapsed = now - _lastPlanStepRequestAtMs;
+- prefix · variable · L2657-L2657 — final prefix = legLabel == null ? '' : '$legLabel · ';
+- step · variable · L2661-L2675 — final step = await _apiService.planRouteStep(
+- currentRouteValue · variable · L2694-L2694 — final currentRouteValue = currentRoute;
+- bestRouteValue · variable · L2695-L2695 — final bestRouteValue = bestRoute;
+- anchor · variable · L2697-L2697 — final anchor = anchorDistance ?? bestRouteValue.distance;
+- bool · variable · L2698-L2701 — final bool shouldDrawCurrent =
+- NavigationRoute · variable · L2702-L2704 — final NavigationRoute displayRoute = shouldDrawCurrent
+- prefix · variable · L2712-L2712 — final prefix = legLabel == null ? '' : '$legLabel · ';
+- bestRouteValue · variable · L2726-L2726 — final bestRouteValue = bestRoute;
+- planningToken · variable · L2751-L2751 — final planningToken = CancelToken();
+- userWaypoints · variable · L2754-L2756 — final userWaypoints = orderedStops.length > 2
+- totalLegs · variable · L2758-L2758 — final totalLegs = orderedStops.length - 1;
+- segmentRoutes · variable · L2779-L2779 — final segmentRoutes = <NavigationRoute>[];
+- i · variable · L2781-L2781 — for (var i = 0; i < totalLegs; i++)
+- start · variable · L2784-L2784 — final start = orderedStops[i];
+- end · variable · L2785-L2785 — final end = orderedStops[i + 1];
+- legLabel · variable · L2786-L2786 — final legLabel = '路段 ${i + 1}/$totalLegs';
+- legRoute · variable · L2794-L2803 — final legRoute = await _planRouteIteratively(
+- response · variable · L2809-L2815 — final response = await _apiService.planRoute(
+- merged · variable · L2824-L2824 — final merged = _mergeRoutes(segmentRoutes, avoidCameras);
+- stops · variable · L2884-L2884 — final stops = _buildNavStopItems();
+- orderedStops · variable · L2896-L2896 — final orderedStops = stops.map((e) => e.place.location).toList();
+- onRouteCount · variable · L2912-L2912 — final onRouteCount = route.cameraIndicesOnRoute.length;
+- planningFailed · variable · L2913-L2913 — final planningFailed = avoidCameras && onRouteCount > 0;
+- unavoidableCameras · variable · L2916-L2919 — final unavoidableCameras = route.cameraIndicesOnRoute
+- stopItems · variable · L2920-L2920 — final stopItems = _buildNavStopItems();
+- dismissReason · variable · L2932-L2932 — var dismissReason = 'tap_outside_or_system';
+- rawStops · variable · L3118-L3120 — final rawStops = _buildNavStopItems()
+- resolvedStops · variable · L3121-L3123 — final resolvedStops = await _resolvePlaceNamesForSave(
+- result · variable · L3246-L3263 — final result = await Navigator.push(
+- confirmed · variable · L3289-L3305 — final confirmed = await showDialog<bool>(
+- success · variable · L3308-L3308 — final success = await _apiService.deleteWayPoint(wayPoint.id);
+- newColor · variable · L3335-L3335 — const newColor = Color(0xFF0277BD);
+- controller · variable · L3424-L3424 — final controller = TextEditingController(text: initialNote);
+- result · variable · L3425-L3449 — final result = await showDialog<String>(
+- ok · variable · L3456-L3460 — final ok = await _apiService.updateCameraDismissedNote(
+- mark · variable · L3475-L3475 — final mark = _cameraMarkOf(camera);
+- isMarked · variable · L3476-L3476 — final isMarked = mark != null;
+- isDismissed · variable · L3477-L3477 — final isDismissed = mark?.type == 6;
+- isType12 · variable · L3478-L3478 — final isType12 = mark?.type == 12;
+- tagText · variable · L3479-L3479 — final tagText = isDismissed ? '已废弃' : (isType12 ? '低风险可尝试' : '已标记');
+- tagColor · variable · L3480-L3480 — final tagColor = isDismissed ? Colors.grey : const Color(0xFF2E7D32);
+- noteText · variable · L3481-L3481 — final noteText = mark?.note.trim() ?? '';
+- sourceUri · variable · L3482-L3482 — final sourceUri = _cameraDetailUri(camera.href);
+- bottomInset · variable · L3483-L3483 — final bottomInset = MediaQuery.of(ctx).padding.bottom;
+- ok · variable · L3556-L3559 — final ok = await _apiService.unmarkCameraDismissed(
+- ok · variable · L3577-L3580 — final ok = await _promptEditCameraMarkNote(
+- ok · variable · L3598-L3602 — final ok = await _apiService.updateCameraDismissedNote(
+- ok · variable · L3622-L3627 — final ok = await _apiService.markCameraDismissed(
+- ok · variable · L3646-L3651 — final ok = await _apiService.markCameraDismissed(
+- nameCtrl · variable · L3669-L3669 — final nameCtrl = TextEditingController(text: place.name);
+- ok · variable · L3687-L3692 — final ok = await _apiService.saveWayPoint(
+- stops · variable · L4044-L4046 — final stops = _stopsFromSavedRoute(
+- start · variable · L4047-L4047 — final start = stops.first;
+- end · variable · L4048-L4050 — final end = stops.length >= 2
+- waypoints · variable · L4051-L4059 — final waypoints = stops.length > 2
+- summary · variable · L4060-L4064 — final summary = _savedWaypointSummary(
+- waypointNames · variable · L4154-L4156 — final waypointNames = item.waypoints
+- summary · variable · L4157-L4161 — final summary = _savedWaypointSummary(
+- stops · variable · L4883-L4883 — final stops = _buildNavStopItems();
+- item · variable · L4895-L4895 — final item = stops[index];
+- total · variable · L4896-L4896 — final total = stops.length;
+- hasEnd · variable · L4897-L4897 — final hasEnd = _navEndPlace != null;
+- isStart · variable · L4898-L4898 — final isStart = index == 0;
+- isEnd · variable · L4899-L4899 — final isEnd = hasEnd && index == total - 1;
+- isWaypoint · variable · L4900-L4900 — final isWaypoint = !isStart && !isEnd;
+- waypointIndex · variable · L4902-L4902 — final waypointIndex = index - 1;
+- suggestion · variable · L5453-L5453 — final suggestion = _suggestions[index];
+- isMyLocation · variable · L5454-L5454 — final isMyLocation = _isMyLocationSuggestion(suggestion);
+- isSearchHistory · variable · L5455-L5457 — final isSearchHistory = suggestion.address.startsWith(
+- isFavorite · variable · L5458-L5458 — final isFavorite = suggestion.address.startsWith('⭐ 保存的点位');
+- bool · variable · L5566-L5566 — final bool active = _activeTab == tab;
+- Widget · variable · L5610-L5615 — final Widget panel = switch (_activeTab)
+- canShowCruiseButton · variable · L5625-L5627 — final canShowCruiseButton =
+- isStandaloneTab · variable · L5628-L5631 — final isStandaloneTab =
+- bottomInset · variable · L5645-L5645 — final bottomInset = MediaQuery.of(context).padding.bottom;
+- navBarHeight · variable · L5646-L5646 — final navBarHeight = 72.0 + bottomInset + 8;
+- idx · variable · L5749-L5749 — final idx = entry.key;
+- cam · variable · L5750-L5750 — final cam = entry.value;
+- isUnavoidable · variable · L5751-L5753 — final isUnavoidable = _unavoidableCameraIndices.contains(
+- mark · variable · L5754-L5754 — final mark = _cameraMarkOf(cam);
+- isDismissed · variable · L5755-L5755 — final isDismissed = mark?.type == 6;
+- isType12 · variable · L5756-L5756 — final isType12 = mark?.type == 12;

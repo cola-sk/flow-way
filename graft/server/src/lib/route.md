@@ -1,0 +1,44 @@
+# server/src/lib/route.ts
+
+- AvoidAlgorithmVersion · type · L18-L20 — type AvoidAlgorithmVersion = | typeof AVOID_ALGORITHM_V1_0 | typeof AVOID_ALGORITHM_V1_0_BETA_1;
+- normalizeAvoidAlgorithmVersion · function · L22-L32 — function normalizeAvoidAlgorithmVersion( value: unknown ): AvoidAlgorithmVersion
+- TencentApiRequestContext · type · L34-L39 — type TencentApiRequestContext = { usedCalls: number; maxCalls: number; rateLimitRetries: number; maxRateLimitRetries: number; };
+- createRoutePlanningAbortedError · function · L41-L45 — function createRoutePlanningAbortedError(): Error
+- isRoutePlanningAbortedError · function · L47-L55 — function isRoutePlanningAbortedError(error: unknown): boolean
+- throwIfRoutePlanningAborted · function · L57-L61 — function throwIfRoutePlanningAborted(signal?: AbortSignal): void
+- delayWithAbort · function · L63-L87 — async function delayWithAbort(ms: number, signal?: AbortSignal): Promise<void>
+- onAbort · function · L79-L83 — onAbort = ()
+- waitTencentRequestSlot · function · L89-L96 — async function waitTencentRequestSlot(signal?: AbortSignal): Promise<void>
+- createTencentApiRequestContext · function · L98-L105 — function createTencentApiRequestContext(): TencentApiRequestContext
+- consumeTencentApiQuota · function · L107-L115 — function consumeTencentApiQuota(context?: TencentApiRequestContext): void
+- calculateDistance · function · L121-L133 — function calculateDistance(lat1: number, lng1: number, lat2: number, lng2: number): number
+- toRad · function · L135-L137 — function toRad(deg: number): number
+- calculateBearing · function · L142-L154 — function calculateBearing(from: RoutePoint, to: RoutePoint): number
+- angleGapDeg · function · L156-L160 — function angleGapDeg(a: number, b: number): number
+- getRouteBearingNearIndex · function · L162-L170 — function getRouteBearingNearIndex(points: RoutePoint[], centerIdx: number): number | null
+- getCameraBearingsFromName · function · L172-L190 — function getCameraBearingsFromName(name: string): number[] | null
+- findCamerasNearRoute · function · L192-L306 — function findCamerasNearRoute( polylinePoints: RoutePoint[], cameras: Camera[], threshold: number = 40 ): number[]
+- decodeTencentPolyline · function · L312-L324 — function decodeTencentPolyline(polyline: number[]): RoutePoint[]
+- callTencentDrivingAPI · function · L332-L382 — async function callTencentDrivingAPI( start: Coordinate, end: Coordinate, alternatives = false, waypoints?: Coordinate[], avoidPolygons?: string[], requestContext?: TencentApiRequestContext, signal?: AbortSignal ): Promise<Array<{ points: RoutePoint[]; distance: number; duration: number }>>
+- computePerpendicularOffsets · function · L388-L446 — function computePerpendicularOffsets( routePoints: RoutePoint[], cameraLat: number, cameraLng: number, offsetMeters: number = 350 ): { left: Coordinate; right: Coordinate }
+- generateFallbackRoute · function · L451-L462 — function generateFallbackRoute(start: Coordinate, end: Coordinate): RoutePoint[]
+- EvaluatedAvoidRoute · type · L467-L473 — type EvaluatedAvoidRoute = { points: RoutePoint[]; distance: number; duration: number; cameraIndices: number[]; steps?: any[]; };
+- AvoidRouteStepState · type · L475-L475 — type AvoidRouteStepState = EvaluatedAvoidRoute;
+- AvoidRouteEvaluation · type · L487-L493 — type AvoidRouteEvaluation = { points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number; steps?: any[]; };
+- pickBestRouteFromCandidates · function · L495-L517 — function pickBestRouteFromCandidates( routes: Array<{ points: RoutePoint[]; distance: number; duration: number }>, cameras: Camera[] ): AvoidRouteEvaluation | null
+- findNearestRoutePointIndex · function · L519-L533 — function findNearestRoutePointIndex(points: RoutePoint[], lat: number, lng: number): number
+- pickBetterAvoidRoute · function · L535-L573 — function pickBetterAvoidRoute( previousBest: AvoidRouteStepState | undefined, current: AvoidRouteStepState, anchorDistance: number ): AvoidRouteStepState
+- buildAvoidWaypoints · function · L575-L606 — function buildAvoidWaypoints( best: AvoidRouteStepState, cameras: Camera[], iteration: number ): Coordinate[]
+- buildAvoidPolygonsByCameraIndices · function · L608-L619 — function buildAvoidPolygonsByCameraIndices( cameraIndices: Iterable<number>, cameras: Camera[], radius: number ): string[]
+- buildGuidedHelperWaypoint · function · L621-L661 — function buildGuidedHelperWaypoint( route: AvoidRouteEvaluation, cameras: Camera[], attempt: number ): { waypoint: Coordinate; focusCameraIndex: number } | null
+- tryGuidedHelperRoute · function · L663-L764 — async function tryGuidedHelperRoute( start: Coordinate, end: Coordinate, cameras: Camera[], baseAvoidCameraIds: Set<number>, currentBest: AvoidRouteEvaluation, attempt: number, polygonRadius: number, requestContext?: TencentApiRequestContext, signal?: AbortSignal ): Promise<AvoidRouteEvaluation | null>
+- buildSplitHelperWaypoints · function · L766-L801 — function buildSplitHelperWaypoints( route: AvoidRouteEvaluation, cameras: Camera[] ): Coordinate[]
+- mergeSplitLegRoutes · function · L803-L830 — function mergeSplitLegRoutes( firstLeg: AvoidRouteEvaluation, secondLeg: AvoidRouteEvaluation ): AvoidRouteEvaluation
+- planAvoidCamerasRouteStep · function · L832-L878 — async function planAvoidCamerasRouteStep( start: Coordinate, end: Coordinate, cameras: Camera[], iteration: number, best?: AvoidRouteStepState, anchorDistance?: number, signal?: AbortSignal ): Promise<{ current: AvoidRouteStepState; best: AvoidRouteStepState; done: boolean; anchorDistance: number }>
+- planRoute · function · L883-L900 — async function planRoute( start: Coordinate, end: Coordinate, signal?: AbortSignal ): Promise<{ points: RoutePoint[]; distance: number; duration: number; steps?: any[] }>
+- sampleKeyPointsFromPolyline · function · L915-L927 — function sampleKeyPointsFromPolyline(polyline: RoutePoint[], count: number): RoutePoint[]
+- buildAvoidPolygonAroundPoint · function · L932-L934 — function buildAvoidPolygonAroundPoint(lat: number, lng: number, radius: number): string
+- generateDiversificationWaypoint · function · L939-L965 — function generateDiversificationWaypoint( start: Coordinate, end: Coordinate, attempt: number ): Coordinate
+- planAvoidCamerasRoute · function · L967-L1253 — async function planAvoidCamerasRoute( start: Coordinate, end: Coordinate, cameras: Camera[], splitAssistDepth = 0, requestContext?: TencentApiRequestContext, signal?: AbortSignal, excludePolylines?: RoutePoint[][] ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number; steps?: any[] }>
+- planAvoidCamerasRouteByVersion · function · L1255-L1271 — async function planAvoidCamerasRouteByVersion( start: Coordinate, end: Coordinate, cameras: Camera[], algorithmVersion: AvoidAlgorithmVersion, splitAssistDepth = 0, requestContext?: TencentApiRequestContext, signal?: AbortSignal, excludePolylines?: RoutePoint[][] ): Promise<{ points: RoutePoint[]; cameraIndices: number[]; distance: number; duration: number }>
+- createRoute · function · L1277-L1304 — function createRoute( start: Coordinate, end: Coordinate, polylinePoints: RoutePoint[], cameraIndices: number[], avoidCameras: boolean, distanceMeters?: number, durationSeconds?: number, avoidAlgorithmVersion?: AvoidAlgorithmVersion, steps?: any[] ): Route
