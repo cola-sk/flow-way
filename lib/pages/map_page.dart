@@ -3944,519 +3944,488 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   Widget _buildSavedPanel({bool standalone = false}) {
+    final Widget content = _loadingSaved
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(18),
+              child: CircularProgressIndicator(color: _primary),
+            ),
+          )
+        : (_savedError != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _savedError!,
+                      style: const TextStyle(
+                        color: Color(0xFFBA1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: _loadSavedData,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primary,
+                      ),
+                      child: const Text('重试加载'),
+                    ),
+                  ],
+                )
+              : (_savedRoutes.isEmpty &&
+                        _savedRoutePlans.isEmpty &&
+                        _wayPoints.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(18),
+                          child: Text(
+                            '暂无保存内容\n先在导航页点击“保存线路 / 保存点位”',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text(
+                                  '已保存',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: _onSurface,
+                                  ),
+                                ),
+                                const Spacer(),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                  ),
+                                  onPressed: () =>
+                                      _loadSavedData(silent: true),
+                                ),
+                              ],
+                            ),
+                            if (_savedRoutes.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              const Text(
+                                '线路',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ..._savedRoutes.map((item) {
+                                final stops = _stopsFromSavedRoute(
+                                  item,
+                                );
+                                final start = stops.first;
+                                final end = stops.length >= 2
+                                    ? stops.last
+                                    : start;
+                                final waypoints = stops.length > 2
+                                    ? stops
+                                          .sublist(
+                                            1,
+                                            stops.length - 1,
+                                          )
+                                          .map((e) => e.name)
+                                          .toList()
+                                    : <String>[];
+                                final summary = _savedWaypointSummary(
+                                  startName: start.name,
+                                  endName: end.name,
+                                  waypointNames: waypoints,
+                                );
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(
+                                    bottom: 6,
+                                  ),
+                                  child: _buildNavRow(
+                                    icon: Icons.alt_route_rounded,
+                                    iconColor: _primary,
+                                    label: item.name,
+                                    subtitle: summary,
+                                    isPlaceholder: false,
+                                    onTap: () =>
+                                        _applySavedRouteToNavigation(
+                                          item,
+                                        ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints.tightFor(
+                                                width: 26,
+                                                height: 26,
+                                              ),
+                                          visualDensity:
+                                              VisualDensity.compact,
+                                          splashRadius: 16,
+                                          icon: const Icon(
+                                            Icons.visibility_outlined,
+                                            size: 15,
+                                            color: _onSurfaceVariant,
+                                          ),
+                                          onPressed: () =>
+                                              _showSavedRouteDetail(
+                                                item,
+                                              ),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        IconButton(
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints.tightFor(
+                                                width: 26,
+                                                height: 26,
+                                              ),
+                                          visualDensity:
+                                              VisualDensity.compact,
+                                          splashRadius: 16,
+                                          icon: const Icon(
+                                            Icons
+                                                .delete_outline_rounded,
+                                            size: 15,
+                                            color: Color(0xFFBA1A1A),
+                                          ),
+                                          onPressed: () =>
+                                              _deleteSavedRoute(item),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                            if (_savedRoutePlans.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                '起终点与途径点方案',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ..._savedRoutePlans.map((item) {
+                                final waypointNames = item.waypoints
+                                    .map((e) => e.name)
+                                    .toList();
+                                final summary = _savedWaypointSummary(
+                                  startName: item.start.name,
+                                  endName: item.end.name,
+                                  waypointNames: waypointNames,
+                                );
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(
+                                    bottom: 6,
+                                  ),
+                                  child: _buildNavRow(
+                                    icon: Icons
+                                        .playlist_add_check_circle_outlined,
+                                    iconColor: _secondary,
+                                    label: item.name,
+                                    subtitle: summary,
+                                    isPlaceholder: false,
+                                    onTap: () =>
+                                        _applySavedRoutePlanToNavigation(
+                                          item,
+                                        ),
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints(),
+                                          icon: const Icon(
+                                            Icons.visibility_outlined,
+                                            size: 16,
+                                            color: _onSurfaceVariant,
+                                          ),
+                                          onPressed: () =>
+                                              _showSavedRoutePlanDetail(
+                                                item,
+                                              ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints(),
+                                          icon: const Icon(
+                                            Icons
+                                                .delete_outline_rounded,
+                                            size: 16,
+                                            color: Color(0xFFBA1A1A),
+                                          ),
+                                          onPressed: () =>
+                                              _deleteSavedRoutePlan(
+                                                item,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                            if (_wayPoints.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                '点位',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _onSurfaceVariant,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              ..._wayPoints.map((item) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(
+                                    bottom: 6,
+                                  ),
+                                  child: _buildNavRow(
+                                    icon: Icons.bookmark,
+                                    iconColor: Colors.amber,
+                                    label: item.name,
+                                    subtitle:
+                                        '${item.location.latitude.toStringAsFixed(6)}, ${item.location.longitude.toStringAsFixed(6)}',
+                                    isPlaceholder: false,
+                                    onTap: () {
+                                      setState(
+                                        () => _activeTab =
+                                            _BottomTab.explore,
+                                      );
+                                      _mapController.move(
+                                        item.location,
+                                        16,
+                                      );
+                                      _showPlaceActions(
+                                        PlaceResult(
+                                          name: item.name,
+                                          location: item.location,
+                                          address: '收藏点',
+                                        ),
+                                      );
+                                    },
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints(),
+                                          icon: const Icon(
+                                            Icons
+                                                .delete_outline_rounded,
+                                            size: 16,
+                                            color: Color(0xFFBA1A1A),
+                                          ),
+                                          onPressed: () =>
+                                              _deleteWayPoint(item),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
+                      )));
+
+    final panel = Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, standalone ? 8 : 0),
+      child: _buildGlassPanel(
+        borderRadius: BorderRadius.circular(24),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: standalone
+            ? content
+            : ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 430),
+                child: content,
+              ),
+      ),
+    );
+
+    if (standalone) return panel;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: _buildGlassPanel(
-            borderRadius: BorderRadius.circular(24),
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: standalone
-                    ? MediaQuery.of(context).size.height - 140
-                    : 430,
-              ),
-              child: _loadingSaved
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(18),
-                        child: CircularProgressIndicator(color: _primary),
-                      ),
-                    )
-                  : (_savedError != null
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _savedError!,
-                                style: const TextStyle(
-                                  color: Color(0xFFBA1A1A),
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              FilledButton(
-                                onPressed: _loadSavedData,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _primary,
-                                ),
-                                child: const Text('重试加载'),
-                              ),
-                            ],
-                          )
-                        : (_savedRoutes.isEmpty &&
-                                  _savedRoutePlans.isEmpty &&
-                                  _wayPoints.isEmpty
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(18),
-                                    child: Text(
-                                      '暂无保存内容\n先在导航页点击“保存线路 / 保存点位”',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: _onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ),
-                                )
-                              : SingleChildScrollView(
-                                  padding: EdgeInsets.only(
-                                    bottom: standalone ? 76 : 16,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          const Text(
-                                            '已保存',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                              color: _onSurface,
-                                            ),
-                                          ),
-                                          const Spacer(),
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.refresh_rounded,
-                                            ),
-                                            onPressed: () =>
-                                                _loadSavedData(silent: true),
-                                          ),
-                                        ],
-                                      ),
-                                      if (_savedRoutes.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        const Text(
-                                          '线路',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: _onSurfaceVariant,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        ..._savedRoutes.map((item) {
-                                          final stops = _stopsFromSavedRoute(
-                                            item,
-                                          );
-                                          final start = stops.first;
-                                          final end = stops.length >= 2
-                                              ? stops.last
-                                              : start;
-                                          final waypoints = stops.length > 2
-                                              ? stops
-                                                    .sublist(
-                                                      1,
-                                                      stops.length - 1,
-                                                    )
-                                                    .map((e) => e.name)
-                                                    .toList()
-                                              : <String>[];
-                                          final summary = _savedWaypointSummary(
-                                            startName: start.name,
-                                            endName: end.name,
-                                            waypointNames: waypoints,
-                                          );
-
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 6,
-                                            ),
-                                            child: _buildNavRow(
-                                              icon: Icons.alt_route_rounded,
-                                              iconColor: _primary,
-                                              label: item.name,
-                                              subtitle: summary,
-                                              isPlaceholder: false,
-                                              onTap: () =>
-                                                  _applySavedRouteToNavigation(
-                                                    item,
-                                                  ),
-                                              trailing: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints.tightFor(
-                                                          width: 26,
-                                                          height: 26,
-                                                        ),
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    splashRadius: 16,
-                                                    icon: const Icon(
-                                                      Icons.navigation,
-                                                      size: 15,
-                                                      color: _primary,
-                                                    ),
-                                                    onPressed: () async {
-                                                      await _openActiveNavigation(
-                                                        item.route,
-                                                        stops: item.stops
-                                                            .map(
-                                                              (
-                                                                s,
-                                                              ) => PlaceResult(
-                                                                name: s.name,
-                                                                address: '',
-                                                                location:
-                                                                    s.location,
-                                                              ),
-                                                            )
-                                                            .toList(),
-                                                      );
-                                                    },
-                                                  ),
-                                                  const SizedBox(width: 2),
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints.tightFor(
-                                                          width: 26,
-                                                          height: 26,
-                                                        ),
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    splashRadius: 16,
-                                                    icon: const Icon(
-                                                      Icons
-                                                          .delete_outline_rounded,
-                                                      size: 15,
-                                                      color: Color(0xFFBA1A1A),
-                                                    ),
-                                                    onPressed: () =>
-                                                        _deleteSavedRoute(item),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                      if (_savedRoutePlans.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        const Text(
-                                          '起终点与途径点方案',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: _onSurfaceVariant,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        ..._savedRoutePlans.map((item) {
-                                          final waypointNames = item.waypoints
-                                              .map((e) => e.name)
-                                              .toList();
-                                          final summary = _savedWaypointSummary(
-                                            startName: item.start.name,
-                                            endName: item.end.name,
-                                            waypointNames: waypointNames,
-                                          );
-
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 6,
-                                            ),
-                                            child: _buildNavRow(
-                                              icon: Icons
-                                                  .playlist_add_check_circle_outlined,
-                                              iconColor: _secondary,
-                                              label: item.name,
-                                              subtitle: summary,
-                                              isPlaceholder: false,
-                                              onTap: () =>
-                                                  _applySavedRoutePlanToNavigation(
-                                                    item,
-                                                  ),
-                                              trailing: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints(),
-                                                    icon: const Icon(
-                                                      Icons.visibility_outlined,
-                                                      size: 16,
-                                                      color: _onSurfaceVariant,
-                                                    ),
-                                                    onPressed: () =>
-                                                        _showSavedRoutePlanDetail(
-                                                          item,
-                                                        ),
-                                                  ),
-                                                  const SizedBox(width: 8),
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints(),
-                                                    icon: const Icon(
-                                                      Icons
-                                                          .delete_outline_rounded,
-                                                      size: 16,
-                                                      color: Color(0xFFBA1A1A),
-                                                    ),
-                                                    onPressed: () =>
-                                                        _deleteSavedRoutePlan(
-                                                          item,
-                                                        ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                      if (_wayPoints.isNotEmpty) ...[
-                                        const SizedBox(height: 8),
-                                        const Text(
-                                          '点位',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: _onSurfaceVariant,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        ..._wayPoints.map((item) {
-                                          return Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 6,
-                                            ),
-                                            child: _buildNavRow(
-                                              icon: Icons.bookmark,
-                                              iconColor: Colors.amber,
-                                              label: item.name,
-                                              subtitle:
-                                                  '${item.location.latitude.toStringAsFixed(6)}, ${item.location.longitude.toStringAsFixed(6)}',
-                                              isPlaceholder: false,
-                                              onTap: () {
-                                                setState(
-                                                  () => _activeTab =
-                                                      _BottomTab.explore,
-                                                );
-                                                _mapController.move(
-                                                  item.location,
-                                                  16,
-                                                );
-                                                _showPlaceActions(
-                                                  PlaceResult(
-                                                    name: item.name,
-                                                    location: item.location,
-                                                    address: '收藏点',
-                                                  ),
-                                                );
-                                              },
-                                              trailing: Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  IconButton(
-                                                    padding: EdgeInsets.zero,
-                                                    constraints:
-                                                        const BoxConstraints(),
-                                                    icon: const Icon(
-                                                      Icons
-                                                          .delete_outline_rounded,
-                                                      size: 16,
-                                                      color: Color(0xFFBA1A1A),
-                                                    ),
-                                                    onPressed: () =>
-                                                        _deleteWayPoint(item),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        }),
-                                      ],
-                                    ],
-                                  ),
-                                ))),
-            ),
-          ),
-        ),
-      ],
+      children: [panel],
     );
   }
 
   Widget _buildRecentPanel({bool standalone = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: _buildGlassPanel(
-            borderRadius: BorderRadius.circular(24),
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: standalone
-                    ? MediaQuery.of(context).size.height - 140
-                    : 430,
-              ),
-              child: _loadingRecent
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(18),
-                        child: CircularProgressIndicator(color: _primary),
+    final Widget content = _loadingRecent
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(18),
+              child: CircularProgressIndicator(color: _primary),
+            ),
+          )
+        : (_recentError != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _recentError!,
+                      style: const TextStyle(
+                        color: Color(0xFFBA1A1A),
                       ),
-                    )
-                  : (_recentError != null
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _recentError!,
-                                style: const TextStyle(
-                                  color: Color(0xFFBA1A1A),
+                    ),
+                    const SizedBox(height: 8),
+                    FilledButton(
+                      onPressed: _loadRecentData,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primary,
+                      ),
+                      child: const Text('重试加载'),
+                    ),
+                  ],
+                )
+              : (_recentNavigations.isEmpty
+                    ? const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(18),
+                          child: Text(
+                            '暂无最近记录\n开始导航或应用保存项后会自动记录',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      )
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Text(
+                                  '最近记录',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                    color: _onSurface,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 8),
-                              FilledButton(
-                                onPressed: _loadRecentData,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: _primary,
+                                const Spacer(),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.refresh_rounded,
+                                  ),
+                                  onPressed: () =>
+                                      _loadRecentData(silent: true),
                                 ),
-                                child: const Text('重试加载'),
-                              ),
-                            ],
-                          )
-                        : (_recentNavigations.isEmpty
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(18),
-                                    child: Text(
-                                      '暂无最近记录\n开始导航或应用保存项后会自动记录',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: _onSurfaceVariant,
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            ..._recentNavigations.map(
+                              (item) => Padding(
+                                padding: const EdgeInsets.only(
+                                  bottom: 6,
+                                ),
+                                child: _buildNavRow(
+                                  icon: Icons.history_rounded,
+                                  iconColor: _secondary,
+                                  label:
+                                      '${item.name} · ${_formatRecentCreatedAt(item.createdAt)}',
+                                  isPlaceholder: false,
+                                  onTap: () =>
+                                      _applyRecentNavigationToNavigation(
+                                        item,
                                       ),
-                                    ),
-                                  ),
-                                )
-                              : SingleChildScrollView(
-                                  padding: EdgeInsets.only(
-                                    bottom: standalone ? 76 : 16,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                  trailing: Row(
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Row(
-                                        children: [
-                                          const Text(
-                                            '最近记录',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                              color: _onSurface,
-                                            ),
-                                          ),
-                                          const Spacer(),
-                                          IconButton(
-                                            icon: const Icon(
-                                              Icons.refresh_rounded,
-                                            ),
-                                            onPressed: () =>
-                                                _loadRecentData(silent: true),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 6),
-                                      ..._recentNavigations.map(
-                                        (item) => Padding(
-                                          padding: const EdgeInsets.only(
-                                            bottom: 6,
-                                          ),
-                                          child: _buildNavRow(
-                                            icon: Icons.history_rounded,
-                                            iconColor: _secondary,
-                                            label:
-                                                '${item.name} · ${_formatRecentCreatedAt(item.createdAt)}',
-                                            isPlaceholder: false,
-                                            onTap: () =>
-                                                _applyRecentNavigationToNavigation(
-                                                  item,
-                                                ),
-                                            trailing: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                IconButton(
-                                                  padding: EdgeInsets.zero,
-                                                  constraints:
-                                                      const BoxConstraints(),
-                                                  icon: const Icon(
-                                                    Icons.visibility_outlined,
-                                                    size: 16,
-                                                    color: _onSurfaceVariant,
-                                                  ),
-                                                  onPressed: () =>
-                                                      _showRecentNavigationDetail(
-                                                        item,
-                                                      ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                IconButton(
-                                                  padding: EdgeInsets.zero,
-                                                  constraints:
-                                                      const BoxConstraints(),
-                                                  icon: const Icon(
-                                                    Icons
-                                                        .delete_outline_rounded,
-                                                    size: 16,
-                                                    color: Color(0xFFBA1A1A),
-                                                  ),
-                                                  onPressed: () =>
-                                                      _deleteRecentNavigation(
-                                                        item,
-                                                      ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints(),
+                                        icon: const Icon(
+                                          Icons.visibility_outlined,
+                                          size: 16,
+                                          color: _onSurfaceVariant,
                                         ),
+                                        onPressed: () =>
+                                            _showRecentNavigationDetail(
+                                              item,
+                                            ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints:
+                                            const BoxConstraints(),
+                                        icon: const Icon(
+                                          Icons
+                                              .delete_outline_rounded,
+                                          size: 16,
+                                          color: Color(0xFFBA1A1A),
+                                        ),
+                                        onPressed: () =>
+                                            _deleteRecentNavigation(
+                                              item,
+                                            ),
                                       ),
                                     ],
                                   ),
-                                ))),
-            ),
-          ),
-        ),
-      ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )));
+
+    final panel = Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, standalone ? 8 : 0),
+      child: _buildGlassPanel(
+        borderRadius: BorderRadius.circular(24),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: standalone
+            ? content
+            : ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 430),
+                child: content,
+              ),
+      ),
+    );
+
+    if (standalone) return panel;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [panel],
     );
   }
 
   Widget _buildSettingsPanel({bool standalone = false}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: _buildGlassPanel(
-            borderRadius: BorderRadius.circular(24),
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: standalone
-                    ? MediaQuery.of(context).size.height - 140
-                    : 430,
-              ),
-              child: SingleChildScrollView(
-                padding: EdgeInsets.only(bottom: standalone ? 76 : 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+    final Widget content = SingleChildScrollView(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
                     const Text(
                       '设置',
                       style: TextStyle(
@@ -4807,11 +4776,27 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
+              );
+
+    final panel = Padding(
+      padding: EdgeInsets.fromLTRB(16, 8, 16, standalone ? 8 : 0),
+      child: _buildGlassPanel(
+        borderRadius: BorderRadius.circular(24),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: standalone
+            ? content
+            : ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 430),
+                child: content,
               ),
-            ),
-          ),
-        ),
-      ],
+      ),
+    );
+
+    if (standalone) return panel;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [panel],
     );
   }
 
@@ -5650,9 +5635,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
     return Container(
       color: _surface,
-      // Scaffold 的 bottomNavigationBar 已经单独处理底部安全区；
-      // 这里不要再次添加 bottom padding，避免设置页底部溢出。
-      child: SafeArea(bottom: false, child: panel),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Expanded(child: panel),
+          ],
+        ),
+      ),
     );
   }
 

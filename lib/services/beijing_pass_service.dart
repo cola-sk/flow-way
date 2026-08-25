@@ -347,6 +347,8 @@ class BeijingPassService {
     required BeijingPassConfig config,
     required DateTime applyDate,
     int applyDays = 7,
+    String? applyIdOld,
+    String? vId,
   }) async {
     if (!config.isTokenConfigured) {
       return BeijingPassApplyResult.failure('未配置 Token，无法提交申请');
@@ -363,21 +365,33 @@ class BeijingPassService {
     final applyEndDateStr =
         '${applyEndDate.year.toString().padLeft(4, '0')}-${applyEndDate.month.toString().padLeft(2, '0')}-${applyEndDate.day.toString().padLeft(2, '0')}';
 
-    // 字段名以 stateList 返回的北京交警字段为准；保留原字段用于兼容旧接口。
+    final effectiveVId =
+        (vId != null && vId.isNotEmpty) ? vId : config.carId;
+    final inBjAddress = config.inBeijingAddress.trim().isNotEmpty
+        ? config.inBeijingAddress.trim()
+        : '昌平北站';
+
+    // 字段名以 stateList / insertApplyRecord 官方交警接口为准
     final payload = {
       'hphm': config.licensePlate,
       if (config.plateType.isNotEmpty) 'hpzl': config.plateType,
-      'vId': config.carId,
+      'vId': effectiveVId,
       'jjzzl': config.passType.officialCode,
+      if (applyIdOld != null && applyIdOld.isNotEmpty) 'applyIdOld': applyIdOld,
       'sfzj': config.isInBeijing ? '1' : '0',
-      if (config.isInBeijing) 'zjxxdz': config.inBeijingAddress,
+      'zjxxdz': inBjAddress,
+      'xxdz': inBjAddress,
+      // 社区地址经纬度（高德+百度坐标：昌平北站）
+      'sqdzgdjd': '116.231525',
+      'sqdzgdwd': '40.231452',
+      'sqdzbdjd': '116.237936',
+      'sqdzbdwd': '40.237461',
       'txrxx': const <Object>[],
-      // 参考官方小程序续办请求：当前页面暂不提供目的地/路况编码选择，使用默认“其它/其他道路”。
       'jjdq': '010',
       'jjmd': '06',
       'jjlk': '00606',
-      'jjmdmc': '其它',
-      'jjlkmc': '其他道路',
+      'jjmdmc': config.destination.isNotEmpty ? config.destination : '其它',
+      'jjlkmc': config.entranceName.isNotEmpty ? config.entranceName : '其他道路',
       'jjrq': applyDateStr,
       'yxqs': applyDateStr,
       'yxqz': applyEndDateStr,
@@ -387,10 +401,11 @@ class BeijingPassService {
       'clsbdh': config.vin,
       'jsrxm': config.driverName,
       'jszh': config.driverLicence,
+      // 兼容旧接口字段
       'applyType': config.passType.code,
       'applyTime': applyDateStr,
       'applyDays': applyDays.toString(),
-      'carId': config.carId,
+      'carId': effectiveVId,
       'licensePlate': config.licensePlate,
       'carModel': config.carModel,
       'engineNo': config.engineNo,

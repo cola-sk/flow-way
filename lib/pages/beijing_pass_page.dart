@@ -25,6 +25,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   String _plateType = '';
   bool _supplementExpanded = true;
   bool _preferencesExpanded = false;
+  bool _isEditingToken = false;
   final Map<String, BeijingPassVehicleSupplement> _vehicleSupplements = {};
 
   // Controllers
@@ -79,6 +80,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     _config = cfg;
 
     _tokenController.text = cfg.token;
+    _isEditingToken = cfg.token.trim().isEmpty;
     _plateController.text = cfg.licensePlate;
     _plateType = cfg.plateType;
     _carModelController.text = cfg.carModel;
@@ -113,6 +115,18 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
 
   void _updateTokenExpiry(String token) {
     _tokenExpiry = BeijingPassService.parseTokenExpiry(token);
+  }
+
+  String _maskToken(String token) {
+    final t = token.trim();
+    if (t.isEmpty) return '未配置';
+    if (t.length <= 16) {
+      final len = (t.length / 3).floor();
+      return '${t.substring(0, len)}****${t.substring(t.length - len)}';
+    }
+    final prefix = t.substring(0, 10);
+    final suffix = t.substring(t.length - 6);
+    return '$prefix****$suffix';
   }
 
   BeijingPassVehicle? get _selectedVehicle {
@@ -198,6 +212,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   }
 
   Future<void> _saveConfig() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _savingConfig = true);
     final updated = _buildCurrentConfigFromForm();
     final ok = await _service.saveConfig(updated);
@@ -205,6 +220,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     setState(() {
       _config = updated;
       _savingConfig = false;
+      if (updated.token.isNotEmpty) {
+        _isEditingToken = false;
+      }
     });
     _updateTokenExpiry(updated.token);
 
@@ -230,6 +248,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   }
 
   Future<void> _refreshStatus({bool silent = false}) async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final currentCfg = _buildCurrentConfigFromForm();
     if (!currentCfg.isTokenConfigured) {
       if (!silent && mounted) {
@@ -275,6 +294,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   }
 
   Future<void> _submitRenewPass() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final cfg = _buildCurrentConfigFromForm();
     if (!cfg.isTokenConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -313,6 +333,14 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       return;
     }
 
+    final isInsideSixth = cfg.passType == BeijingPassType.insideSixth;
+    final vehicle = _selectedVehicle;
+    final latestRecord = vehicle?.records.isNotEmpty == true
+        ? vehicle!.records.first
+        : _lastFetchResult?.activeRecord;
+    final applyIdOld = latestRecord?.id;
+    final vId = vehicle?.id.isNotEmpty == true ? vehicle!.id : cfg.carId;
+
     // 确认弹窗
     final applyDateStr =
         '${_selectedApplyStartDate.year}-${_selectedApplyStartDate.month.toString().padLeft(2, '0')}-${_selectedApplyStartDate.day.toString().padLeft(2, '0')}';
@@ -326,8 +354,70 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
           children: [
             Text('车牌号码：${cfg.licensePlate}'),
             const SizedBox(height: 4),
-            Text('证件类型：${cfg.passType.label}'),
-            const SizedBox(height: 4),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('证件类型：'),
+                Expanded(
+                  child: Text(
+                    cfg.passType.label,
+                    style: TextStyle(
+                      color: isInsideSixth ? Colors.red.shade700 : null,
+                      fontWeight:
+                          isInsideSixth ? FontWeight.bold : FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (isInsideSixth) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  border: Border.all(color: Colors.red.shade400, width: 1.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      color: Colors.red.shade700,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '⚠️ 正在办理「六环内进京证」',
+                            style: TextStyle(
+                              color: Colors.red.shade800,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '六环内进京证每辆外埠车每年最多仅可办理 12 次（每次有效期 7 天），请确认确需消耗六环内指标！',
+                            style: TextStyle(
+                              color: Colors.red.shade900,
+                              fontSize: 11,
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 6),
             Text('生效日期：$applyDateStr (7天)'),
             const SizedBox(height: 4),
             Text('进京道口：${cfg.entranceName}'),
@@ -346,8 +436,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
             child: const Text('取消'),
           ),
           FilledButton(
+            style: isInsideSixth
+                ? FilledButton.styleFrom(
+                    backgroundColor: Colors.red.shade700,
+                  )
+                : null,
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('确认提交'),
+            child: Text(isInsideSixth ? '确认办理六环内' : '确认提交'),
           ),
         ],
       ),
@@ -355,6 +450,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
 
     if (confirm != true || !mounted) return;
 
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _submittingApply = true);
     // 先静默保存最新配置，再发起提交请求。
     await _saveConfigBeforeSubmit(cfg);
@@ -363,9 +459,12 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       config: cfg,
       applyDate: _selectedApplyStartDate,
       applyDays: 7,
+      applyIdOld: applyIdOld,
+      vId: vId,
     );
 
     if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _submittingApply = false);
 
     if (result.success) {
@@ -378,6 +477,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
           actions: [
             FilledButton(
               onPressed: () {
+                FocusManager.instance.primaryFocus?.unfocus();
                 Navigator.of(ctx).pop();
                 _refreshStatus(silent: true);
               },
@@ -395,7 +495,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
           content: Text(result.message),
           actions: [
             FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(),
+              onPressed: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                Navigator.of(ctx).pop();
+              },
               child: const Text('关闭'),
             ),
           ],
@@ -451,7 +554,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
           IconButton(
             tooltip: '抓包教程与帮助',
             icon: const Icon(Icons.help_outline_rounded),
-            onPressed: _showTokenHelpDialog,
+            onPressed: () {
+              FocusManager.instance.primaryFocus?.unfocus();
+              _showTokenHelpDialog();
+            },
           ),
           IconButton(
             tooltip: '刷新状态',
@@ -466,28 +572,35 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
           ),
         ],
       ),
-      body: _loadingConfig
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 20),
-              children: [
-                _buildTokenSection(theme),
-                const SizedBox(height: 10),
-                _buildVehicleSection(theme),
-                const SizedBox(height: 10),
-                _buildStatusCard(theme),
-                const SizedBox(height: 10),
-                _buildCarProfileSection(theme),
-                const SizedBox(height: 10),
-                _buildApplyPreferencesSection(theme),
-                const SizedBox(height: 10),
-                _buildSubmitSection(theme),
-                if (_lastFetchResult?.records.isNotEmpty == true) ...[
-                  const SizedBox(height: 10),
-                  _buildHistoryRecordsSection(theme),
-                ],
-              ],
-            ),
+      body: SafeArea(
+        top: false,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          child: _loadingConfig
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(12, 6, 12, 24),
+                  children: [
+                    _buildTokenSection(theme),
+                    const SizedBox(height: 10),
+                    _buildVehicleSection(theme),
+                    const SizedBox(height: 10),
+                    _buildStatusCard(theme),
+                    const SizedBox(height: 10),
+                    _buildCarProfileSection(theme),
+                    const SizedBox(height: 10),
+                    _buildApplyPreferencesSection(theme),
+                    const SizedBox(height: 10),
+                    _buildSubmitSection(theme),
+                    if (_lastFetchResult?.records.isNotEmpty == true) ...[
+                      const SizedBox(height: 10),
+                      _buildHistoryRecordsSection(theme),
+                    ],
+                  ],
+                ),
+        ),
+      ),
     );
   }
 
@@ -643,6 +756,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
 
   /// Token 配置区域
   Widget _buildTokenSection(ThemeData theme) {
+    final token = _tokenController.text.trim();
+    final showMasked = !_isEditingToken && token.isNotEmpty;
+
     return Card(
       elevation: 0.5,
       shape: RoundedRectangleBorder(
@@ -652,7 +768,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -660,7 +776,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
               children: [
                 Icon(
                   Icons.vpn_key_outlined,
-                  size: 18,
+                  size: 16,
                   color: theme.colorScheme.primary,
                 ),
                 const SizedBox(width: 6),
@@ -668,64 +784,167 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   '北京交警 Token 凭证',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    fontSize: 13,
                   ),
                 ),
                 const Spacer(),
-                TextButton.icon(
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                if (showMasked)
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    onPressed: () => setState(() => _isEditingToken = true),
+                    icon: const Icon(Icons.edit_outlined, size: 13),
+                    label: const Text('修改', style: TextStyle(fontSize: 11)),
+                  )
+                else
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    onPressed: () async {
+                      final data =
+                          await Clipboard.getData(Clipboard.kTextPlain);
+                      if (!mounted) return;
+                      if (data?.text != null &&
+                          data!.text!.trim().isNotEmpty) {
+                        _tokenController.text = data.text!.trim();
+                        _updateTokenExpiry(data.text!.trim());
+                        setState(() => _isEditingToken = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('已从剪贴板粘贴 Token'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.paste_rounded, size: 13),
+                    label: const Text('粘贴', style: TextStyle(fontSize: 11)),
                   ),
-                  onPressed: () async {
-                    final data = await Clipboard.getData(Clipboard.kTextPlain);
-                    if (!mounted) return;
-                    if (data?.text != null && data!.text!.trim().isNotEmpty) {
-                      _tokenController.text = data.text!.trim();
-                      _updateTokenExpiry(data.text!.trim());
-                      setState(() {});
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('已从剪贴板粘贴 Token'),
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.paste_rounded, size: 14),
-                  label: const Text('粘贴', style: TextStyle(fontSize: 12)),
-                ),
               ],
             ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _tokenController,
-              maxLines: 2,
-              style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: '填入 Authorization: Bearer xxx 或直接粘贴 Token',
-                hintStyle: const TextStyle(fontSize: 11),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
+            const SizedBox(height: 4),
+            if (showMasked)
+              Container(
+                padding: const EdgeInsets.symmetric(
                   horizontal: 10,
-                  vertical: 8,
+                  vertical: 6,
                 ),
-                suffixIcon: _tokenController.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 16),
-                        padding: EdgeInsets.zero,
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () {
-                          _tokenController.clear();
-                          setState(() => _tokenExpiry = null);
-                        },
-                      )
-                    : null,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _maskToken(token),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontFamily: 'monospace',
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: token));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('已复制 Token 到剪贴板'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.copy_rounded,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () {
+                        _tokenController.clear();
+                        setState(() {
+                          _tokenExpiry = null;
+                          _isEditingToken = true;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          Icons.clear_rounded,
+                          size: 14,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              TextField(
+                controller: _tokenController,
+                maxLines: 1,
+                style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace'),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: '填入 Authorization: Bearer xxx 或直接粘贴 Token',
+                  hintStyle: const TextStyle(fontSize: 11),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_tokenController.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.check_rounded, size: 16),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          tooltip: '完成',
+                          onPressed: () {
+                            FocusManager.instance.primaryFocus?.unfocus();
+                            setState(() => _isEditingToken = false);
+                          },
+                        ),
+                      if (_tokenController.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.clear, size: 15),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            _tokenController.clear();
+                            setState(() => _tokenExpiry = null);
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+                onChanged: (val) => setState(() => _updateTokenExpiry(val)),
+                onSubmitted: (_) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                  if (_tokenController.text.trim().isNotEmpty) {
+                    setState(() => _isEditingToken = false);
+                  }
+                },
               ),
-              onChanged: (val) => setState(() => _updateTokenExpiry(val)),
-            ),
           ],
         ),
       ),
@@ -747,7 +966,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -755,7 +974,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
               children: [
                 Icon(
                   Icons.directions_car_filled_outlined,
-                  size: 18,
+                  size: 16,
                   color: theme.colorScheme.primary,
                 ),
                 const SizedBox(width: 6),
@@ -763,40 +982,41 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   '账户车辆',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    fontSize: 13,
                   ),
                 ),
                 const Spacer(),
                 TextButton.icon(
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
                   ),
                   onPressed: _queryingStatus ? null : () => _refreshStatus(),
-                  icon: const Icon(Icons.sync_rounded, size: 14),
-                  label: const Text('加载车辆', style: TextStyle(fontSize: 12)),
+                  icon: const Icon(Icons.sync_rounded, size: 13),
+                  label: const Text('加载车辆', style: TextStyle(fontSize: 11)),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             if (_tokenController.text.trim().isEmpty)
               Text(
                 '先填入 Token，再加载账户下已绑定车辆。',
-                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
               )
             else if (result == null)
               Text(
                 '点击“加载车辆”读取 Token 对应的车辆与办证状态。',
-                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
               )
             else if (!result.success)
               Text(
                 result.message,
-                style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                style: TextStyle(color: Colors.red.shade700, fontSize: 11),
               )
             else if (vehicles.isEmpty)
               Text(
                 '未查询到已绑定车辆。请确认 Token 对应的北京交警账号。',
-                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
               )
             else ...[
               DropdownButtonFormField<String>(
@@ -806,23 +1026,23 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                 decoration: InputDecoration(
                   isDense: true,
                   labelText: '当前办理车辆',
-                  labelStyle: const TextStyle(fontSize: 12),
+                  labelStyle: const TextStyle(fontSize: 11.5),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 8,
+                    horizontal: 8,
+                    vertical: 6,
                   ),
                 ),
-                style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
+                style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12.5),
                 items: vehicles
                     .map(
                       (vehicle) => DropdownMenuItem(
                         value: vehicle.id,
                         child: Text(
                           vehicle.displayName,
-                          style: const TextStyle(fontSize: 13),
+                          style: const TextStyle(fontSize: 12.5),
                         ),
                       ),
                     )
@@ -834,13 +1054,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                 },
               ),
               if (selected != null) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 Text(
                   selected.activeRecord?.isValidNow == true
                       ? '当前车辆有生效中的 ${selected.activeRecord!.passType.shortLabel}'
                       : '当前车辆暂无生效中的进京证',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11.5,
                     color: selected.activeRecord?.isValidNow == true
                         ? Colors.green.shade700
                         : theme.colorScheme.onSurfaceVariant,
@@ -866,19 +1086,19 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             InkWell(
               onTap: () =>
                   setState(() => _supplementExpanded = !_supplementExpanded),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               child: Row(
                 children: [
                   Icon(
                     Icons.badge_outlined,
-                    size: 18,
+                    size: 16,
                     color: theme.colorScheme.primary,
                   ),
                   const SizedBox(width: 6),
@@ -889,6 +1109,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                           : '办理补充资料（仅保存至当前车辆）',
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
+                        fontSize: 13,
                       ),
                     ),
                   ),
@@ -896,20 +1117,20 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     _supplementExpanded
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
-                    size: 20,
+                    size: 18,
                   ),
                 ],
               ),
             ),
             if (_supplementExpanded) ...[
               if (_selectedVehicle != null) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   '当前关联：${_selectedVehicle!.displayName}',
-                  style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                  style: theme.textTheme.bodySmall?.copyWith(fontSize: 10.5),
                 ),
               ],
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Expanded(
@@ -918,137 +1139,137 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       controller: _plateController,
                       textCapitalization: TextCapitalization.characters,
                       readOnly: _selectedVehicle != null,
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: _selectedVehicle != null
                             ? '车牌号（已选）'
                             : '车牌号 *',
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 11.5),
                         hintText: _selectedVehicle != null ? null : '如 冀A88888',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     flex: 5,
                     child: TextField(
                       controller: _carModelController,
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '车型',
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 11.5),
                         hintText: '小型普通客车',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: _engineNoController,
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '发动机号 *',
-                        labelStyle: const TextStyle(fontSize: 12),
-                        hintText: '行驶证对应发动机号',
+                        labelStyle: const TextStyle(fontSize: 11.5),
+                        hintText: '行驶证发动机号',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: TextField(
                       controller: _vinController,
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '车架号/VIN *',
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 11.5),
                         hintText: 'VIN后6位或完整',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Expanded(
                     flex: 4,
                     child: TextField(
                       controller: _driverNameController,
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '驾驶人姓名 *',
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 11.5),
                         hintText: '张三',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     flex: 6,
                     child: TextField(
                       controller: _driverLicenceController,
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '身份证/驾驶证号 *',
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 11.5),
                         hintText: '18位身份证号',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
@@ -1082,19 +1303,19 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             InkWell(
               onTap: () =>
                   setState(() => _preferencesExpanded = !_preferencesExpanded),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
               child: Row(
                 children: [
                   Icon(
                     Icons.tune_rounded,
-                    size: 18,
+                    size: 16,
                     color: theme.colorScheme.primary,
                   ),
                   const SizedBox(width: 6),
@@ -1106,6 +1327,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                           '办证偏好',
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
+                            fontSize: 13,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -1114,7 +1336,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 11,
+                            fontSize: 10.5,
                           ),
                         ),
                       ],
@@ -1124,88 +1346,88 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     _preferencesExpanded
                         ? Icons.keyboard_arrow_up_rounded
                         : Icons.keyboard_arrow_down_rounded,
-                    size: 20,
+                    size: 18,
                   ),
                 ],
               ),
             ),
             if (_preferencesExpanded) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               SwitchListTile.adaptive(
                 dense: true,
                 visualDensity: VisualDensity.compact,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('当前已在北京', style: TextStyle(fontSize: 13)),
+                title: const Text('当前已在北京', style: TextStyle(fontSize: 12.5)),
                 subtitle: Text(
                   _isInBeijing ? '将提交“已在京”' : '默认提交“未在京”',
-                  style: const TextStyle(fontSize: 11),
+                  style: const TextStyle(fontSize: 10.5),
                 ),
                 value: _isInBeijing,
                 onChanged: (value) => setState(() => _isInBeijing = value),
               ),
               if (_isInBeijing) ...[
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
                 TextField(
                   controller: _inBeijingAddressController,
-                  style: const TextStyle(fontSize: 13),
+                  style: const TextStyle(fontSize: 12.5),
                   decoration: InputDecoration(
                     isDense: true,
                     labelText: '在京详细地址 *',
-                    labelStyle: const TextStyle(fontSize: 12),
+                    labelStyle: const TextStyle(fontSize: 11.5),
                     hintText: '如 昌平区回龙观街道 xx 小区 xx 号楼',
                     hintStyle: const TextStyle(fontSize: 11),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 9,
+                      horizontal: 8,
+                      vertical: 6,
                     ),
                   ),
                 ),
               ],
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Row(
                 children: [
                   Expanded(
                     child: TextField(
                       controller: _entranceController,
                       onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '进京主要道路',
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 11.5),
                         hintText: '如 其他道路',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Expanded(
                     child: TextField(
                       controller: _destinationController,
                       onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontSize: 13),
+                      style: const TextStyle(fontSize: 12.5),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '进京目的地',
-                        labelStyle: const TextStyle(fontSize: 12),
+                        labelStyle: const TextStyle(fontSize: 11.5),
                         hintText: '如 其它',
                         hintStyle: const TextStyle(fontSize: 11),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 9,
+                          horizontal: 8,
+                          vertical: 6,
                         ),
                       ),
                     ),
@@ -1469,6 +1691,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   }
 
   Future<void> _pickApplyStartDate() async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
