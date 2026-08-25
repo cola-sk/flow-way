@@ -1,6 +1,10 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/beijing_pass_model.dart';
+import '../models/route.dart' show PlaceResult;
+import '../services/api_service.dart';
 import '../services/beijing_pass_service.dart';
 
 class BeijingPassPage extends StatefulWidget {
@@ -42,6 +46,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _inBeijingAddressController =
       TextEditingController();
+  final TextEditingController _sqdzgdjdController = TextEditingController();
+  final TextEditingController _sqdzgdwdController = TextEditingController();
+  final TextEditingController _sqdzbdjdController = TextEditingController();
+  final TextEditingController _sqdzbdwdController = TextEditingController();
   final TextEditingController _customApiBaseController =
       TextEditingController();
 
@@ -70,6 +78,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     _entranceController.dispose();
     _destinationController.dispose();
     _inBeijingAddressController.dispose();
+    _sqdzgdjdController.dispose();
+    _sqdzgdwdController.dispose();
+    _sqdzbdjdController.dispose();
+    _sqdzbdwdController.dispose();
     _customApiBaseController.dispose();
     super.dispose();
   }
@@ -95,7 +107,17 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     _destinationController.text = cfg.destination == '昌平区'
         ? '其它'
         : cfg.destination;
-    _inBeijingAddressController.text = cfg.inBeijingAddress;
+    _inBeijingAddressController.text = cfg.inBeijingAddress.isNotEmpty
+        ? cfg.inBeijingAddress
+        : '昌平北站';
+    _sqdzgdjdController.text =
+        cfg.sqdzgdjd.isNotEmpty ? cfg.sqdzgdjd : '116.231525';
+    _sqdzgdwdController.text =
+        cfg.sqdzgdwd.isNotEmpty ? cfg.sqdzgdwd : '40.231452';
+    _sqdzbdjdController.text =
+        cfg.sqdzbdjd.isNotEmpty ? cfg.sqdzbdjd : '116.237936';
+    _sqdzbdwdController.text =
+        cfg.sqdzbdwd.isNotEmpty ? cfg.sqdzbdwd : '40.237461';
     _customApiBaseController.text = cfg.customApiBase;
     _selectedPassType = cfg.passType;
     _isInBeijing = cfg.isInBeijing;
@@ -132,8 +154,16 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   BeijingPassVehicle? get _selectedVehicle {
     final vehicles = _lastFetchResult?.vehicles ?? const <BeijingPassVehicle>[];
     if (vehicles.isEmpty) return null;
+    return _preferredVehicle(vehicles);
+  }
+
+  /// 初次进入页面时优先展示当前有生效进京证的车辆；用户已手动选择后保持原选择。
+  BeijingPassVehicle _preferredVehicle(List<BeijingPassVehicle> vehicles) {
     for (final vehicle in vehicles) {
       if (vehicle.id == _selectedVehicleId) return vehicle;
+    }
+    for (final vehicle in vehicles) {
+      if (vehicle.activeRecord?.isValidNow == true) return vehicle;
     }
     return vehicles.first;
   }
@@ -187,6 +217,85 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     }
   }
 
+  /// 将 GCJ-02 (高德/腾讯) 经纬度转换为 BD-09 (百度) 经纬度
+  static (double bdLat, double bdLng) _gcj02ToBd09(
+    double gcjLat,
+    double gcjLng,
+  ) {
+    const double xPi = 3.14159265358979324 * 3000.0 / 180.0;
+    final double z =
+        sqrt(gcjLng * gcjLng + gcjLat * gcjLat) + 0.00002 * sin(gcjLat * xPi);
+    final double theta = atan2(gcjLat, gcjLng) + 0.000003 * cos(gcjLng * xPi);
+    final double bdLng = z * cos(theta) + 0.0065;
+    final double bdLat = z * sin(theta) + 0.006;
+    return (bdLat, bdLng);
+  }
+
+  /// 设置并同步位置名称与高德/百度坐标
+  void _applyLocationAndCoordinates({
+    required String name,
+    required double gcjLat,
+    required double gcjLng,
+  }) {
+    final (bdLat, bdLng) = _gcj02ToBd09(gcjLat, gcjLng);
+    setState(() {
+      _inBeijingAddressController.text = name;
+      _sqdzgdjdController.text = gcjLng.toStringAsFixed(6);
+      _sqdzgdwdController.text = gcjLat.toStringAsFixed(6);
+      _sqdzbdjdController.text = bdLng.toStringAsFixed(6);
+      _sqdzbdwdController.text = bdLat.toStringAsFixed(6);
+    });
+  }
+
+  /// 重置为默认位置（昌平北站）
+  void _resetToDefaultLocation() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _applyLocationAndCoordinates(
+      name: '昌平北站',
+      gcjLat: 40.231452,
+      gcjLng: 116.231525,
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('已重置为默认位置（昌平北站）及对应坐标'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// 唤起地点搜索弹窗
+  Future<void> _openLocationSearch(BuildContext context) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final place = await showModalBottomSheet<PlaceResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) => _BeijingPassLocationSearchModal(
+        apiService: _service.apiService,
+      ),
+    );
+
+    if (place != null && mounted) {
+      final name = place.name.isNotEmpty
+          ? place.name
+          : (place.address.isNotEmpty ? place.address : '所选位置');
+      _applyLocationAndCoordinates(
+        name: name,
+        gcjLat: place.location.latitude,
+        gcjLng: place.location.longitude,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已选中“$name”并自动更新高德/百度坐标'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   BeijingPassConfig _buildCurrentConfigFromForm() {
     _storeCurrentVehicleSupplement();
     return _config.copyWith(
@@ -204,6 +313,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       destination: _destinationController.text.trim(),
       isInBeijing: _isInBeijing,
       inBeijingAddress: _inBeijingAddressController.text.trim(),
+      sqdzgdjd: _sqdzgdjdController.text.trim(),
+      sqdzgdwd: _sqdzgdwdController.text.trim(),
+      sqdzbdjd: _sqdzbdjdController.text.trim(),
+      sqdzbdwd: _sqdzbdwdController.text.trim(),
       customApiBase: _customApiBaseController.text.trim(),
       vehicleSupplements: Map<String, BeijingPassVehicleSupplement>.from(
         _vehicleSupplements,
@@ -270,10 +383,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       _lastFetchResult = result;
       _queryingStatus = false;
       if (result.vehicles.isNotEmpty) {
-        final target = result.vehicles.firstWhere(
-          (vehicle) => vehicle.id == _selectedVehicleId,
-          orElse: () => result.vehicles.first,
-        );
+        final target = _preferredVehicle(result.vehicles);
         _selectVehicle(target);
       } else if (result.activeRecord != null) {
         _selectedApplyStartDate = result.activeRecord!.suggestedNextStartDate;
@@ -363,8 +473,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     cfg.passType.label,
                     style: TextStyle(
                       color: isInsideSixth ? Colors.red.shade700 : null,
-                      fontWeight:
-                          isInsideSixth ? FontWeight.bold : FontWeight.w600,
+                      fontWeight: isInsideSixth
+                          ? FontWeight.bold
+                          : FontWeight.w600,
                     ),
                   ),
                 ),
@@ -373,8 +484,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
             if (isInsideSixth) ...[
               const SizedBox(height: 8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.red.shade50,
                   border: Border.all(color: Colors.red.shade400, width: 1.2),
@@ -420,6 +533,16 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
             const SizedBox(height: 6),
             Text('生效日期：$applyDateStr (7天)'),
             const SizedBox(height: 4),
+            Text('进京/在京地址：${cfg.inBeijingAddress}'),
+            const SizedBox(height: 4),
+            Text(
+              '坐标：高德(${cfg.sqdzgdjd}, ${cfg.sqdzgdwd}) · 百度(${cfg.sqdzbdjd}, ${cfg.sqdzbdwd})',
+              style: TextStyle(
+                fontSize: 10.5,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 4),
             Text('进京道口：${cfg.entranceName}'),
             const SizedBox(height: 4),
             Text('目的地：${cfg.destination}'),
@@ -437,9 +560,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
           ),
           FilledButton(
             style: isInsideSixth
-                ? FilledButton.styleFrom(
-                    backgroundColor: Colors.red.shade700,
-                  )
+                ? FilledButton.styleFrom(backgroundColor: Colors.red.shade700)
                 : null,
             onPressed: () => Navigator.of(ctx).pop(true),
             child: Text(isInsideSixth ? '确认办理六环内' : '确认提交'),
@@ -805,11 +926,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
                     onPressed: () async {
-                      final data =
-                          await Clipboard.getData(Clipboard.kTextPlain);
+                      final data = await Clipboard.getData(
+                        Clipboard.kTextPlain,
+                      );
                       if (!mounted) return;
-                      if (data?.text != null &&
-                          data!.text!.trim().isNotEmpty) {
+                      if (data?.text != null && data!.text!.trim().isNotEmpty) {
                         _tokenController.text = data.text!.trim();
                         _updateTokenExpiry(data.text!.trim());
                         setState(() => _isEditingToken = false);
@@ -834,8 +955,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.35),
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.35,
+                  ),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Row(
@@ -1352,6 +1474,189 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
               ),
             ),
             if (_preferencesExpanded) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _inBeijingAddressController,
+                      onChanged: (_) => setState(() {}),
+                      style: const TextStyle(fontSize: 12.5),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        labelText: '进京/在京地址 (社区地址) *',
+                        labelStyle: const TextStyle(fontSize: 11.5),
+                        hintText: '如 昌平北站 / 望京SOHO',
+                        hintStyle: const TextStyle(fontSize: 11),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 6,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  SizedBox(
+                    height: 32,
+                    child: FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      onPressed: () => _openLocationSearch(context),
+                      icon: const Icon(Icons.search_rounded, size: 15),
+                      label: const Text(
+                        '搜索地点',
+                        style: TextStyle(fontSize: 11.5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.35,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: theme.colorScheme.outlineVariant.withValues(
+                      alpha: 0.5,
+                    ),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.my_location_rounded,
+                          size: 14,
+                          color: theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '办证经纬度（高德 / 百度）',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        InkWell(
+                          onTap: _resetToDefaultLocation,
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ),
+                            child: Text(
+                              '重置默认(昌平北站)',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _sqdzgdjdController,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: '高德经度 (sqdzgdjd)',
+                              labelStyle: const TextStyle(fontSize: 10.5),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 5,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: TextField(
+                            controller: _sqdzgdwdController,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: '高德纬度 (sqdzgdwd)',
+                              labelStyle: const TextStyle(fontSize: 10.5),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _sqdzbdjdController,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: '百度经度 (sqdzbdjd)',
+                              labelStyle: const TextStyle(fontSize: 10.5),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 5,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: TextField(
+                            controller: _sqdzbdwdController,
+                            style: const TextStyle(fontSize: 12),
+                            decoration: InputDecoration(
+                              isDense: true,
+                              labelText: '百度纬度 (sqdzbdwd)',
+                              labelStyle: const TextStyle(fontSize: 10.5),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 4),
               SwitchListTile.adaptive(
                 dense: true,
@@ -1365,28 +1670,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                 value: _isInBeijing,
                 onChanged: (value) => setState(() => _isInBeijing = value),
               ),
-              if (_isInBeijing) ...[
-                const SizedBox(height: 4),
-                TextField(
-                  controller: _inBeijingAddressController,
-                  style: const TextStyle(fontSize: 12.5),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    labelText: '在京详细地址 *',
-                    labelStyle: const TextStyle(fontSize: 11.5),
-                    hintText: '如 昌平区回龙观街道 xx 小区 xx 号楼',
-                    hintStyle: const TextStyle(fontSize: 11),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 6,
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Row(
                 children: [
                   Expanded(
@@ -1711,5 +1995,222 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
 
   String _formatDateTime(DateTime dt) {
     return '${_formatDate(dt)} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+/// 进京证位置搜索 BottomSheet 弹窗
+class _BeijingPassLocationSearchModal extends StatefulWidget {
+  final ApiService apiService;
+
+  const _BeijingPassLocationSearchModal({required this.apiService});
+
+  @override
+  State<_BeijingPassLocationSearchModal> createState() =>
+      _BeijingPassLocationSearchModalState();
+}
+
+class _BeijingPassLocationSearchModalState
+    extends State<_BeijingPassLocationSearchModal> {
+  final TextEditingController _searchController = TextEditingController();
+  List<PlaceResult> _results = [];
+  bool _searching = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _performSearch(String query) async {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _results = [];
+          _searching = false;
+          _error = null;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _searching = true;
+      _error = null;
+    });
+
+    try {
+      final list = await widget.apiService.searchPlaces(trimmed);
+      if (!mounted) return;
+      setState(() {
+        _results = list;
+        _searching = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '搜索失败，请检查网络后重试';
+        _searching = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Container(
+        height: 480,
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.search_rounded,
+                  size: 18,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  '搜索办证位置',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _searchController,
+              autofocus: true,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: '输入地点（如 昌平北站、望京SOHO、天通苑）',
+                hintStyle: const TextStyle(fontSize: 12),
+                prefixIcon: const Icon(Icons.place_outlined, size: 16),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 16),
+                        onPressed: () {
+                          _searchController.clear();
+                          _performSearch('');
+                        },
+                      )
+                    : null,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+              ),
+              onChanged: _performSearch,
+              onSubmitted: _performSearch,
+            ),
+            const SizedBox(height: 8),
+            if (_searching)
+              const Padding(
+                padding: EdgeInsets.all(32),
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            else if (_error != null)
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(color: Colors.red, fontSize: 12),
+                  ),
+                ),
+              )
+            else if (_results.isEmpty &&
+                _searchController.text.trim().isNotEmpty)
+              const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(
+                  child: Text(
+                    '未找到相关地点，请尝试其他关键词',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ),
+              )
+            else if (_results.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Text(
+                    '输入关键词搜索北京市各区地点，选择后将自动填充地址及高德/百度坐标',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: theme.colorScheme.onSurfaceVariant,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: ListView.separated(
+                  itemCount: _results.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (ctx, i) {
+                    final place = _results[i];
+                    return ListTile(
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      leading: CircleAvatar(
+                        radius: 14,
+                        backgroundColor:
+                            theme.colorScheme.primaryContainer,
+                        child: Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                      title: Text(
+                        place.name,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${place.address.isNotEmpty ? '${place.address} · ' : ''}坐标: ${place.location.longitude.toStringAsFixed(4)}, ${place.location.latitude.toStringAsFixed(4)}',
+                        style: const TextStyle(fontSize: 11),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () => Navigator.of(context).pop(place),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }

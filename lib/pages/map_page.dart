@@ -302,6 +302,25 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
   }
 
+  String _formatCrawledDate(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '--';
+
+    final parsed = DateTime.tryParse(trimmed);
+    if (parsed != null) {
+      String two(int n) => n.toString().padLeft(2, '0');
+      return '${parsed.year}/${two(parsed.month)}/${two(parsed.day)}';
+    }
+
+    final match = RegExp(
+      r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})',
+    ).firstMatch(trimmed);
+    if (match != null) {
+      return '${match.group(1)}/${match.group(2)!.padLeft(2, '0')}/${match.group(3)!.padLeft(2, '0')}';
+    }
+    return trimmed;
+  }
+
   Future<void> _refreshTokenProfile() async {
     if (!mounted) return;
     setState(() {
@@ -3958,16 +3977,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   children: [
                     Text(
                       _savedError!,
-                      style: const TextStyle(
-                        color: Color(0xFFBA1A1A),
-                      ),
+                      style: const TextStyle(color: Color(0xFFBA1A1A)),
                     ),
                     const SizedBox(height: 8),
                     FilledButton(
                       onPressed: _loadSavedData,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _primary,
-                      ),
+                      style: FilledButton.styleFrom(backgroundColor: _primary),
                       child: const Text('重试加载'),
                     ),
                   ],
@@ -3981,9 +3996,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           child: Text(
                             '暂无保存内容\n先在导航页点击“保存线路 / 保存点位”',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: _onSurfaceVariant,
-                            ),
+                            style: TextStyle(color: _onSurfaceVariant),
                           ),
                         ),
                       )
@@ -4004,11 +4017,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 ),
                                 const Spacer(),
                                 IconButton(
-                                  icon: const Icon(
-                                    Icons.refresh_rounded,
-                                  ),
-                                  onPressed: () =>
-                                      _loadSavedData(silent: true),
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  onPressed: () => _loadSavedData(silent: true),
                                 ),
                               ],
                             ),
@@ -4024,19 +4034,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                               ),
                               const SizedBox(height: 6),
                               ..._savedRoutes.map((item) {
-                                final stops = _stopsFromSavedRoute(
-                                  item,
-                                );
+                                final stops = _stopsFromSavedRoute(item);
                                 final start = stops.first;
                                 final end = stops.length >= 2
                                     ? stops.last
                                     : start;
                                 final waypoints = stops.length > 2
                                     ? stops
-                                          .sublist(
-                                            1,
-                                            stops.length - 1,
-                                          )
+                                          .sublist(1, stops.length - 1)
                                           .map((e) => e.name)
                                           .toList()
                                     : <String>[];
@@ -4047,9 +4052,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 );
 
                                 return Padding(
-                                  padding: const EdgeInsets.only(
-                                    bottom: 6,
-                                  ),
+                                  padding: const EdgeInsets.only(bottom: 6),
                                   child: _buildNavRow(
                                     icon: Icons.alt_route_rounded,
                                     iconColor: _primary,
@@ -4057,9 +4060,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                     subtitle: summary,
                                     isPlaceholder: false,
                                     onTap: () =>
-                                        _applySavedRouteToNavigation(
-                                          item,
-                                        ),
+                                        _applySavedRouteToNavigation(item),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -4070,8 +4071,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                 width: 26,
                                                 height: 26,
                                               ),
-                                          visualDensity:
-                                              VisualDensity.compact,
+                                          visualDensity: VisualDensity.compact,
                                           splashRadius: 16,
                                           icon: const Icon(
                                             Icons.visibility_outlined,
@@ -4079,9 +4079,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                             color: _onSurfaceVariant,
                                           ),
                                           onPressed: () =>
-                                              _showSavedRouteDetail(
-                                                item,
-                                              ),
+                                              _showSavedRouteDetail(item),
                                         ),
                                         const SizedBox(width: 2),
                                         IconButton(
@@ -4091,12 +4089,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                                 width: 26,
                                                 height: 26,
                                               ),
-                                          visualDensity:
-                                              VisualDensity.compact,
+                                          visualDensity: VisualDensity.compact,
                                           splashRadius: 16,
                                           icon: const Icon(
-                                            Icons
-                                                .delete_outline_rounded,
+                                            Icons.delete_outline_rounded,
                                             size: 15,
                                             color: Color(0xFFBA1A1A),
                                           ),
@@ -4131,9 +4127,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 );
 
                                 return Padding(
-                                  padding: const EdgeInsets.only(
-                                    bottom: 6,
-                                  ),
+                                  padding: const EdgeInsets.only(bottom: 6),
                                   child: _buildNavRow(
                                     icon: Icons
                                         .playlist_add_check_circle_outlined,
@@ -4142,41 +4136,32 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                     subtitle: summary,
                                     isPlaceholder: false,
                                     onTap: () =>
-                                        _applySavedRoutePlanToNavigation(
-                                          item,
-                                        ),
+                                        _applySavedRoutePlanToNavigation(item),
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
                                         IconButton(
                                           padding: EdgeInsets.zero,
-                                          constraints:
-                                              const BoxConstraints(),
+                                          constraints: const BoxConstraints(),
                                           icon: const Icon(
                                             Icons.visibility_outlined,
                                             size: 16,
                                             color: _onSurfaceVariant,
                                           ),
                                           onPressed: () =>
-                                              _showSavedRoutePlanDetail(
-                                                item,
-                                              ),
+                                              _showSavedRoutePlanDetail(item),
                                         ),
                                         const SizedBox(width: 8),
                                         IconButton(
                                           padding: EdgeInsets.zero,
-                                          constraints:
-                                              const BoxConstraints(),
+                                          constraints: const BoxConstraints(),
                                           icon: const Icon(
-                                            Icons
-                                                .delete_outline_rounded,
+                                            Icons.delete_outline_rounded,
                                             size: 16,
                                             color: Color(0xFFBA1A1A),
                                           ),
                                           onPressed: () =>
-                                              _deleteSavedRoutePlan(
-                                                item,
-                                              ),
+                                              _deleteSavedRoutePlan(item),
                                         ),
                                       ],
                                     ),
@@ -4197,9 +4182,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                               const SizedBox(height: 6),
                               ..._wayPoints.map((item) {
                                 return Padding(
-                                  padding: const EdgeInsets.only(
-                                    bottom: 6,
-                                  ),
+                                  padding: const EdgeInsets.only(bottom: 6),
                                   child: _buildNavRow(
                                     icon: Icons.bookmark,
                                     iconColor: Colors.amber,
@@ -4209,13 +4192,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                     isPlaceholder: false,
                                     onTap: () {
                                       setState(
-                                        () => _activeTab =
-                                            _BottomTab.explore,
+                                        () => _activeTab = _BottomTab.explore,
                                       );
-                                      _mapController.move(
-                                        item.location,
-                                        16,
-                                      );
+                                      _mapController.move(item.location, 16);
                                       _showPlaceActions(
                                         PlaceResult(
                                           name: item.name,
@@ -4229,11 +4208,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                       children: [
                                         IconButton(
                                           padding: EdgeInsets.zero,
-                                          constraints:
-                                              const BoxConstraints(),
+                                          constraints: const BoxConstraints(),
                                           icon: const Icon(
-                                            Icons
-                                                .delete_outline_rounded,
+                                            Icons.delete_outline_rounded,
                                             size: 16,
                                             color: Color(0xFFBA1A1A),
                                           ),
@@ -4287,16 +4264,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   children: [
                     Text(
                       _recentError!,
-                      style: const TextStyle(
-                        color: Color(0xFFBA1A1A),
-                      ),
+                      style: const TextStyle(color: Color(0xFFBA1A1A)),
                     ),
                     const SizedBox(height: 8),
                     FilledButton(
                       onPressed: _loadRecentData,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _primary,
-                      ),
+                      style: FilledButton.styleFrom(backgroundColor: _primary),
                       child: const Text('重试加载'),
                     ),
                   ],
@@ -4308,17 +4281,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                           child: Text(
                             '暂无最近记录\n开始导航或应用保存项后会自动记录',
                             textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: _onSurfaceVariant,
-                            ),
+                            style: TextStyle(color: _onSurfaceVariant),
                           ),
                         ),
                       )
                     : SingleChildScrollView(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
                               children: [
@@ -4332,9 +4302,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                 ),
                                 const Spacer(),
                                 IconButton(
-                                  icon: const Icon(
-                                    Icons.refresh_rounded,
-                                  ),
+                                  icon: const Icon(Icons.refresh_rounded),
                                   onPressed: () =>
                                       _loadRecentData(silent: true),
                                 ),
@@ -4343,9 +4311,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                             const SizedBox(height: 6),
                             ..._recentNavigations.map(
                               (item) => Padding(
-                                padding: const EdgeInsets.only(
-                                  bottom: 6,
-                                ),
+                                padding: const EdgeInsets.only(bottom: 6),
                                 child: _buildNavRow(
                                   icon: Icons.history_rounded,
                                   iconColor: _secondary,
@@ -4353,41 +4319,32 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                                       '${item.name} · ${_formatRecentCreatedAt(item.createdAt)}',
                                   isPlaceholder: false,
                                   onTap: () =>
-                                      _applyRecentNavigationToNavigation(
-                                        item,
-                                      ),
+                                      _applyRecentNavigationToNavigation(item),
                                   trailing: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
                                         padding: EdgeInsets.zero,
-                                        constraints:
-                                            const BoxConstraints(),
+                                        constraints: const BoxConstraints(),
                                         icon: const Icon(
                                           Icons.visibility_outlined,
                                           size: 16,
                                           color: _onSurfaceVariant,
                                         ),
                                         onPressed: () =>
-                                            _showRecentNavigationDetail(
-                                              item,
-                                            ),
+                                            _showRecentNavigationDetail(item),
                                       ),
                                       const SizedBox(width: 8),
                                       IconButton(
                                         padding: EdgeInsets.zero,
-                                        constraints:
-                                            const BoxConstraints(),
+                                        constraints: const BoxConstraints(),
                                         icon: const Icon(
-                                          Icons
-                                              .delete_outline_rounded,
+                                          Icons.delete_outline_rounded,
                                           size: 16,
                                           color: Color(0xFFBA1A1A),
                                         ),
                                         onPressed: () =>
-                                            _deleteRecentNavigation(
-                                              item,
-                                            ),
+                                            _deleteRecentNavigation(item),
                                       ),
                                     ],
                                   ),
@@ -4426,357 +4383,296 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-                    const Text(
-                      '设置',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: _onSurface,
+          const Text(
+            '设置',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: _onSurface,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '用户标识（16位）',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: _onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _userTokenController,
+            maxLength: 16,
+            decoration: InputDecoration(
+              hintText: '请输入16位字母、数字或下划线',
+              counterText: '',
+              errorText: _userTokenInputError,
+              suffixIcon: _savingUserToken
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : null,
+            ),
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _saveUserTokenFromInput(),
+          ),
+          const SizedBox(height: 4),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _savingUserToken ? null : _saveUserTokenFromInput,
+              icon: const Icon(Icons.verified_user_outlined, size: 18),
+              label: const Text('保存并切换用户配置'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: _surface.withValues(alpha: 0.7),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _surfaceVariant.withValues(alpha: 0.9)),
+            ),
+            child: _loadingTokenProfile
+                ? const SizedBox(
+                    height: 20,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '用户标识（16位）',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    TextField(
-                      controller: _userTokenController,
-                      maxLength: 16,
-                      decoration: InputDecoration(
-                        hintText: '请输入16位字母、数字或下划线',
-                        counterText: '',
-                        errorText: _userTokenInputError,
-                        suffixIcon: _savingUserToken
-                            ? const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              )
-                            : null,
-                      ),
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _saveUserTokenFromInput(),
-                    ),
-                    const SizedBox(height: 4),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _savingUserToken
-                            ? null
-                            : _saveUserTokenFromInput,
-                        icon: const Icon(
-                          Icons.verified_user_outlined,
-                          size: 18,
-                        ),
-                        label: const Text('保存并切换用户配置'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _surface.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: _surfaceVariant.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      child: _loadingTokenProfile
-                          ? const SizedBox(
-                              height: 20,
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '当前状态: ${_tokenAccessState == 'active' ? '有效' : (_tokenAccessState == 'expired' ? '已过期' : (_tokenAccessState == 'invalid' ? '无效' : '未知'))}',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: _onSurface,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '到期时间: $_tokenExpireAtText',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: _onSurfaceVariant,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '剩余天数: $_tokenRemainingText',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: _onSurfaceVariant,
-                                  ),
-                                ),
-                                if (_tokenAccessReason.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '说明: $_tokenAccessReason',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: _onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                    ),
-                    const Divider(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () => showContactMeDialog(context),
-                        icon: const Icon(Icons.contact_mail_outlined, size: 18),
-                        label: const Text('联系我'),
-                      ),
-                    ),
-                    const Divider(height: 20),
-                    SwitchListTile.adaptive(
-                      value: _allowBackgroundOperations,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '允许后台继续运行',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '当前状态: ${_tokenAccessState == 'active' ? '有效' : (_tokenAccessState == 'expired' ? '已过期' : (_tokenAccessState == 'invalid' ? '无效' : '未知'))}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _onSurface,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      subtitle: const Text(
-                        '默认开启。开启后，应用切到后台不会自动停止路线规划和巡航。',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      onChanged: (value) {
-                        setState(() => _allowBackgroundOperations = value);
-                        unawaited(_saveUserSettings());
-                      },
-                    ),
-                    const Divider(height: 20),
-                    SwitchListTile.adaptive(
-                      value: _ignoreOutsideSixthOnAvoid,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '避让导航时忽略六环外摄像头',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(height: 4),
+                      Text(
+                        '到期时间: $_tokenExpireAtText',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _onSurfaceVariant,
                         ),
                       ),
-                      subtitle: const Text(
-                        '默认开启。开启后，避让算法不会把六环外摄像头作为避让目标。',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      onChanged: (value) {
-                        setState(() => _ignoreOutsideSixthOnAvoid = value);
-                        unawaited(_saveUserSettings());
-                      },
-                    ),
-                    const Divider(height: 20),
-                    SwitchListTile.adaptive(
-                      value: _ignoreLowRiskOnAvoid,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '避让导航时忽略标记为低风险摄像头',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                      const SizedBox(height: 2),
+                      Text(
+                        '剩余天数: $_tokenRemainingText',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: _onSurfaceVariant,
                         ),
                       ),
-                      subtitle: const Text(
-                        '默认开启。开启后，避让算法不会把标记为“低风险可尝试”的摄像头作为避让目标。',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      onChanged: (value) {
-                        setState(() => _ignoreLowRiskOnAvoid = value);
-                        unawaited(_saveUserSettings());
-                      },
-                    ),
-                    const Divider(height: 20),
-                    SwitchListTile.adaptive(
-                      value: _hideOutsideSixthMarkers,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '地图隐藏六环外摄像头',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                      if (_tokenAccessReason.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '说明: $_tokenAccessReason',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _onSurfaceVariant,
+                          ),
                         ),
+                      ],
+                    ],
+                  ),
+          ),
+          const Divider(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => showContactMeDialog(context),
+              icon: const Icon(Icons.contact_mail_outlined, size: 18),
+              label: const Text('联系我'),
+            ),
+          ),
+          const Divider(height: 20),
+          SwitchListTile.adaptive(
+            value: _allowBackgroundOperations,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              '允许后台继续运行',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '默认开启。开启后，应用切到后台不会自动停止路线规划和巡航。',
+              style: TextStyle(fontSize: 12),
+            ),
+            onChanged: (value) {
+              setState(() => _allowBackgroundOperations = value);
+              unawaited(_saveUserSettings());
+            },
+          ),
+          const Divider(height: 20),
+          SwitchListTile.adaptive(
+            value: _ignoreOutsideSixthOnAvoid,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              '避让导航时忽略六环外摄像头',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '默认开启。开启后，避让算法不会把六环外摄像头作为避让目标。',
+              style: TextStyle(fontSize: 12),
+            ),
+            onChanged: (value) {
+              setState(() => _ignoreOutsideSixthOnAvoid = value);
+              unawaited(_saveUserSettings());
+            },
+          ),
+          const Divider(height: 20),
+          SwitchListTile.adaptive(
+            value: _ignoreLowRiskOnAvoid,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              '避让导航时忽略标记为低风险摄像头',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '默认开启。开启后，避让算法不会把标记为“低风险可尝试”的摄像头作为避让目标。',
+              style: TextStyle(fontSize: 12),
+            ),
+            onChanged: (value) {
+              setState(() => _ignoreLowRiskOnAvoid = value);
+              unawaited(_saveUserSettings());
+            },
+          ),
+          const Divider(height: 20),
+          SwitchListTile.adaptive(
+            value: _hideOutsideSixthMarkers,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              '地图隐藏六环外摄像头',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text('默认开启。', style: TextStyle(fontSize: 12)),
+            onChanged: (value) {
+              setState(() => _hideOutsideSixthMarkers = value);
+              unawaited(_saveUserSettings());
+            },
+          ),
+          SwitchListTile.adaptive(
+            value: _hideInsideFourthMarkers,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              '地图隐藏四环内摄像头',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text('默认开启。', style: TextStyle(fontSize: 12)),
+            onChanged: (value) {
+              setState(() => _hideInsideFourthMarkers = value);
+              unawaited(_saveUserSettings());
+            },
+          ),
+          SwitchListTile.adaptive(
+            value: _hideInsideFifthMarkers,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              '地图隐藏五环内摄像头',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+            subtitle: const Text(
+              '默认关闭。开启后会同时隐藏四环内。',
+              style: TextStyle(fontSize: 12),
+            ),
+            onChanged: (value) {
+              setState(() => _hideInsideFifthMarkers = value);
+              unawaited(_saveUserSettings());
+            },
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _updatingCameras ? null : _refreshCamerasManually,
+              style: FilledButton.styleFrom(backgroundColor: _primary),
+              icon: _updatingCameras
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
                       ),
-                      subtitle: const Text(
-                        '默认开启。',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      onChanged: (value) {
-                        setState(() => _hideOutsideSixthMarkers = value);
-                        unawaited(_saveUserSettings());
-                      },
-                    ),
-                    SwitchListTile.adaptive(
-                      value: _hideInsideFourthMarkers,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '地图隐藏四环内摄像头',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        '默认开启。',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      onChanged: (value) {
-                        setState(() => _hideInsideFourthMarkers = value);
-                        unawaited(_saveUserSettings());
-                      },
-                    ),
-                    SwitchListTile.adaptive(
-                      value: _hideInsideFifthMarkers,
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text(
-                        '地图隐藏五环内摄像头',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        '默认关闭。开启后会同时隐藏四环内。',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      onChanged: (value) {
-                        setState(() => _hideInsideFifthMarkers = value);
-                        unawaited(_saveUserSettings());
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: _updatingCameras
-                            ? null
-                            : _refreshCamerasManually,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _primary,
-                        ),
-                        icon: _updatingCameras
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.sync_rounded, size: 18),
-                        label: Text(_updatingCameras ? '刷新中...' : '刷新摄像头显示'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
+                    )
+                  : const Icon(Icons.sync_rounded, size: 18),
+              label: Text(_updatingCameras ? '刷新中...' : '刷新摄像头显示'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
                       '当前显示: ${_visibleCameraCount()}/${_cameras.length} · 最后爬取 $_updatedAt',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: _onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const Divider(height: 24),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: _primaryContainer.withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.badge_outlined,
-                          color: _primary,
-                        ),
-                      ),
-                      title: const Text(
-                        '进京证助手',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        '状态查询 / 预填信息 / 一键续签',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const BeijingPassPage(),
-                        ),
-                      ),
-                    ),
-                    const Divider(height: 24),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: _primaryContainer.withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.science_outlined,
-                          color: _primary,
-                        ),
-                      ),
-                      title: const Text(
-                        '测试工具',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      subtitle: const Text(
-                        '音频播放诊断等设备测试',
-                        style: TextStyle(fontSize: 12),
-                      ),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const TestToolsPage(),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
+            style: const TextStyle(
+              fontSize: 12,
+              color: _onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Divider(height: 24),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _primaryContainer.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.badge_outlined, color: _primary),
+            ),
+            title: const Text(
+              '进京证助手',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text(
+              '状态查询 / 预填信息 / 一键续签',
+              style: TextStyle(fontSize: 12),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const BeijingPassPage()),
+            ),
+          ),
+          const Divider(height: 24),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: _primaryContainer.withValues(alpha: 0.75),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.science_outlined, color: _primary),
+            ),
+            title: const Text(
+              '测试工具',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            ),
+            subtitle: const Text('音频播放诊断等设备测试', style: TextStyle(fontSize: 12)),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const TestToolsPage()),
+            ),
+          ),
+        ],
+      ),
+    );
 
     final panel = Padding(
       padding: EdgeInsets.fromLTRB(16, 8, 16, standalone ? 8 : 0),
@@ -5637,11 +5533,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       color: _surface,
       child: SafeArea(
         bottom: false,
-        child: Column(
-          children: [
-            Expanded(child: panel),
-          ],
-        ),
+        child: Column(children: [Expanded(child: panel)]),
       ),
     );
   }
@@ -6029,7 +5921,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   vertical: 8,
                 ),
                 child: Text(
-                  '摄像头 ${_visibleCameraCount()}/${_cameras.length} · 标记点 ${_wayPoints.length} · 最后爬取 $_updatedAt${_cruiseModeEnabled ? ' · 巡航中' : ''}',
+                  '摄像头 ${_visibleCameraCount()}/${_cameras.length} · 最后爬取 ${_formatCrawledDate(_updatedAt)}${_cruiseModeEnabled ? ' · 巡航中' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(

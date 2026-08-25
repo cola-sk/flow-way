@@ -119,6 +119,8 @@ class BeijingPassService {
             ),
           );
 
+  ApiService get apiService => _apiService;
+
   String _endpointUrl(BeijingPassConfig config, String operation) {
     if (kIsWeb) {
       return '${resolveApiBaseUrl()}/api/beijing-pass/$operation';
@@ -370,6 +372,14 @@ class BeijingPassService {
     final inBjAddress = config.inBeijingAddress.trim().isNotEmpty
         ? config.inBeijingAddress.trim()
         : '昌平北站';
+    final gdjd =
+        config.sqdzgdjd.trim().isNotEmpty ? config.sqdzgdjd.trim() : '116.231525';
+    final gdwd =
+        config.sqdzgdwd.trim().isNotEmpty ? config.sqdzgdwd.trim() : '40.231452';
+    final bdjd =
+        config.sqdzbdjd.trim().isNotEmpty ? config.sqdzbdjd.trim() : '116.237936';
+    final bdwd =
+        config.sqdzbdwd.trim().isNotEmpty ? config.sqdzbdwd.trim() : '40.237461';
 
     // 字段名以 stateList / insertApplyRecord 官方交警接口为准
     final payload = {
@@ -381,11 +391,11 @@ class BeijingPassService {
       'sfzj': config.isInBeijing ? '1' : '0',
       'zjxxdz': inBjAddress,
       'xxdz': inBjAddress,
-      // 社区地址经纬度（高德+百度坐标：昌平北站）
-      'sqdzgdjd': '116.231525',
-      'sqdzgdwd': '40.231452',
-      'sqdzbdjd': '116.237936',
-      'sqdzbdwd': '40.237461',
+      // 社区地址经纬度（高德+百度坐标）
+      'sqdzgdjd': gdjd,
+      'sqdzgdwd': gdwd,
+      'sqdzbdjd': bdjd,
+      'sqdzbdwd': bdwd,
       'txrxx': const <Object>[],
       'jjdq': '010',
       'jjmd': '06',

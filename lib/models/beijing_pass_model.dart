@@ -131,8 +131,20 @@ class BeijingPassConfig {
   /// 提交办理时是否已在北京（接口字段 sfzj）。
   final bool isInBeijing;
 
-  /// 已在京时的详细地址（接口字段 zjxxdz）。
+  /// 已在京时的详细地址（接口字段 zjxxdz / xxdz）。
   final String inBeijingAddress;
+
+  /// 社区地址高德经度（接口字段 sqdzgdjd）。
+  final String sqdzgdjd;
+
+  /// 社区地址高德纬度（接口字段 sqdzgdwd）。
+  final String sqdzgdwd;
+
+  /// 社区地址百度经度（接口字段 sqdzbdjd）。
+  final String sqdzbdjd;
+
+  /// 社区地址百度纬度（接口字段 sqdzbdwd）。
+  final String sqdzbdwd;
 
   /// 自定义接口 Base URL（若留空则使用官方默认）
   final String customApiBase;
@@ -154,7 +166,11 @@ class BeijingPassConfig {
     this.entranceName = '其他道路',
     this.destination = '其它',
     this.isInBeijing = false,
-    this.inBeijingAddress = '',
+    this.inBeijingAddress = '昌平北站',
+    this.sqdzgdjd = '116.231525',
+    this.sqdzgdwd = '40.231452',
+    this.sqdzbdjd = '116.237936',
+    this.sqdzbdwd = '40.237461',
     this.customApiBase = '',
     this.vehicleSupplements = const {},
   });
@@ -174,6 +190,10 @@ class BeijingPassConfig {
     String? destination,
     bool? isInBeijing,
     String? inBeijingAddress,
+    String? sqdzgdjd,
+    String? sqdzgdwd,
+    String? sqdzbdjd,
+    String? sqdzbdwd,
     String? customApiBase,
     Map<String, BeijingPassVehicleSupplement>? vehicleSupplements,
   }) {
@@ -192,6 +212,10 @@ class BeijingPassConfig {
       destination: destination ?? this.destination,
       isInBeijing: isInBeijing ?? this.isInBeijing,
       inBeijingAddress: inBeijingAddress ?? this.inBeijingAddress,
+      sqdzgdjd: sqdzgdjd ?? this.sqdzgdjd,
+      sqdzgdwd: sqdzgdwd ?? this.sqdzgdwd,
+      sqdzbdjd: sqdzbdjd ?? this.sqdzbdjd,
+      sqdzbdwd: sqdzbdwd ?? this.sqdzbdwd,
       customApiBase: customApiBase ?? this.customApiBase,
       vehicleSupplements: vehicleSupplements ?? this.vehicleSupplements,
     );
@@ -213,6 +237,10 @@ class BeijingPassConfig {
       'destination': destination,
       'isInBeijing': isInBeijing,
       'inBeijingAddress': inBeijingAddress,
+      'sqdzgdjd': sqdzgdjd,
+      'sqdzgdwd': sqdzgdwd,
+      'sqdzbdjd': sqdzbdjd,
+      'sqdzbdwd': sqdzbdwd,
       'customApiBase': customApiBase,
       'vehicleSupplements': vehicleSupplements.map(
         (vehicleId, supplement) => MapEntry(vehicleId, supplement.toJson()),
@@ -221,6 +249,7 @@ class BeijingPassConfig {
   }
 
   factory BeijingPassConfig.fromJson(Map<String, dynamic> json) {
+    final addr = (json['inBeijingAddress'] as String?)?.trim() ?? '';
     return BeijingPassConfig(
       token: (json['token'] as String?)?.trim() ?? '',
       licensePlate: (json['licensePlate'] as String?)?.trim() ?? '',
@@ -235,7 +264,11 @@ class BeijingPassConfig {
       entranceName: (json['entranceName'] as String?)?.trim() ?? '其他道路',
       destination: (json['destination'] as String?)?.trim() ?? '其它',
       isInBeijing: json['isInBeijing'] == true,
-      inBeijingAddress: (json['inBeijingAddress'] as String?)?.trim() ?? '',
+      inBeijingAddress: addr.isNotEmpty ? addr : '昌平北站',
+      sqdzgdjd: (json['sqdzgdjd'] as String?)?.trim() ?? '116.231525',
+      sqdzgdwd: (json['sqdzgdwd'] as String?)?.trim() ?? '40.231452',
+      sqdzbdjd: (json['sqdzbdjd'] as String?)?.trim() ?? '116.237936',
+      sqdzbdwd: (json['sqdzbdwd'] as String?)?.trim() ?? '40.237461',
       customApiBase: (json['customApiBase'] as String?)?.trim() ?? '',
       vehicleSupplements: _parseVehicleSupplements(json['vehicleSupplements']),
     );
