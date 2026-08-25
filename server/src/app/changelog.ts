@@ -9,6 +9,19 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.2.0',
+    date: '2026-08-25',
+    title: '进京证办理更顺手',
+    highlights: [
+      '输入北京交警 Token 后自动加载账户车辆，并优先展示当前有生效进京证的车辆。',
+      '可按车辆查询进京证状态，补充资料与车辆关联保存，提交办理前会自动保存预填信息。',
+      '通行证类型和生效日期集中展示，办理偏好支持折叠，填写办理信息更清晰。',
+    ],
+    improvements: [
+      '地图底部信息栏移除标记点数量，最后爬取时间仅显示日期。',
+    ],
+  },
+  {
     version: '1.1.7',
     date: '2026-08-11',
     title: '测试信息更清爽',
