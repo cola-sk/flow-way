@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.2.1',
+    date: '2026-08-25',
+    title: '进京证页面更易读',
+    highlights: [
+      '优化 Token、车辆资料和办理信息的文字大小与层级，关键信息查看更清楚。',
+      '按钮、状态和历史记录的展示更加醒目，填写和办理操作更容易识别。',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-08-25',
     title: '进京证办理更顺手',

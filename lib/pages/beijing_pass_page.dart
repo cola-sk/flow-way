@@ -110,14 +110,18 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     _inBeijingAddressController.text = cfg.inBeijingAddress.isNotEmpty
         ? cfg.inBeijingAddress
         : '昌平北站';
-    _sqdzgdjdController.text =
-        cfg.sqdzgdjd.isNotEmpty ? cfg.sqdzgdjd : '116.231525';
-    _sqdzgdwdController.text =
-        cfg.sqdzgdwd.isNotEmpty ? cfg.sqdzgdwd : '40.231452';
-    _sqdzbdjdController.text =
-        cfg.sqdzbdjd.isNotEmpty ? cfg.sqdzbdjd : '116.237936';
-    _sqdzbdwdController.text =
-        cfg.sqdzbdwd.isNotEmpty ? cfg.sqdzbdwd : '40.237461';
+    _sqdzgdjdController.text = cfg.sqdzgdjd.isNotEmpty
+        ? cfg.sqdzgdjd
+        : '116.231525';
+    _sqdzgdwdController.text = cfg.sqdzgdwd.isNotEmpty
+        ? cfg.sqdzgdwd
+        : '40.231452';
+    _sqdzbdjdController.text = cfg.sqdzbdjd.isNotEmpty
+        ? cfg.sqdzbdjd
+        : '116.237936';
+    _sqdzbdwdController.text = cfg.sqdzbdwd.isNotEmpty
+        ? cfg.sqdzbdwd
+        : '40.237461';
     _customApiBaseController.text = cfg.customApiBase;
     _selectedPassType = cfg.passType;
     _isInBeijing = cfg.isInBeijing;
@@ -273,9 +277,8 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => _BeijingPassLocationSearchModal(
-        apiService: _service.apiService,
-      ),
+      builder: (ctx) =>
+          _BeijingPassLocationSearchModal(apiService: _service.apiService),
     );
 
     if (place != null && mounted) {
@@ -905,7 +908,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   '北京交警 Token 凭证',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                    fontSize: 14,
                   ),
                 ),
                 const Spacer(),
@@ -916,8 +919,14 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 6),
                     ),
                     onPressed: () => setState(() => _isEditingToken = true),
-                    icon: const Icon(Icons.edit_outlined, size: 13),
-                    label: const Text('修改', style: TextStyle(fontSize: 11)),
+                    icon: const Icon(Icons.edit_outlined, size: 14),
+                    label: const Text(
+                      '修改',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   )
                 else
                   TextButton.icon(
@@ -942,8 +951,14 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         );
                       }
                     },
-                    icon: const Icon(Icons.paste_rounded, size: 13),
-                    label: const Text('粘贴', style: TextStyle(fontSize: 11)),
+                    icon: const Icon(Icons.paste_rounded, size: 14),
+                    label: const Text(
+                      '粘贴',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -966,8 +981,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       child: Text(
                         _maskToken(token),
                         style: const TextStyle(
-                          fontSize: 11.5,
-                          fontFamily: 'monospace',
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
@@ -989,7 +1003,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         padding: const EdgeInsets.all(4),
                         child: Icon(
                           Icons.copy_rounded,
-                          size: 14,
+                          size: 15,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -1008,7 +1022,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         padding: const EdgeInsets.all(4),
                         child: Icon(
                           Icons.clear_rounded,
-                          size: 14,
+                          size: 15,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -1020,11 +1034,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
               TextField(
                 controller: _tokenController,
                 maxLines: 1,
-                style: const TextStyle(fontSize: 11.5, fontFamily: 'monospace'),
+                style: const TextStyle(fontSize: 13),
                 decoration: InputDecoration(
                   isDense: true,
                   hintText: '填入 Authorization: Bearer xxx 或直接粘贴 Token',
-                  hintStyle: const TextStyle(fontSize: 11),
+                  hintStyle: const TextStyle(fontSize: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -1104,7 +1118,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   '账户车辆',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
-                    fontSize: 13,
+                    fontSize: 14,
                   ),
                 ),
                 const Spacer(),
@@ -1114,8 +1128,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 6),
                   ),
                   onPressed: _queryingStatus ? null : () => _refreshStatus(),
-                  icon: const Icon(Icons.sync_rounded, size: 13),
-                  label: const Text('加载车辆', style: TextStyle(fontSize: 11)),
+                  icon: const Icon(Icons.sync_rounded, size: 14),
+                  label: const Text(
+                    '加载车辆',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ],
             ),
@@ -1123,22 +1140,22 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
             if (_tokenController.text.trim().isEmpty)
               Text(
                 '先填入 Token，再加载账户下已绑定车辆。',
-                style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
               )
             else if (result == null)
               Text(
                 '点击“加载车辆”读取 Token 对应的车辆与办证状态。',
-                style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
               )
             else if (!result.success)
               Text(
                 result.message,
-                style: TextStyle(color: Colors.red.shade700, fontSize: 11),
+                style: TextStyle(color: Colors.red.shade700, fontSize: 12),
               )
             else if (vehicles.isEmpty)
               Text(
                 '未查询到已绑定车辆。请确认 Token 对应的北京交警账号。',
-                style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
               )
             else ...[
               DropdownButtonFormField<String>(
@@ -1148,7 +1165,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                 decoration: InputDecoration(
                   isDense: true,
                   labelText: '当前办理车辆',
-                  labelStyle: const TextStyle(fontSize: 11.5),
+                  labelStyle: const TextStyle(fontSize: 12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -1157,14 +1174,14 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     vertical: 6,
                   ),
                 ),
-                style: theme.textTheme.bodyMedium?.copyWith(fontSize: 12.5),
+                style: theme.textTheme.bodyMedium?.copyWith(fontSize: 13),
                 items: vehicles
                     .map(
                       (vehicle) => DropdownMenuItem(
                         value: vehicle.id,
                         child: Text(
                           vehicle.displayName,
-                          style: const TextStyle(fontSize: 12.5),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                     )
@@ -1182,7 +1199,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       ? '当前车辆有生效中的 ${selected.activeRecord!.passType.shortLabel}'
                       : '当前车辆暂无生效中的进京证',
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 12,
                     color: selected.activeRecord?.isValidNow == true
                         ? Colors.green.shade700
                         : theme.colorScheme.onSurfaceVariant,
@@ -1231,7 +1248,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                           : '办理补充资料（仅保存至当前车辆）',
                       style: theme.textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w700,
-                        fontSize: 13,
+                        fontSize: 14,
                       ),
                     ),
                   ),
@@ -1249,7 +1266,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                 const SizedBox(height: 3),
                 Text(
                   '当前关联：${_selectedVehicle!.displayName}',
-                  style: theme.textTheme.bodySmall?.copyWith(fontSize: 10.5),
+                  style: theme.textTheme.bodySmall?.copyWith(fontSize: 11.5),
                 ),
               ],
               const SizedBox(height: 6),
@@ -1261,15 +1278,15 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       controller: _plateController,
                       textCapitalization: TextCapitalization.characters,
                       readOnly: _selectedVehicle != null,
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: _selectedVehicle != null
                             ? '车牌号（已选）'
                             : '车牌号 *',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: _selectedVehicle != null ? null : '如 冀A88888',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1285,13 +1302,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     flex: 5,
                     child: TextField(
                       controller: _carModelController,
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '车型',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: '小型普通客车',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1310,13 +1327,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   Expanded(
                     child: TextField(
                       controller: _engineNoController,
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '发动机号 *',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: '行驶证发动机号',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1331,13 +1348,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   Expanded(
                     child: TextField(
                       controller: _vinController,
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '车架号/VIN *',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: 'VIN后6位或完整',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1357,13 +1374,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     flex: 4,
                     child: TextField(
                       controller: _driverNameController,
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '驾驶人姓名 *',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: '张三',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1379,13 +1396,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     flex: 6,
                     child: TextField(
                       controller: _driverLicenceController,
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '身份证/驾驶证号 *',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: '18位身份证号',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1449,7 +1466,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                           '办证偏好',
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w700,
-                            fontSize: 13,
+                            fontSize: 14,
                           ),
                         ),
                         const SizedBox(height: 2),
@@ -1458,7 +1475,8 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall?.copyWith(
-                            fontSize: 10.5,
+                            fontSize: 11.5,
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -1482,13 +1500,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     child: TextField(
                       controller: _inBeijingAddressController,
                       onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '进京/在京地址 (社区地址) *',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: '如 昌平北站 / 望京SOHO',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1511,7 +1529,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       icon: const Icon(Icons.search_rounded, size: 15),
                       label: const Text(
                         '搜索地点',
-                        style: TextStyle(fontSize: 11.5),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -1545,7 +1566,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         const Text(
                           '办证经纬度（高德 / 百度）',
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -1561,9 +1582,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                             child: Text(
                               '重置默认(昌平北站)',
                               style: TextStyle(
-                                fontSize: 10.5,
+                                fontSize: 11,
                                 color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
@@ -1576,11 +1597,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         Expanded(
                           child: TextField(
                             controller: _sqdzgdjdController,
-                            style: const TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: 12.5),
                             decoration: InputDecoration(
                               isDense: true,
                               labelText: '高德经度 (sqdzgdjd)',
-                              labelStyle: const TextStyle(fontSize: 10.5),
+                              labelStyle: const TextStyle(fontSize: 11),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
@@ -1595,11 +1616,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         Expanded(
                           child: TextField(
                             controller: _sqdzgdwdController,
-                            style: const TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: 12.5),
                             decoration: InputDecoration(
                               isDense: true,
                               labelText: '高德纬度 (sqdzgdwd)',
-                              labelStyle: const TextStyle(fontSize: 10.5),
+                              labelStyle: const TextStyle(fontSize: 11),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
@@ -1618,11 +1639,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         Expanded(
                           child: TextField(
                             controller: _sqdzbdjdController,
-                            style: const TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: 12.5),
                             decoration: InputDecoration(
                               isDense: true,
                               labelText: '百度经度 (sqdzbdjd)',
-                              labelStyle: const TextStyle(fontSize: 10.5),
+                              labelStyle: const TextStyle(fontSize: 11),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
@@ -1637,11 +1658,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         Expanded(
                           child: TextField(
                             controller: _sqdzbdwdController,
-                            style: const TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: 12.5),
                             decoration: InputDecoration(
                               isDense: true,
                               labelText: '百度纬度 (sqdzbdwd)',
-                              labelStyle: const TextStyle(fontSize: 10.5),
+                              labelStyle: const TextStyle(fontSize: 11),
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(6),
                               ),
@@ -1662,10 +1683,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                 dense: true,
                 visualDensity: VisualDensity.compact,
                 contentPadding: EdgeInsets.zero,
-                title: const Text('当前已在北京', style: TextStyle(fontSize: 12.5)),
+                title: const Text('当前已在北京', style: TextStyle(fontSize: 13)),
                 subtitle: Text(
                   _isInBeijing ? '将提交“已在京”' : '默认提交“未在京”',
-                  style: const TextStyle(fontSize: 10.5),
+                  style: const TextStyle(fontSize: 11),
                 ),
                 value: _isInBeijing,
                 onChanged: (value) => setState(() => _isInBeijing = value),
@@ -1677,13 +1698,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     child: TextField(
                       controller: _entranceController,
                       onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '进京主要道路',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: '如 其他道路',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1699,13 +1720,13 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     child: TextField(
                       controller: _destinationController,
                       onChanged: (_) => setState(() {}),
-                      style: const TextStyle(fontSize: 12.5),
+                      style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
                         labelText: '进京目的地',
-                        labelStyle: const TextStyle(fontSize: 11.5),
+                        labelStyle: const TextStyle(fontSize: 12),
                         hintText: '如 其它',
-                        hintStyle: const TextStyle(fontSize: 11),
+                        hintStyle: const TextStyle(fontSize: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(6),
                         ),
@@ -1753,6 +1774,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   '通行证办理与保存',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                 ),
               ],
@@ -1762,7 +1784,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
               style: SegmentedButton.styleFrom(
                 visualDensity: VisualDensity.compact,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                textStyle: const TextStyle(fontSize: 12),
+                textStyle: const TextStyle(fontSize: 12.5),
               ),
               segments: const [
                 ButtonSegment(
@@ -1802,7 +1824,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                     const SizedBox(width: 6),
                     Text(
                       '生效起始：${_formatDate(_selectedApplyStartDate)}',
-                      style: const TextStyle(fontSize: 12),
+                      style: const TextStyle(fontSize: 12.5),
                     ),
                     const Spacer(),
                     const Icon(Icons.arrow_drop_down, size: 20),
@@ -1839,7 +1861,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                         _submittingApply
                             ? '提交中...'
                             : '办理（${_selectedPassType.shortLabel}）',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -1865,7 +1890,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       label: Text(
                         _savingConfig ? '保存中...' : '保存预填',
                         style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1909,6 +1934,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   '${selectedVehicle == null ? '办证历史记录' : '当前车辆办证记录'} (${records.length})',
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
+                    fontSize: 14,
                   ),
                 ),
               ],
@@ -1936,13 +1962,16 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                   '${r.passType.shortLabel} · ${r.statusDesc}',
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
-                    fontSize: 12,
+                    fontSize: 13,
                   ),
                 ),
                 subtitle: r.startDate != null && r.endDate != null
                     ? Text(
                         '${_formatDate(r.startDate!)} ~ ${_formatDate(r.endDate!)}',
-                        style: const TextStyle(fontSize: 10),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       )
                     : null,
                 trailing: r.isValidNow
@@ -1960,7 +1989,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                           '生效中',
                           style: TextStyle(
                             color: Colors.green,
-                            fontSize: 10,
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -2182,8 +2211,7 @@ class _BeijingPassLocationSearchModalState
                       ),
                       leading: CircleAvatar(
                         radius: 14,
-                        backgroundColor:
-                            theme.colorScheme.primaryContainer,
+                        backgroundColor: theme.colorScheme.primaryContainer,
                         child: Icon(
                           Icons.location_on_outlined,
                           size: 14,
