@@ -17,7 +17,8 @@ metadata:
 2. **版本升级类型**（仅正式版需要）：patch（修复/小优化）/ minor（新功能）/ major（重大更新）/ 或直接指定 x.y.z
 3. **本次更新亮点**：用一句话描述核心改动，供写更新日志用
 4. **是否更新 changelog**：若有用户可见的功能变化，必须更新
-5. **Beta 接口地址**（仅 Beta 版需要）：默认 `https://flow-way-git-beta-skingpts-projects.vercel.app`，也可指定其他 Vercel Preview URL
+5. **联系方式与闲鱼链接**：若闲鱼地址或微信号有变更，检查或更新 `server/src/config/contact.json`（发版时会自动写入 `flow-way-version.json`）
+6. **Beta 接口地址**（仅 Beta 版需要）：默认 `https://flow-way-git-beta-skingpts-projects.vercel.app`，也可指定其他 Vercel Preview URL
 
 ---
 

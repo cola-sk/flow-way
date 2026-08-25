@@ -1,22 +1,36 @@
 'use client';
 
-import { useState } from 'react';
-
-const WECHAT_ID = 'kero_wi';
-const XIANYU_URL = 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA';
+import { useEffect, useState } from 'react';
+import contactConfig from '@/config/contact.json';
 
 export function ContactMeButton() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [wechatId, setWechatId] = useState(contactConfig.wechatId || 'kero_wi');
+  const [xianyuUrl, setXianyuUrl] = useState(
+    contactConfig.xianyuUrl || 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA'
+  );
+
+  useEffect(() => {
+    fetch('/api/contact')
+      .then((res) => res.json())
+      .then((json) => {
+        if (json?.success && json?.data) {
+          if (json.data.wechatId) setWechatId(json.data.wechatId);
+          if (json.data.xianyuUrl) setXianyuUrl(json.data.xianyuUrl);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(WECHAT_ID);
+      await navigator.clipboard.writeText(wechatId);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
       const textarea = document.createElement('textarea');
-      textarea.value = WECHAT_ID;
+      textarea.value = wechatId;
       document.body.appendChild(textarea);
       textarea.select();
       document.execCommand('copy');
@@ -27,7 +41,7 @@ export function ContactMeButton() {
   };
 
   const handleOpenXianyu = () => {
-    window.open(XIANYU_URL, '_blank');
+    window.open(xianyuUrl, '_blank');
     setOpen(false);
   };
 

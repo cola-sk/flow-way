@@ -1179,6 +1179,46 @@ class ApiService {
       return false;
     }
   }
+
+  /// 获取最新联系方式（包含微信及动态更新的闲鱼地址）
+  Future<ContactInfo?> getContactInfo() async {
+    try {
+      final response = await _dio.get('/api/contact');
+      if (response.data is Map<String, dynamic>) {
+        final map = response.data as Map<String, dynamic>;
+        if (map['success'] == true && map['data'] is Map<String, dynamic>) {
+          return ContactInfo.fromJson(map['data'] as Map<String, dynamic>);
+        }
+      }
+    } catch (e) {
+      print('获取联系方式失败: ${_formatError(e)}');
+    }
+    return null;
+  }
+}
+
+class ContactInfo {
+  final String wechatId;
+  final String xianyuUrl;
+  final String version;
+  final String releasedAt;
+
+  const ContactInfo({
+    required this.wechatId,
+    required this.xianyuUrl,
+    this.version = '',
+    this.releasedAt = '',
+  });
+
+  factory ContactInfo.fromJson(Map<String, dynamic> json) {
+    return ContactInfo(
+      wechatId: json['wechatId'] as String? ?? 'kero_wi',
+      xianyuUrl: json['xianyuUrl'] as String? ??
+          'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA',
+      version: json['version'] as String? ?? '',
+      releasedAt: json['releasedAt'] as String? ?? '',
+    );
+  }
 }
 
 class PlaceResult {

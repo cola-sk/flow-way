@@ -29,6 +29,7 @@ const apkPath = path.join(
   rootDir,
   'build/app/outputs/flutter-apk/app-release.apk'
 );
+const contactPath = path.join(rootDir, 'server/src/config/contact.json');
 
 // ---------- 读取当前版本 ----------
 function readVersion(): { semver: string; build: number } {
@@ -65,6 +66,26 @@ function writeVersion(newSemver: string, newBuild: number) {
   fs.writeFileSync(pubspecPath, updated, 'utf-8');
 }
 
+// ---------- 读取联系方式配置 ----------
+function readContactConfig(): { wechatId: string; xianyuUrl: string } {
+  try {
+    if (fs.existsSync(contactPath)) {
+      const content = fs.readFileSync(contactPath, 'utf-8');
+      const data = JSON.parse(content);
+      return {
+        wechatId: data.wechatId || 'kero_wi',
+        xianyuUrl: data.xianyuUrl || 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA',
+      };
+    }
+  } catch (err) {
+    console.warn('⚠️ 读取 contact.json 失败，使用默认联系方式:', err);
+  }
+  return {
+    wechatId: 'kero_wi',
+    xianyuUrl: 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA',
+  };
+}
+
 // ---------- 上传 APK + 写版本清单 ----------
 async function uploadApk(semver: string, build: number, fileBuffer: Buffer) {
   const token = process.env.BLOB_READ_WRITE_TOKEN;
@@ -82,12 +103,17 @@ async function uploadApk(semver: string, build: number, fileBuffer: Buffer) {
   });
   console.log(`✅ APK 上传完成: ${versionedBlob.url}`);
 
-  // 写版本清单（轻量 JSON，供 /api/download 查询最新版本）
+  const contact = readContactConfig();
+  console.log(`📌 联系方式配置: 微信号=${contact.wechatId}, 闲鱼=${contact.xianyuUrl}`);
+
+  // 写版本清单（轻量 JSON，供 /api/download 与客户端查询最新版本及联系方式）
   const manifest = JSON.stringify({
     version: semver,
     build,
     apkUrl: versionedBlob.url,
     releasedAt: new Date().toISOString(),
+    wechatId: contact.wechatId,
+    xianyuUrl: contact.xianyuUrl,
   });
   console.log(`\n⬆️  更新版本清单 flow-way-version.json ...`);
   const manifestBlob = await put('flow-way-version.json', manifest, {
