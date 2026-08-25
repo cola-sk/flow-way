@@ -21,8 +21,8 @@ export async function GET() {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         data: {
-          wechatId: 'kero_wi',
-          xianyuUrl: 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA',
+          wechatId: '',
+          xianyuUrl: '',
         },
       },
       { status: 500 }

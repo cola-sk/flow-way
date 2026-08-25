@@ -1212,9 +1212,8 @@ class ContactInfo {
 
   factory ContactInfo.fromJson(Map<String, dynamic> json) {
     return ContactInfo(
-      wechatId: json['wechatId'] as String? ?? 'kero_wi',
-      xianyuUrl: json['xianyuUrl'] as String? ??
-          'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA',
+      wechatId: json['wechatId'] as String? ?? '',
+      xianyuUrl: json['xianyuUrl'] as String? ?? '',
       version: json['version'] as String? ?? '',
       releasedAt: json['releasedAt'] as String? ?? '',
     );

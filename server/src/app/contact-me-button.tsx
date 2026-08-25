@@ -6,9 +6,9 @@ import contactConfig from '@/config/contact.json';
 export function ContactMeButton() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [wechatId, setWechatId] = useState(contactConfig.wechatId || 'kero_wi');
+  const [wechatId, setWechatId] = useState(contactConfig.wechatId || '');
   const [xianyuUrl, setXianyuUrl] = useState(
-    contactConfig.xianyuUrl || 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA'
+    contactConfig.xianyuUrl || ''
   );
 
   useEffect(() => {
@@ -90,18 +90,20 @@ export function ContactMeButton() {
           >
             <h3 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem', fontWeight: 700 }}>联系我</h3>
             <p style={{ margin: '0 0 1rem', fontSize: '0.9rem', color: '#555' }}>
-              微信号: <strong>{wechatId}</strong>
+              微信号: <strong>{wechatId || '加载中...'}</strong>
             </p>
             <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
               <button
                 onClick={handleCopy}
+                disabled={!wechatId}
                 style={{
                   padding: '0.5rem 1rem',
                   background: copied ? '#dcfce7' : '#f3f4f6',
                   color: copied ? '#166534' : '#1a1a1a',
                   borderRadius: 8,
                   border: copied ? '1px solid #86efac' : '1px solid #d1d5db',
-                  cursor: 'pointer',
+                  cursor: wechatId ? 'pointer' : 'not-allowed',
+                  opacity: wechatId ? 1 : 0.5,
                   fontWeight: 600,
                   fontSize: '0.85rem',
                 }}
@@ -110,13 +112,15 @@ export function ContactMeButton() {
               </button>
               <button
                 onClick={handleOpenXianyu}
+                disabled={!xianyuUrl}
                 style={{
                   padding: '0.5rem 1rem',
                   background: '#6E5E0D',
                   color: '#fff',
                   borderRadius: 8,
                   border: 'none',
-                  cursor: 'pointer',
+                  cursor: xianyuUrl ? 'pointer' : 'not-allowed',
+                  opacity: xianyuUrl ? 1 : 0.5,
                   fontWeight: 600,
                   fontSize: '0.85rem',
                 }}

@@ -17,8 +17,8 @@ export async function getContactConfigFromDb(): Promise<ContactConfig> {
       if (data) {
         const parsed = typeof data === 'string' ? JSON.parse(data) : data;
         return {
-          wechatId: parsed.wechatId || contactFallback.wechatId || 'kero_wi',
-          xianyuUrl: parsed.xianyuUrl || contactFallback.xianyuUrl || 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA',
+          wechatId: parsed.wechatId || contactFallback.wechatId || '',
+          xianyuUrl: parsed.xianyuUrl || contactFallback.xianyuUrl || '',
           updatedAt: parsed.updatedAt,
         };
       }
@@ -28,8 +28,8 @@ export async function getContactConfigFromDb(): Promise<ContactConfig> {
   }
 
   return {
-    wechatId: contactFallback.wechatId || 'kero_wi',
-    xianyuUrl: contactFallback.xianyuUrl || 'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA',
+    wechatId: contactFallback.wechatId || '',
+    xianyuUrl: contactFallback.xianyuUrl || '',
   };
 }
 

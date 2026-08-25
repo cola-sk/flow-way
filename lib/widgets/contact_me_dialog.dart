@@ -3,9 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/api_service.dart';
 
-const String kDefaultWechatId = 'kero_wi';
-const String kDefaultXianyuUrl =
-    'https://m.tb.cn/h.RZUBs4W?tk=VoEy5pFEchA';
+const String kDefaultWechatId = '';
+const String kDefaultXianyuUrl = '';
 
 String _cachedWechatId = kDefaultWechatId;
 String _cachedXianyuUrl = kDefaultXianyuUrl;
@@ -72,7 +71,7 @@ class _ContactMeDialogState extends State<_ContactMeDialog> {
             children: [
               const Text('微信号: ', style: TextStyle(fontSize: 14)),
               SelectableText(
-                _wechatId,
+                _wechatId.isEmpty ? '加载中...' : _wechatId,
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -86,19 +85,21 @@ class _ContactMeDialogState extends State<_ContactMeDialog> {
             child: OutlinedButton.icon(
               icon: const Icon(Icons.copy_rounded, size: 18),
               label: const Text('复制微信号'),
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: _wechatId));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('微信号已复制到剪贴板'),
-                      duration: Duration(seconds: 2),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-                if (mounted) Navigator.of(context).pop();
-              },
+              onPressed: _wechatId.isEmpty
+                  ? null
+                  : () async {
+                      await Clipboard.setData(ClipboardData(text: _wechatId));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('微信号已复制到剪贴板'),
+                            duration: Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                      if (mounted) Navigator.of(context).pop();
+                    },
             ),
           ),
           const SizedBox(height: 8),
@@ -106,22 +107,24 @@ class _ContactMeDialogState extends State<_ContactMeDialog> {
             width: double.infinity,
             child: FilledButton.icon(
               icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('打开闲鱼咨询'),
-              onPressed: () async {
-                Navigator.of(context).pop();
-                final uri = Uri.parse(_xianyuUrl);
-                final ok =
-                    await launchUrl(uri, mode: LaunchMode.platformDefault);
-                if (!ok && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('打开闲鱼链接失败'),
-                      duration: Duration(seconds: 2),
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                }
-              },
+              label: Text(_fetching ? '获取链接中...' : '打开闲鱼咨询'),
+              onPressed: _xianyuUrl.isEmpty
+                  ? null
+                  : () async {
+                      Navigator.of(context).pop();
+                      final uri = Uri.parse(_xianyuUrl);
+                      final ok = await launchUrl(uri,
+                          mode: LaunchMode.platformDefault);
+                      if (!ok && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('打开闲鱼链接失败'),
+                            duration: Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    },
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFF6E5E0D),
               ),
