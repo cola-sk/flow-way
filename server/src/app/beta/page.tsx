@@ -40,6 +40,34 @@ export default function BetaPage() {
         </p>
         <BetaDownloadButton />
       </section>
+
+      <section style={{ marginTop: '2rem' }}>
+        <h2
+          style={{
+            margin: '0 0 0.9rem',
+            paddingBottom: '0.5rem',
+            borderBottom: '1px solid #e5e7eb',
+            fontSize: '1.2rem',
+            fontWeight: 700,
+          }}
+        >
+          本次测试更新
+        </h2>
+        <ul style={{ margin: 0, paddingLeft: '1.2rem', color: '#374151' }}>
+          <li style={{ marginBottom: '0.65rem' }}>
+            导航播报改用腾讯路线返回的结构化动作；当接口提供数据时，可正确展示和播报进入辅路、进入主路、匝道、出口、上桥、下桥等特殊路段。
+          </li>
+          <li style={{ marginBottom: '0.65rem' }}>
+            详细播报模式会为特殊路段提供远、中、近三次提醒，最早可在前方 1 公里预告；简洁模式保持 150 米预告和临近执行提示。
+          </li>
+          <li style={{ marginBottom: '0.65rem' }}>
+            不再根据自然语言关键词猜测左右或特殊动作，避免将路线指令误解为错误的变道提示。
+          </li>
+          <li>
+            此测试包连接独立的 Preview 服务，与正式版数据和发布入口隔离。
+          </li>
+        </ul>
+      </section>
     </main>
   );
 }
