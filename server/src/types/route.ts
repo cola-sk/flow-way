@@ -51,6 +51,7 @@ export interface RouteStep {
   polylineIdxStart: number;
   polylineIdxEnd: number;
   action?: string;
+  accessorialAction?: string;
   direction?: string;
 }
 

@@ -9,10 +9,12 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
+import '../services/navigation_voice_service.dart';
 import '../utils/coordinate_transform.dart';
 
 import 'save_route_dialog.dart';
@@ -67,6 +69,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   bool _isFollowing = true;
   bool _isOffRoute = false;
   int _offRouteCounter = 0; // 连续偏离计数器
+  final NavigationVoiceService _voiceService = const NavigationVoiceService();
+  VoiceGuidanceMode _voiceMode = VoiceGuidanceMode.detailed;
   bool _muteVoiceGuidance = false;
   bool _showAllCameras = false;
 
@@ -156,8 +160,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   void initState() {
     super.initState();
     unawaited(WakelockPlus.enable());
-    unawaited(_initTts());
-    _startNavigation();
+    unawaited(_initializeNavigation());
     _navStartTime = DateTime.now();
     widget.apiService.reportEvent('navigation_start', {
       'timestamp': _navStartTime!.toIso8601String(),
@@ -167,6 +170,218 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     });
   }
 
+  Future<void> _initializeNavigation() async {
+    // 先读取静音设置，避免已选择静音的用户进入页面时仍听到启动播报。
+    await _loadVoiceSettings();
+    if (!mounted) return;
+    await _initTts();
+    if (!mounted) return;
+    await _startNavigation();
+  }
+
+  Future<void> _loadVoiceSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final modeStr = prefs.getString('nav_voice_guidance_mode');
+      if (modeStr == 'concise') {
+        _voiceMode = VoiceGuidanceMode.concise;
+      } else {
+        _voiceMode = VoiceGuidanceMode.detailed;
+      }
+      final muted = prefs.getBool('nav_voice_guidance_muted');
+      if (muted != null) {
+        _muteVoiceGuidance = muted;
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('加载语音设置失败：$e');
+    }
+  }
+
+  Future<void> _selectVoiceMode({
+    required bool mute,
+    VoiceGuidanceMode? mode,
+  }) async {
+    if (mute) {
+      _muteVoiceGuidance = true;
+      await _flutterTts.stop();
+    } else {
+      _muteVoiceGuidance = false;
+      if (mode != null) {
+        _voiceMode = mode;
+      }
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('nav_voice_guidance_mode', _voiceMode.name);
+      await prefs.setBool('nav_voice_guidance_muted', _muteVoiceGuidance);
+    } catch (e) {
+      debugPrint('保存语音设置失败：$e');
+    }
+
+    if (!mounted) return;
+    setState(() {});
+
+    final msg = _muteVoiceGuidance
+        ? '已静音'
+        : (_voiceMode == VoiceGuidanceMode.detailed
+            ? '已切换为详细播报模式'
+            : '已切换为简洁播报模式');
+    _showToast(msg);
+  }
+
+  void _showVoiceModeSelectionSheet() {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final currentSelection = _muteVoiceGuidance
+            ? 'muted'
+            : (_voiceMode == VoiceGuidanceMode.detailed ? 'detailed' : 'concise');
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + MediaQuery.of(ctx).padding.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '语音播报模式',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildVoiceOptionTile(
+                ctx: ctx,
+                isSelected: currentSelection == 'detailed',
+                icon: Icons.record_voice_over_rounded,
+                iconColor: Colors.blue,
+                title: '详细播报',
+                subtitle: '特殊路段提前预告，普通动作分段提醒',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectVoiceMode(mute: false, mode: VoiceGuidanceMode.detailed);
+                },
+              ),
+              const SizedBox(height: 8),
+              _buildVoiceOptionTile(
+                ctx: ctx,
+                isSelected: currentSelection == 'concise',
+                icon: Icons.volume_down_rounded,
+                iconColor: const Color(0xFF00695C),
+                title: '简洁播报',
+                subtitle: '短促精炼、仅播报关键转向与特殊路段动作',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectVoiceMode(mute: false, mode: VoiceGuidanceMode.concise);
+                },
+              ),
+              const SizedBox(height: 8),
+              _buildVoiceOptionTile(
+                ctx: ctx,
+                isSelected: currentSelection == 'muted',
+                icon: Icons.volume_off_rounded,
+                iconColor: Colors.grey[700]!,
+                title: '静音',
+                subtitle: '关闭所有路线指引与路段语音',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectVoiceMode(mute: true);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVoiceOptionTile({
+    required BuildContext ctx,
+    required bool isSelected,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? iconColor.withValues(alpha: 0.1)
+              : Colors.grey.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? iconColor : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: isSelected
+                  ? iconColor.withValues(alpha: 0.2)
+                  : Colors.grey.withValues(alpha: 0.15),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.w600,
+                      color: isSelected ? iconColor : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              Icon(Icons.check_circle_rounded, color: iconColor, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _initTts() async {
     try {
@@ -199,18 +414,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     }
   }
 
-  Future<void> _toggleVoiceMute() async {
-    final next = !_muteVoiceGuidance;
-    if (next) {
-      await _flutterTts.stop();
-    }
-    if (!mounted) return;
-    setState(() {
-      _muteVoiceGuidance = next;
-    });
-  }
-
-  void _startNavigation() async {
+  Future<void> _startNavigation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
 
@@ -331,58 +535,12 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   }
 
   /// 从步骤中提取方向关键词（用于语音和显示）
-  String _getDirectionLabel(RouteStep step) {
-    final text = _guidanceText(step);
-    if (_isUturnText(text)) return '掉头';
-    if (_isStraightText(text)) return '直行';
-    if (_isSlightLeftText(text) || _isKeepLeftText(text)) return '靠左行驶';
-    if (_isSlightRightText(text) || _isKeepRightText(text)) return '靠右行驶';
-    if (_isLeftTurnText(text)) return '左转';
-    if (_isRightTurnText(text)) return '右转';
-    return step.instruction;
-  }
-
-  String _guidanceText(RouteStep step) {
-    final action = (step.action ?? '').trim();
-    final instruction = step.instruction.trim();
-
-    // “注意直行”优先级最高，避免和“右转车道”等文字同时出现时误判为右转。
-    if (action.contains('注意直行') || action.contains('请直行')) return action;
-    if (instruction.contains('注意直行') || instruction.contains('请直行')) {
-      return instruction;
-    }
-    return action.isNotEmpty ? action : instruction;
-  }
-
-  bool _isUturnText(String text) => text.contains('掉头') || text.contains('调头');
-  bool _isLeftTurnText(String text) => text.contains('左转');
-  bool _isRightTurnText(String text) => text.contains('右转');
-  bool _isKeepLeftText(String text) => text.contains('靠左');
-  bool _isKeepRightText(String text) => text.contains('靠右');
-  bool _isSlightLeftText(String text) =>
-      text.contains('左前方') || text.contains('左前') || text.contains('左侧');
-  bool _isSlightRightText(String text) =>
-      text.contains('右前方') || text.contains('右前') || text.contains('右侧');
-  bool _isStraightText(String text) {
-    return text.contains('注意直行') ||
-        text.contains('请直行') ||
-        text.contains('继续直行') ||
-        text.contains('直行') ||
-        text.contains('直走');
-  }
+  String _getDirectionLabel(RouteStep step) =>
+      _voiceService.getDirectionLabel(step);
 
   /// 判断步骤是否包含需要提示的转向动作（非直行/出发）
-  bool _isActionableStep(RouteStep step) {
-    final text = _guidanceText(step);
-    if (_isStraightText(text)) return false;
-    return _isLeftTurnText(text) ||
-        _isRightTurnText(text) ||
-        _isUturnText(text) ||
-        _isKeepLeftText(text) ||
-        _isKeepRightText(text) ||
-        _isSlightLeftText(text) ||
-        _isSlightRightText(text);
-  }
+  bool _isActionableStep(RouteStep step) =>
+      _voiceService.isActionableStep(step);
 
   void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
@@ -550,22 +708,19 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       _distanceToNextStep = nextStep != null ? distToNext : null;
     });
 
-    // 转向语音播报：基于当前步骤末端的转向动作和剩余距离
-    if (_isActionableStep(curStep) && remainingInStep > 0) {
-      final stepId = curStep.polylineIdxStart.toString();
-      final dirLabel = _getDirectionLabel(curStep);
-      if (remainingInStep <= 150 && remainingInStep > 30) {
-        final key150 = "${stepId}_150m";
-        if (!_alertedSteps.contains(key150)) {
-          _alertedSteps.add(key150);
-          _speak("前方 ${remainingInStep.round()} 米，$dirLabel");
-        }
-      } else if (remainingInStep <= 30) {
-        final key30 = "${stepId}_30m";
-        if (!_alertedSteps.contains(key30)) {
-          _alertedSteps.add(key30);
-          _speak(dirLabel);
-        }
+    // 静音时不评估也不消耗去重键，解除静音后仍能收到当前阶段提示。
+    if (!_muteVoiceGuidance &&
+        _isActionableStep(curStep) &&
+        remainingInStep > 0) {
+      final prompt = _voiceService.evaluateVoicePrompt(
+        step: curStep,
+        remainingDistance: remainingInStep,
+        mode: _voiceMode,
+        alertedKeys: _alertedSteps,
+      );
+      if (prompt != null) {
+        _alertedSteps.add(prompt.alertKey);
+        _speak(prompt.text);
       }
     }
   }
@@ -868,20 +1023,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     );
   }
 
-  IconData _getTurnIcon(RouteStep step) {
-    final text = _guidanceText(step);
-    if (_isUturnText(text)) return Icons.u_turn_left;
-    if (_isStraightText(text)) return Icons.straight;
-    if (_isSlightLeftText(text) || _isKeepLeftText(text)) {
-      return Icons.turn_slight_left;
-    }
-    if (_isSlightRightText(text) || _isKeepRightText(text)) {
-      return Icons.turn_slight_right;
-    }
-    if (_isLeftTurnText(text)) return Icons.turn_left;
-    if (_isRightTurnText(text)) return Icons.turn_right;
-    return Icons.navigation;
-  }
+  IconData _getTurnIcon(RouteStep step) => _voiceService.getTurnIcon(step);
 
   Widget _buildLocationIcon() {
     return Stack(
@@ -1005,15 +1147,57 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     );
   }
 
-  void _reroute() {
-    Navigator.of(context).pop('reroute');
+  Widget _buildVoiceButtonChild() {
+    if (_muteVoiceGuidance) {
+      return const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.volume_off_rounded, color: Colors.white, size: 22),
+          SizedBox(height: 1),
+          Text(
+            '静音',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final isDetailed = _voiceMode == VoiceGuidanceMode.detailed;
+    final color = isDetailed ? Colors.blue[800]! : const Color(0xFF00695C);
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          isDetailed
+              ? Icons.record_voice_over_rounded
+              : Icons.volume_down_rounded,
+          color: color,
+          size: 20,
+        ),
+        const SizedBox(height: 1),
+        Text(
+          isDetailed ? '详细' : '简洁',
+          style: TextStyle(
+            fontSize: 10,
+            color: color,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildBottomPanel() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // 左侧：退出 + 摄像头开关 + 换航
+        // 左侧：退出 + 摄像头开关
         Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1035,30 +1219,26 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                 color: _showAllCameras ? Colors.white : Colors.grey,
               ),
             ),
-            const SizedBox(height: 8),
-            FloatingActionButton.extended(
-              heroTag: null,
-              backgroundColor: Colors.orange,
-              onPressed: _reroute,
-              icon: const Icon(Icons.alt_route, color: Colors.white, size: 20),
-              label: const Text('换航', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
           ],
         ),
         
         // 右侧控制区域
         Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // 语音开关
+            // 语音模式切换按钮（详细/简洁/静音）
             FloatingActionButton(
               heroTag: null,
-              backgroundColor: _muteVoiceGuidance ? const Color(0xFF546E7A) : Colors.white,
-              onPressed: _toggleVoiceMute,
-              child: Icon(
-                _muteVoiceGuidance ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                color: _muteVoiceGuidance ? Colors.white : Colors.blue,
-              ),
+              backgroundColor:
+                  _muteVoiceGuidance ? const Color(0xFF546E7A) : Colors.white,
+              onPressed: _showVoiceModeSelectionSheet,
+              tooltip: _muteVoiceGuidance
+                  ? '语音已静音（点击设置）'
+                  : (_voiceMode == VoiceGuidanceMode.detailed
+                      ? '详细播报模式（点击设置）'
+                      : '简洁播报模式（点击设置）'),
+              child: _buildVoiceButtonChild(),
             ),
             const SizedBox(width: 12),
             

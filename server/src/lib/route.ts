@@ -375,8 +375,11 @@ async function callTencentDrivingAPI(
       duration: step.duration || 0,
       polylineIdxStart: (step.polyline_idx && step.polyline_idx.length > 0) ? Math.floor(step.polyline_idx[0] / 2) : 0,
       polylineIdxEnd: (step.polyline_idx && step.polyline_idx.length > 1) ? Math.floor(step.polyline_idx[1] / 2) : 0,
-      action: step.act,
-      direction: step.direction,
+      // 腾讯 Direction API 的结构化引导字段分别为：
+      // act_desc（末尾动作）、accessorial_desc（辅助动作）、dir_desc（方向）。
+      action: step.act_desc,
+      accessorialAction: step.accessorial_desc,
+      direction: step.dir_desc,
     })),
   }));
 }
@@ -1302,4 +1305,3 @@ export function createRoute(
     createdAt: new Date().toISOString(),
   };
 }
-

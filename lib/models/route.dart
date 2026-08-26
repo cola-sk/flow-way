@@ -41,6 +41,7 @@ class RouteStep {
   final int polylineIdxStart;
   final int polylineIdxEnd;
   final String? action;
+  final String? accessorialAction;
   final String? direction;
 
   RouteStep({
@@ -50,6 +51,7 @@ class RouteStep {
     required this.polylineIdxStart,
     required this.polylineIdxEnd,
     this.action,
+    this.accessorialAction,
     this.direction,
   });
 
@@ -60,6 +62,7 @@ class RouteStep {
     'polylineIdxStart': polylineIdxStart,
     'polylineIdxEnd': polylineIdxEnd,
     'action': action,
+    'accessorialAction': accessorialAction,
     'direction': direction,
   };
 
@@ -70,6 +73,7 @@ class RouteStep {
     polylineIdxStart: (json['polylineIdxStart'] as num?)?.toInt() ?? 0,
     polylineIdxEnd: (json['polylineIdxEnd'] as num?)?.toInt() ?? 0,
     action: json['action'] as String?,
+    accessorialAction: json['accessorialAction'] as String?,
     direction: json['direction'] as String?,
   );
 }

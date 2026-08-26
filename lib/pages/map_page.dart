@@ -2422,6 +2422,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   polylineIdxStart: s.polylineIdxStart + currentPointOffset,
                   polylineIdxEnd: s.polylineIdxEnd + currentPointOffset,
                   action: s.action,
+                  accessorialAction: s.accessorialAction,
                   direction: s.direction,
                 ),
               )
