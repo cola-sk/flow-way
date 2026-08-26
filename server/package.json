@@ -10,7 +10,7 @@
     "set-token-expiry": "tsx scripts/set-token-expiry.ts",
     "gen-token": "tsx scripts/gen-token.ts",
     "build-apk": "flutter build apk --release",
-    "build-apk:beta": "flutter build apk --release --dart-define=API_BASE_URL=https://flow-way-git-beta-skingpts-projects.vercel.app",
+    "build-apk:beta": "cd .. && flutter build apk --release --dart-define=API_BASE_URL=https://flow-way-preview.tz0618.uk --dart-define=IS_BETA=true",
     "upload-apk": "tsx scripts/upload-apk.ts",
     "upload-apk:beta": "tsx scripts/upload-apk.ts -- beta",
     "release": "tsx scripts/release.ts",

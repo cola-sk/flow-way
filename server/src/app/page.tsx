@@ -1,5 +1,4 @@
 import { CHANGELOG } from './changelog';
-import { BetaDownloadButton } from './beta-download-button';
 import { ContactMeButton } from './contact-me-button';
 
 export default function Home() {
@@ -36,7 +35,6 @@ export default function Home() {
           >
             ↓ 下载最新版 v{latest.version}
           </a>
-          <BetaDownloadButton />
           <ContactMeButton />
         </div>
       </div>
@@ -118,4 +116,3 @@ export default function Home() {
     </main>
   );
 }
-

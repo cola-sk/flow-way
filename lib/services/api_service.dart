@@ -51,8 +51,7 @@ String resolveApiBaseUrl() {
 }
 
 bool _isBetaEnv() {
-  const customUrl = String.fromEnvironment('API_BASE_URL');
-  return customUrl.contains('beta');
+  return const bool.fromEnvironment('IS_BETA');
 }
 
 String _formatError(Object e) {
