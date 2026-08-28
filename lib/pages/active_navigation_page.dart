@@ -61,7 +61,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   StreamSubscription<Position>? _positionStream;
   Position? _currentPosition;
   LatLng? _currentMapPosition;
-  double _currentSpeed = 0.0; // m/s
   double _heading = 0.0;     // degrees
   DateTime? _navStartTime;
 
@@ -452,7 +451,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         _currentPosition = position;
         _currentMapPosition = mapPos;
         _snappedMapPosition = snappedPos;
-        _currentSpeed = position.speed; // m/s
         if (position.speed > 1.0) {
           _heading = position.heading; // degrees
         }
@@ -1075,18 +1073,27 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '时速: ${(_currentSpeed * 3.6).toStringAsFixed(1)} km/h',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              Expanded(
+                child: Text(
+                  _currentStep != null && _distanceRemainingInStep != null
+                      ? '剩余 ${_distanceRemainingInStep! >= 1000 ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)}公里' : '${_distanceRemainingInStep!.toInt()}米'} ${_getDirectionLabel(_currentStep!)}'
+                      : '剩余距离计算中',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
               ),
               if (_isOffRoute)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('已偏离', style: TextStyle(color: Colors.white)),
                   ),
-                  child: const Text('已偏离', style: TextStyle(color: Colors.white)),
                 ),
             ],
           ),
