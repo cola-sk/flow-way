@@ -448,10 +448,14 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
 
     final isInsideSixth = cfg.passType == BeijingPassType.insideSixth;
     final vehicle = _selectedVehicle;
-    final latestRecord = vehicle?.records.isNotEmpty == true
-        ? vehicle!.records.first
-        : _lastFetchResult?.activeRecord;
-    final applyIdOld = latestRecord?.id;
+    final activeRecord = vehicle?.activeRecord;
+    // 仅当当前车辆存在相同类型、且当前有效/生效中的进京证时，才传递 applyIdOld 进行顺延续签
+    final applyIdOld = (activeRecord != null &&
+            activeRecord.isValidNow &&
+            activeRecord.passType == cfg.passType &&
+            activeRecord.id.isNotEmpty)
+        ? activeRecord.id
+        : null;
     final vId = vehicle?.id.isNotEmpty == true ? vehicle!.id : cfg.carId;
 
     // 确认弹窗

@@ -536,6 +536,20 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   String _getDirectionLabel(RouteStep step) =>
       _voiceService.getDirectionLabel(step);
 
+  // 顶部只显示简短动作，完整 step 文案留给下方转向卡片展示。
+  String _getCompactDirectionLabel(RouteStep step) {
+    final label = _getDirectionLabel(step);
+    final commaIndex = label.lastIndexOf(',');
+    final chineseCommaIndex = label.lastIndexOf('，');
+    final splitIndex = commaIndex > chineseCommaIndex
+        ? commaIndex
+        : chineseCommaIndex;
+    if (splitIndex >= 0 && splitIndex + 1 < label.length) {
+      return label.substring(splitIndex + 1).trim();
+    }
+    return label;
+  }
+
   /// 判断步骤是否包含需要提示的转向动作（非直行/出发）
   bool _isActionableStep(RouteStep step) =>
       _voiceService.isActionableStep(step);
@@ -1070,33 +1084,43 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  _currentStep != null && _distanceRemainingInStep != null
-                      ? '剩余 ${_distanceRemainingInStep! >= 1000 ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)}公里' : '${_distanceRemainingInStep!.toInt()}米'} ${_getDirectionLabel(_currentStep!)}'
-                      : '剩余距离计算中',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                ),
-              ),
-              if (_isOffRoute)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(8),
+          if (!isTurningSoon)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    _currentStep != null && _distanceRemainingInStep != null
+                        ? '剩余 ${_distanceRemainingInStep! >= 1000 ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)}公里' : '${_distanceRemainingInStep!.toInt()}米'} ${_getCompactDirectionLabel(_currentStep!)}'
+                        : '剩余距离计算中',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
-                    child: const Text('已偏离', style: TextStyle(color: Colors.white)),
                   ),
                 ),
-            ],
-          ),
+                if (_isOffRoute)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        '已偏离',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           if (_nextCamera != null && _distanceToNextCamera != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8.0),

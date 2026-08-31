@@ -380,11 +380,28 @@ class BeijingPassService {
         config.sqdzbdjd.trim().isNotEmpty ? config.sqdzbdjd.trim() : '116.237936';
     final bdwd =
         config.sqdzbdwd.trim().isNotEmpty ? config.sqdzbdwd.trim() : '40.237461';
+    final cllx = RegExp(r'^\d+$').hasMatch(config.carModel.trim())
+        ? config.carModel.trim()
+        : '01';
+    final hpzl = config.plateType.trim().isNotEmpty
+        ? config.plateType.trim()
+        : (config.licensePlate.trim().length >= 8 ? '52' : '02');
+    final driverLicence = config.driverLicence.trim();
+    final driverName = config.driverName.trim();
+    final destination = config.destination.trim().isNotEmpty
+        ? config.destination.trim()
+        : '其它';
+    final entrance = config.entranceName.trim().isNotEmpty
+        ? config.entranceName.trim()
+        : '其他道路';
+    final jjlk = entrance == '京藏高速' ? '00401' : '00606';
+    final jjmd = destination == '自驾旅游' ? '01' : '06';
 
     // 字段名以 stateList / insertApplyRecord 官方交警接口为准
     final payload = {
-      'hphm': config.licensePlate,
-      if (config.plateType.isNotEmpty) 'hpzl': config.plateType,
+      'dabh': 'null',
+      'hphm': config.licensePlate.trim(),
+      'hpzl': hpzl,
       'vId': effectiveVId,
       'jjzzl': config.passType.officialCode,
       if (applyIdOld != null && applyIdOld.isNotEmpty) 'applyIdOld': applyIdOld,
@@ -398,32 +415,36 @@ class BeijingPassService {
       'sqdzbdwd': bdwd,
       'txrxx': const <Object>[],
       'jjdq': '010',
-      'jjmd': '06',
-      'jjlk': '00606',
-      'jjmdmc': config.destination.isNotEmpty ? config.destination : '其它',
-      'jjlkmc': config.entranceName.isNotEmpty ? config.entranceName : '其他道路',
+      'area': destination,
+      'jjmd': jjmd,
+      'jjlk': jjlk,
+      'jjmdmc': destination,
+      'jjlkmc': entrance,
       'jjrq': applyDateStr,
       'yxqs': applyDateStr,
       'yxqz': applyEndDateStr,
       'sqsj': applyDateStr,
-      'cllx': config.carModel,
-      'fdjh': config.engineNo,
-      'clsbdh': config.vin,
-      'jsrxm': config.driverName,
-      'jszh': config.driverLicence,
+      'cllx': cllx,
+      'fdjh': config.engineNo.trim(),
+      'clsbdh': config.vin.trim(),
+      'jsrxm': driverName,
+      'jszh': driverLicence,
+      'sfzmhm': driverLicence,
+      'ylzsfkb': true,
+      'elzsfkb': true,
       // 兼容旧接口字段
       'applyType': config.passType.code,
       'applyTime': applyDateStr,
       'applyDays': applyDays.toString(),
       'carId': effectiveVId,
-      'licensePlate': config.licensePlate,
-      'carModel': config.carModel,
-      'engineNo': config.engineNo,
-      'vin': config.vin,
-      'driverName': config.driverName,
-      'driverLicence': config.driverLicence,
-      'entranceName': config.entranceName,
-      'destination': config.destination,
+      'licensePlate': config.licensePlate.trim(),
+      'carModel': config.carModel.trim(),
+      'engineNo': config.engineNo.trim(),
+      'vin': config.vin.trim(),
+      'driverName': driverName,
+      'driverLicence': driverLicence,
+      'entranceName': entrance,
+      'destination': destination,
     };
 
     try {
