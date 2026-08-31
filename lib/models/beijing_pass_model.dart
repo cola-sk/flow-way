@@ -427,6 +427,10 @@ class BeijingPassVehicle {
     this.records = const [],
   });
 
+  /// 当前生效的进京证记录（isValidNow == true）。
+  /// 若没有任何生效中的记录，则返回最新的历史记录（可能已过期/被拒绝）；
+  /// 若 records 为空则返回 null。
+  /// **注意**：使用前必须检查 isValidNow，不能假设返回值一定是有效记录。
   BeijingPassRecord? get activeRecord {
     for (final record in records) {
       if (record.isValidNow) return record;
