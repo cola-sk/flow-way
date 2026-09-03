@@ -79,6 +79,9 @@ const fieldLabels: Record<string, string> = {
   start_time: '开始时间',
   end_time: '结束时间',
   timestamp: '时间戳',
+  app_version: '应用版本',
+  app_build_number: '构建号',
+  is_beta: 'Beta 版',
   oldToken: '旧 Token',
   newToken: '新 Token',
 };
@@ -103,6 +106,9 @@ const detailOrder = [
   'start_time',
   'end_time',
   'timestamp',
+  'app_version',
+  'app_build_number',
+  'is_beta',
   'oldToken',
   'newToken',
 ];

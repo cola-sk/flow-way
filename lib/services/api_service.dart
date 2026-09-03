@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
@@ -54,6 +55,24 @@ bool _isBetaEnv() {
   return const bool.fromEnvironment('IS_BETA');
 }
 
+class _EventClientMetadata {
+  final String appVersion;
+  final String appBuildNumber;
+  final bool isBeta;
+
+  const _EventClientMetadata({
+    required this.appVersion,
+    required this.appBuildNumber,
+    required this.isBeta,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'app_version': appVersion,
+    'app_build_number': appBuildNumber,
+    'is_beta': isBeta,
+  };
+}
+
 String _formatError(Object e) {
   if (e is DioException) {
     final resp = e.response;
@@ -103,8 +122,29 @@ class ApiService {
   static const String firstLaunchDefaultUserToken = 'test_token_v2026';
 
   static final RegExp _userTokenPattern = RegExp(r'^[A-Za-z0-9_]{16}$');
+  static Future<_EventClientMetadata>? _eventClientMetadata;
 
   bool get isBeta => _isBetaEnv();
+
+  static Future<_EventClientMetadata> _loadEventClientMetadata() {
+    return _eventClientMetadata ??= () async {
+      try {
+        final packageInfo = await PackageInfo.fromPlatform();
+        return _EventClientMetadata(
+          appVersion: packageInfo.version,
+          appBuildNumber: packageInfo.buildNumber,
+          isBeta: _isBetaEnv(),
+        );
+      } catch (_) {
+        // 埋点不能因读取版本信息失败而中断，保留可识别的兜底值。
+        return _EventClientMetadata(
+          appVersion: 'unknown',
+          appBuildNumber: '',
+          isBeta: _isBetaEnv(),
+        );
+      }
+    }();
+  }
 
   final Dio _dio;
   void Function(TokenAccessDeniedError error)? onTokenAccessDenied;
@@ -243,9 +283,15 @@ class ApiService {
   Future<void> reportEvent(String event, [Map<String, dynamic>? data]) async {
     try {
       final userToken = await ensureUserToken();
+      final clientMetadata = await _loadEventClientMetadata();
       await _dio.post(
         '/api/logs',
-        data: {'event': event, 'data': data ?? {}, 'userToken': userToken},
+        data: {
+          'event': event,
+          // 元数据后合并，确保所有埋点都带有真实的客户端版本与渠道标识。
+          'data': {...?data, ...clientMetadata.toJson()},
+          'userToken': userToken,
+        },
       );
     } catch (e) {
       // 日志上报失败不影响主流程

@@ -8,6 +8,9 @@ interface UserToken {
   first_event_date: string | null;
   last_event_date: string | null;
   total_events: number;
+  app_version: string | null;
+  app_build_number: string | null;
+  is_beta: boolean | null;
   state: string;
   validity: string;
   expiresAt: string | null;
@@ -186,12 +189,13 @@ export function DashboardCharts() {
           <div style={{ textAlign: 'center', color: '#6b7280', padding: 40 }}>没有匹配的 Token。</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', minWidth: 830, borderCollapse: 'collapse', fontSize: 14 }}>
+            <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', fontSize: 14 }}>
               <thead>
                 <tr style={{ background: '#f9fafb', color: '#374151', textAlign: 'left' }}>
                   <th style={{ padding: '11px 20px', fontWeight: 600 }}>用户 Token</th>
                   <th style={{ padding: '11px 12px', fontWeight: 600 }}>状态</th>
                   <th style={{ padding: '11px 12px', fontWeight: 600 }}>到期时间</th>
+                  <th style={{ padding: '11px 12px', fontWeight: 600 }}>最近版本</th>
                   <th style={{ padding: '11px 12px', fontWeight: 600 }}>最近活跃</th>
                   <th style={{ padding: '11px 12px', fontWeight: 600 }}>行为日志</th>
                 </tr>
@@ -207,6 +211,16 @@ export function DashboardCharts() {
                       <td style={{ padding: '14px 12px', color: '#374151' }}>
                         <div>{token.expiresAt ? formatDate(token.expiresAt, { hour: '2-digit', minute: '2-digit' }) : '—'}</div>
                         <div style={{ marginTop: 4 }}><Badge tone={expiry.tone}>{expiry.label}</Badge></div>
+                      </td>
+                      <td style={{ padding: '14px 12px', color: '#374151' }}>
+                        {token.app_version ? (
+                          <>
+                            <div>v{token.app_version}{token.app_build_number ? ` (${token.app_build_number})` : ''}</div>
+                            <div style={{ marginTop: 4 }}>
+                              <Badge tone={token.is_beta ? 'warning' : 'success'}>{token.is_beta ? 'Beta' : '正式版'}</Badge>
+                            </div>
+                          </>
+                        ) : '—'}
                       </td>
                       <td style={{ padding: '14px 12px', color: '#4b5563' }}>{formatDate(token.last_event_date, { hour: '2-digit', minute: '2-digit' })}</td>
                       <td style={{ padding: '14px 12px' }}>
