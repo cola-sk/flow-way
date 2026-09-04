@@ -301,12 +301,17 @@ class BeijingPassConfig {
 
   bool get isTokenConfigured => token.trim().isNotEmpty;
 
-  bool get isEssentialInfoComplete =>
-      licensePlate.trim().isNotEmpty &&
-      engineNo.trim().isNotEmpty &&
-      vin.trim().isNotEmpty &&
-      driverName.trim().isNotEmpty &&
-      driverLicence.trim().isNotEmpty;
+  /// 车辆及驾驶人信息是否满足提交办证的基本要求。
+  /// 若已绑定交管系统车辆 ID (carId)，官方接口只需车牌与驾驶人身份即可提交；
+  /// 若未绑定车辆 ID，则需要发动机号与车架号进行核验。
+  bool get isEssentialInfoComplete {
+    final hasPlate = licensePlate.trim().isNotEmpty;
+    final hasDriver =
+        driverName.trim().isNotEmpty && driverLicence.trim().isNotEmpty;
+    if (!hasPlate || !hasDriver) return false;
+    if (carId.trim().isNotEmpty) return true;
+    return engineNo.trim().isNotEmpty && vin.trim().isNotEmpty;
+  }
 }
 
 /// 只在提交办证时使用、且与某一车辆绑定的补充资料。
@@ -355,6 +360,8 @@ class BeijingPassRecord {
   final String statusDesc;
   final int totalCount;
   final int usedCount;
+  final String driverName;
+  final String driverLicence;
   final String rawJson;
 
   const BeijingPassRecord({
@@ -367,6 +374,8 @@ class BeijingPassRecord {
     this.statusDesc = '',
     this.totalCount = 0,
     this.usedCount = 0,
+    this.driverName = '',
+    this.driverLicence = '',
     this.rawJson = '',
   });
 
@@ -441,5 +450,23 @@ class BeijingPassVehicle {
   String get displayName {
     final plate = licensePlate.isEmpty ? '未命名车辆' : licensePlate;
     return vehicleType.isEmpty ? plate : '$plate · $vehicleType';
+  }
+
+  /// 从该车辆历史记录中获取最近填写的驾驶人姓名
+  String get lastDriverName {
+    for (final record in records) {
+      if (record.driverName.trim().isNotEmpty) return record.driverName.trim();
+    }
+    return '';
+  }
+
+  /// 从该车辆历史记录中获取最近填写的驾驶人身份证/驾驶证号
+  String get lastDriverLicence {
+    for (final record in records) {
+      if (record.driverLicence.trim().isNotEmpty) {
+        return record.driverLicence.trim();
+      }
+    }
+    return '';
   }
 }
