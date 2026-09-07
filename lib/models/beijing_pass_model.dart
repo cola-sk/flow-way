@@ -165,7 +165,7 @@ class BeijingPassConfig {
     this.passType = BeijingPassType.outsideSixth,
     this.entranceName = '其他道路',
     this.destination = '其它',
-    this.isInBeijing = false,
+    this.isInBeijing = true,
     this.inBeijingAddress = '昌平北站',
     this.sqdzgdjd = '116.231525',
     this.sqdzgdwd = '40.231452',
@@ -403,20 +403,19 @@ class BeijingPassRecord {
     return !today.isBefore(start) && !today.isAfter(end);
   }
 
-  /// 建议的下一次续签起始日期
+  /// 建议的下一次续签起始日期：任何时候默认生效时间都是今天，除非今天在上一个有效期内
   DateTime get suggestedNextStartDate {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    if (endDate != null && endDate!.isAfter(today)) {
-      // 顺延到现有进京证结束日期的次日
-      return DateTime(
-        endDate!.year,
-        endDate!.month,
-        endDate!.day,
-      ).add(const Duration(days: 1));
+    if (endDate != null) {
+      final endDay = DateTime(endDate!.year, endDate!.month, endDate!.day);
+      if (!today.isAfter(endDay)) {
+        // 今天在上一个有效期内（含有效期最后一天），顺延到现有进京证结束日期的次日
+        return endDay.add(const Duration(days: 1));
+      }
     }
-    // 默认明天（避免当天中午12点后无法办理限制）
-    return today.add(const Duration(days: 1));
+    // 任何其他时候（包括上个证已过期），默认的生效时间都是今天
+    return today;
   }
 }
 

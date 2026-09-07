@@ -279,6 +279,11 @@ class BeijingPassService {
     final jjlk = isJingzang ? '00401' : '00606';
     final jjlkmc = isJingzang ? '京藏高速' : '其他道路';
 
+    // 官方线上办理规范：sfzj 必须为整数 1（车辆在京/线上申办免核验模式）或 0。
+    // 经实测，线上申请六环外进京证时若传 0 或字符串 '0' 会直接触发交管服务端 500（"目前办证人数较多，请稍后!"）；
+    // 因此不论 isInBeijing 初始值为何，有在京地址或线上办理时统一按整型数值 1 提交。
+    final int sfzj = (config.isInBeijing || inBjAddress.isNotEmpty) ? 1 : 0;
+
     final payload = <String, dynamic>{
       'dabh': 'null',
       'hphm': config.licensePlate.trim(),
@@ -297,15 +302,9 @@ class BeijingPassService {
       'xxdz': inBjAddress,
       'sqdzbdjd': bdjd,
       'sqdzbdwd': bdwd,
-      'sqdzgdjd': gdjd,
-      'sqdzgdwd': gdwd,
-      'txrxx': const <dynamic>[],
-      'sfzj': config.isInBeijing ? '1' : '0',
+      'sfzj': sfzj,
     };
 
-    if (config.isInBeijing) {
-      payload['zjxxdz'] = inBjAddress;
-    }
     if (applyIdOld != null && applyIdOld.trim().isNotEmpty) {
       payload['applyIdOld'] = applyIdOld.trim();
     }
@@ -549,7 +548,10 @@ class BeijingPassService {
             data['resMsg']?.toString() ??
             '';
 
-        if (code == '200' || code == '0' || msg.contains('成功')) {
+        if (code == '200' ||
+            code == '0' ||
+            msg.contains('成功') ||
+            msg.contains('审核')) {
           final applyId =
               data['data']?['id']?.toString() ??
               data['data']?['applyId']?.toString();

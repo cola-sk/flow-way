@@ -53,9 +53,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       TextEditingController();
 
   BeijingPassType _selectedPassType = BeijingPassType.outsideSixth;
-  bool _isInBeijing = false;
-  DateTime _selectedApplyStartDate = DateTime.now().add(
-    const Duration(days: 1),
+  bool _isInBeijing = true;
+  DateTime _selectedApplyStartDate = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
   );
 
   @override
@@ -212,17 +214,17 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     _engineNoController.text = supplement?.engineNo ?? _config.engineNo;
     _vinController.text = supplement?.vin ?? _config.vin;
 
-    // 优先使用当前车辆已保存的补充资料，其次使用全局配置，若均为空则自动带入交警系统历史记录中的驾驶人
-    final driverName = supplement?.driverName.isNotEmpty == true
+    // 优先使用交警系统官方历史记录中已核验的驾驶人，其次使用已保存补充资料或全局配置
+    final driverName = vehicle.lastDriverName.isNotEmpty
+        ? vehicle.lastDriverName
+        : supplement?.driverName.isNotEmpty == true
         ? supplement!.driverName
-        : _config.driverName.isNotEmpty
-        ? _config.driverName
-        : vehicle.lastDriverName;
-    final driverLicence = supplement?.driverLicence.isNotEmpty == true
+        : _config.driverName;
+    final driverLicence = vehicle.lastDriverLicence.isNotEmpty
+        ? vehicle.lastDriverLicence
+        : supplement?.driverLicence.isNotEmpty == true
         ? supplement!.driverLicence
-        : _config.driverLicence.isNotEmpty
-        ? _config.driverLicence
-        : vehicle.lastDriverLicence;
+        : _config.driverLicence;
 
     _driverNameController.text = driverName;
     _driverLicenceController.text = driverLicence;

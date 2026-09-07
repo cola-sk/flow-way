@@ -77,6 +77,21 @@ void main() {
         expect(expiredRecord.remainingDays, 0);
         expect(
           expiredRecord.suggestedNextStartDate,
+          today,
+        );
+
+        // 今天正好是有效期的最后一天（今天在上一个有效期内）：顺延到明天
+        final lastDayRecord = BeijingPassRecord(
+          id: 'rec-003',
+          licensePlate: '冀A12345',
+          passType: BeijingPassType.outsideSixth,
+          startDate: today.subtract(const Duration(days: 6)),
+          endDate: today,
+          status: BeijingPassStatus.valid,
+          statusDesc: '审核通过(生效中)',
+        );
+        expect(
+          lastDayRecord.suggestedNextStartDate,
           today.add(const Duration(days: 1)),
         );
       },
@@ -245,18 +260,22 @@ void main() {
       expect(payload['jjlk'], '00401');
       expect(payload['jjlkmc'], '京藏高速');
 
-      // 坐标必须为 double
+      // 坐标必须为 double（官方只需要百度经纬度）
       expect(payload['sqdzbdjd'], isA<double>());
       expect(payload['sqdzbdwd'], isA<double>());
-      expect(payload['sqdzgdjd'], isA<double>());
-      expect(payload['sqdzgdwd'], isA<double>());
       expect(payload['sqdzbdjd'], 116.307393);
+      expect(payload.containsKey('sqdzgdjd'), isFalse);
+      expect(payload.containsKey('sqdzgdwd'), isFalse);
+
+      // sfzj 必须为整数 1（在线申办模式）
+      expect(payload['sfzj'], 1);
 
       // 日期
       expect(payload['jjrq'], '2026-09-10');
 
       // 不能包含未来时间戳 sqsj 以及非交管局要求的字段
       expect(payload.containsKey('sqsj'), isFalse);
+      expect(payload.containsKey('txrxx'), isFalse);
     });
 
     test('BeijingPassVehicle extracts last driver details from records', () {
