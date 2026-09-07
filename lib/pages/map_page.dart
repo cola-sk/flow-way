@@ -3946,24 +3946,21 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       child: Stack(
         alignment: Alignment.center,
         children: [
-          Icon(
-            isLowRisk ? Icons.warning_amber_rounded : Icons.warning_rounded,
-            color: isUnavoidable ? Colors.white : color,
-            size: isUnavoidable ? 18 : 19,
-          ),
           if (isAccessRoad)
-            Positioned(
-              right: 1,
-              bottom: 0,
-              child: Text(
-                '辅',
-                style: TextStyle(
-                  color: isUnavoidable ? Colors.white : Color(0xFF2E7D32),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w900,
-                  height: 1,
-                ),
+            Text(
+              '辅',
+              style: TextStyle(
+                color: isUnavoidable ? Colors.white : color,
+                fontSize: isUnavoidable ? 16 : 17,
+                fontWeight: FontWeight.w900,
+                height: 1,
               ),
+            )
+          else
+            Icon(
+              isLowRisk ? Icons.warning_amber_rounded : Icons.warning_rounded,
+              color: isUnavoidable ? Colors.white : color,
+              size: isUnavoidable ? 18 : 19,
             ),
         ],
       ),
