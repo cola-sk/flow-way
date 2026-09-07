@@ -92,6 +92,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   String? _planningStatus;
   // 路线上无法绕开的摄像头索引（仅 avoidCameras=true 时有效）
   Set<int> _unavoidableCameraIndices = {};
+  // 路线上无法绕开的手动风险点 ID（仅 avoidCameras=true 时有效）
+  Set<String> _unavoidableRiskPointIds = {};
   // 之前已探索过的路线折线，用于"再尝试一次"时排除已知走廊
   List<List<LatLng>> _previousRoutePolylines = [];
 
@@ -1570,6 +1572,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _navSearchTarget = null;
       _currentRoute = null;
       _unavoidableCameraIndices = {};
+      _unavoidableRiskPointIds = {};
       _planningIteration = 0;
       _planningStatus = null;
       _searchController.clear();
@@ -1951,6 +1954,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _currentRoute = record.route;
       _previousRoutePolylines = []; // 从保存的路线进入时，视为新的起点，清空原本的重试走廊
       _unavoidableCameraIndices = record.route.cameraIndicesOnRoute.toSet();
+      _unavoidableRiskPointIds = record.route.riskPointIdsOnRoute.toSet();
       _navSearchTarget = null;
       _selectedPlace = null;
       _showSuggestions = false;
@@ -2007,23 +2011,30 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
       final updatedRoute = route.copyWith(
         cameraIndicesOnRoute: result.cameraIndicesOnRoute,
+        riskPointIdsOnRoute: result.riskPointIdsOnRoute,
       );
       setState(() {
         _currentRoute = updatedRoute;
         _unavoidableCameraIndices = result.cameraIndicesOnRoute.toSet();
+        _unavoidableRiskPointIds = result.riskPointIdsOnRoute.toSet();
       });
 
       _apiService.reportEvent('saved_route_redetect_cameras', {
         'route_id': route.id,
         'saved_route_id': _loadedSavedRouteId,
         'camera_count': result.cameraIndicesOnRoute.length,
+        'risk_point_count': result.riskPointIdsOnRoute.length,
         'avoid_cameras': _avoidCameras,
       });
 
-      if (result.cameraIndicesOnRoute.isEmpty) {
-        _showToast('当前摄像头未命中这条线路');
+      if (result.cameraIndicesOnRoute.isEmpty &&
+          result.riskPointIdsOnRoute.isEmpty) {
+        _showToast('当前线路未命中摄像头或风险点');
       } else {
-        _showToast('检测到 ${result.cameraIndicesOnRoute.length} 个命中摄像头，已高亮显示');
+        _showToast(
+          '检测到 ${result.cameraIndicesOnRoute.length} 个摄像头、'
+          '${result.riskPointIdsOnRoute.length} 个风险点命中，已高亮显示',
+        );
       }
     } finally {
       if (mounted) {
@@ -2053,6 +2064,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _currentRoute = null;
       _previousRoutePolylines = []; // 应用点位方案，清空历史走廊
       _unavoidableCameraIndices = {};
+      _unavoidableRiskPointIds = {};
       _navSearchTarget = null;
       _selectedPlace = null;
       _showSuggestions = false;
@@ -2243,6 +2255,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       _avoidCameras = record.avoidCameras;
       _currentRoute = null;
       _unavoidableCameraIndices = {};
+      _unavoidableRiskPointIds = {};
       _navSearchTarget = null;
       _selectedPlace = null;
       _showSuggestions = false;
@@ -2439,12 +2452,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     return Icons.more_horiz_rounded;
   }
 
+  int _routeHazardCount(NavigationRoute route) {
+    return route.cameraIndicesOnRoute.length + route.riskPointIdsOnRoute.length;
+  }
+
   NavigationRoute _mergeRoutes(
     List<NavigationRoute> segments,
     bool avoidCameras,
   ) {
     final mergedPoints = <LatLng>[];
     final mergedCameraIndices = <int>{};
+    final mergedRiskPointIds = <String>{};
     final mergedSteps = <RouteStep>[];
     double distance = 0;
     int duration = 0;
@@ -2480,6 +2498,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         currentPointOffset = mergedPoints.length - 1;
       }
       mergedCameraIndices.addAll(route.cameraIndicesOnRoute);
+      mergedRiskPointIds.addAll(route.riskPointIdsOnRoute);
       distance += route.distance;
       duration += route.duration;
     }
@@ -2493,6 +2512,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       duration: duration,
       routeType: avoidCameras ? 'avoid_cameras' : 'normal',
       cameraIndicesOnRoute: mergedCameraIndices.toList()..sort(),
+      riskPointIdsOnRoute: mergedRiskPointIds.toList()..sort(),
       steps: mergedSteps.isNotEmpty ? mergedSteps : null,
       createdAt: DateTime.now(),
     );
@@ -2778,8 +2798,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       final anchor = anchorDistance ?? bestRouteValue.distance;
       final bool shouldDrawCurrent =
           currentRouteValue.distance <= anchor * 1.20 ||
-          currentRouteValue.cameraIndicesOnRoute.length <
-              bestRouteValue.cameraIndicesOnRoute.length;
+          _routeHazardCount(currentRouteValue) <
+              _routeHazardCount(bestRouteValue);
       final NavigationRoute displayRoute = shouldDrawCurrent
           ? currentRouteValue
           : bestRouteValue;
@@ -2790,9 +2810,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       setState(() {
         _currentRoute = displayRoute;
         _unavoidableCameraIndices = displayRoute.cameraIndicesOnRoute.toSet();
+        _unavoidableRiskPointIds = displayRoute.riskPointIdsOnRoute.toSet();
         final prefix = legLabel == null ? '' : '$legLabel · ';
         _planningStatus =
-            '$prefix第${i + 1}轮：当前${currentRouteValue.cameraIndicesOnRoute.length}个，最优${bestRouteValue.cameraIndicesOnRoute.length}个';
+            '$prefix第${i + 1}轮：当前${_routeHazardCount(currentRouteValue)}个风险，最优${_routeHazardCount(bestRouteValue)}个风险';
       });
       _fitRouteToMap(displayRoute);
 
@@ -2808,8 +2829,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       setState(() {
         _currentRoute = bestRouteValue;
         _unavoidableCameraIndices = bestRouteValue.cameraIndicesOnRoute.toSet();
-        _planningStatus =
-            '规划完成：剩余${bestRouteValue.cameraIndicesOnRoute.length}个摄像头';
+        _unavoidableRiskPointIds = bestRouteValue.riskPointIdsOnRoute.toSet();
+        _planningStatus = '规划完成：剩余${_routeHazardCount(bestRouteValue)}个风险';
       });
       _fitRouteToMap(bestRouteValue);
     }
@@ -2915,6 +2936,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         setState(() {
           _currentRoute = merged;
           _unavoidableCameraIndices = merged.cameraIndicesOnRoute.toSet();
+          _unavoidableRiskPointIds = merged.riskPointIdsOnRoute.toSet();
         });
         _fitRouteToMap(merged);
         if (_stopPlanningRequested) {
@@ -2965,7 +2987,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final stops = _buildNavStopItems();
     if (stops.length < 2) return;
 
-    if (_unavoidableCameraIndices.isEmpty) {
+    if (_unavoidableCameraIndices.isEmpty && _unavoidableRiskPointIds.isEmpty) {
       // 成功避开了所有摄像头，或者根本没有需要避开的，这里应当作全新规划
       _previousRoutePolylines.clear();
     }
@@ -2990,7 +3012,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   /// 路线规划结果弹窗：告知用户绕开了几个摄像头、哪些无法绕开
   void _showRouteResult(NavigationRoute route, bool avoidCameras) {
-    final onRouteCount = route.cameraIndicesOnRoute.length;
+    final cameraOnRouteCount = route.cameraIndicesOnRoute.length;
+    final riskPointOnRouteCount = route.riskPointIdsOnRoute.length;
+    final onRouteCount = cameraOnRouteCount + riskPointOnRouteCount;
     final planningFailed = avoidCameras && onRouteCount > 0;
     // 本次规划绕开的摄像头数（与总数对比无意义，与路线直线对比也难算，
     // 直接告诉用户"路线上仍有 N 个"以及"具体是哪些"）
@@ -2998,12 +3022,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         .where((i) => i < _cameras.length)
         .map((i) => _cameras[i])
         .toList();
+    final unavoidableRiskPoints = _riskPoints
+        .where((point) => route.riskPointIdsOnRoute.contains(point.id))
+        .toList();
     final stopItems = _buildNavStopItems();
 
     _apiService.reportEvent('route_result_sheet_show', {
       'avoid_cameras': avoidCameras,
       'planning_failed': planningFailed,
       'camera_count': onRouteCount,
+      'risk_point_count': riskPointOnRouteCount,
       'distance': route.distance,
       'duration': route.duration,
       'waypoint_count': stopItems.length > 2 ? stopItems.length - 2 : 0,
@@ -3053,7 +3081,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       children: [
                         Text(
                           avoidCameras
-                              ? (onRouteCount == 0 ? '已完全绕开所有摄像头！' : '路线规划完成')
+                              ? (onRouteCount == 0 ? '已完全绕开所有风险！' : '路线规划完成')
                               : '路线规划完成',
                           style: const TextStyle(
                             fontSize: 16,
@@ -3077,69 +3105,61 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 16),
 
-              // 摄像头绕行结果
+              // 摄像头和手动风险点绕行结果
               if (avoidCameras) ...[
                 if (onRouteCount == 0)
                   _routeResultRow(
                     icon: Icons.check_circle_outline_rounded,
                     iconColor: Colors.green[700]!,
-                    text: '路线上 0 个摄像头，已完全绕开',
+                    text: '路线未命中摄像头或风险点，已完全绕开',
                   )
                 else ...[
-                  _routeResultRow(
-                    icon: Icons.videocam_off_rounded,
-                    iconColor: const Color(0xFFBA1A1A),
-                    text: '路线上仍有 $onRouteCount 个摄像头无法绕开（已标红）',
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    '无法绕开的摄像头：',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: _onSurfaceVariant,
+                  if (cameraOnRouteCount > 0) ...[
+                    _routeResultRow(
+                      icon: Icons.videocam_off_rounded,
+                      iconColor: const Color(0xFFBA1A1A),
+                      text: '路线上仍有 $cameraOnRouteCount 个摄像头无法绕开（已标红）',
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  ...unavoidableCameras.map(
-                    (cam) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Row(
-                        children: [
-                          const Icon(
-                            Icons.videocam_rounded,
-                            size: 14,
-                            color: Color(0xFFBA1A1A),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              cam.name,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: _onSurface,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Text(
-                            cam.typeLabel,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: _onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(height: 8),
+                    ...unavoidableCameras.map(
+                      (cam) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '• ${cam.name}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
                       ),
                     ),
-                  ),
+                  ],
+                  if (riskPointOnRouteCount > 0) ...[
+                    if (cameraOnRouteCount > 0) const SizedBox(height: 8),
+                    _routeResultRow(
+                      icon: Icons.warning_amber_rounded,
+                      iconColor: const Color(0xFFBA1A1A),
+                      text: '路线仍命中 $riskPointOnRouteCount 个风险点（已标红）',
+                    ),
+                    const SizedBox(height: 8),
+                    ...unavoidableRiskPoints.map(
+                      (point) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '• ${point.name} · ${point.direction.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                      ),
+                    ),
+                  ],
                 ],
               ] else
                 _routeResultRow(
                   icon: Icons.videocam_rounded,
                   iconColor: _onSurfaceVariant,
-                  text: '普通路线，途经 $onRouteCount 个摄像头',
+                  text:
+                      '普通路线，途经 $cameraOnRouteCount 个摄像头、$riskPointOnRouteCount 个风险点',
                 ),
 
               const SizedBox(height: 16),
@@ -3890,27 +3910,36 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   Color _riskPointColor(RiskPointType type) {
     return type == RiskPointType.risk
-        ? const Color(0xFFBA1A1A)
+        ? const Color(0xFFB96A00)
         : const Color(0xFF2E7D32);
   }
 
-  Widget _buildRiskPointMarker(RiskPoint riskPoint) {
+  Widget _buildRiskPointMarker(
+    RiskPoint riskPoint, {
+    bool isUnavoidable = false,
+  }) {
     final isLowRisk = riskPoint.type != RiskPointType.risk;
     final isAccessRoad = riskPoint.type == RiskPointType.lowRiskAccessRoad;
     final color = _riskPointColor(riskPoint.type);
+    final displayColor = isUnavoidable ? const Color(0xFFBA1A1A) : color;
     return Container(
       decoration: BoxDecoration(
-        color: isLowRisk ? const Color(0xFFE8F5E9) : color,
+        // 未命中时用浅橙色区分普通风险；命中后与摄像头统一红底白标。
+        color: isUnavoidable
+            ? displayColor
+            : (isLowRisk ? const Color(0xFFE8F5E9) : const Color(0xFFFFF3E0)),
         shape: BoxShape.circle,
         border: Border.all(
-          color: isLowRisk ? const Color(0xFF81C784) : Colors.white,
-          width: isLowRisk ? 1.6 : 2,
+          color: isUnavoidable
+              ? Colors.white
+              : (isLowRisk ? const Color(0xFF81C784) : color),
+          width: isUnavoidable ? 2.5 : (isLowRisk ? 1.6 : 1.6),
         ),
         boxShadow: [
           BoxShadow(
-            color: color.withValues(alpha: 0.3),
-            blurRadius: 7,
-            spreadRadius: 1,
+            color: displayColor.withValues(alpha: isUnavoidable ? 0.55 : 0.28),
+            blurRadius: isUnavoidable ? 10 : 7,
+            spreadRadius: isUnavoidable ? 2 : 1,
           ),
         ],
       ),
@@ -3919,17 +3948,17 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         children: [
           Icon(
             isLowRisk ? Icons.warning_amber_rounded : Icons.warning_rounded,
-            color: isLowRisk ? color : Colors.white,
-            size: 19,
+            color: isUnavoidable ? Colors.white : color,
+            size: isUnavoidable ? 18 : 19,
           ),
           if (isAccessRoad)
-            const Positioned(
+            Positioned(
               right: 1,
               bottom: 0,
               child: Text(
                 '辅',
                 style: TextStyle(
-                  color: Color(0xFF2E7D32),
+                  color: isUnavoidable ? Colors.white : Color(0xFF2E7D32),
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
                   height: 1,
@@ -6251,11 +6280,20 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     .map(
                       (riskPoint) => Marker(
                         point: riskPoint.location,
-                        width: 36,
-                        height: 36,
+                        width: _unavoidableRiskPointIds.contains(riskPoint.id)
+                            ? 42
+                            : 36,
+                        height: _unavoidableRiskPointIds.contains(riskPoint.id)
+                            ? 42
+                            : 36,
                         child: GestureDetector(
                           onTap: () => _showRiskPointInfo(riskPoint),
-                          child: _buildRiskPointMarker(riskPoint),
+                          child: _buildRiskPointMarker(
+                            riskPoint,
+                            isUnavoidable: _unavoidableRiskPointIds.contains(
+                              riskPoint.id,
+                            ),
+                          ),
                         ),
                       ),
                     )

@@ -1286,7 +1286,8 @@ export function createRoute(
   distanceMeters?: number,
   durationSeconds?: number,
   avoidAlgorithmVersion?: AvoidAlgorithmVersion,
-  steps?: any[]
+  steps?: any[],
+  riskPointIdsOnRoute: string[] = []
 ): Route {
   const distance = distanceMeters ?? calculateDistance(start.lat, start.lng, end.lat, end.lng);
   const duration = durationSeconds ?? Math.round(distance / 13.33);
@@ -1300,6 +1301,7 @@ export function createRoute(
     duration,
     routeType: avoidCameras ? 'avoid_cameras' : 'normal',
     cameraIndicesOnRoute: cameraIndices,
+    riskPointIdsOnRoute,
     avoidAlgorithmVersion,
     steps,
     createdAt: new Date().toISOString(),

@@ -80,9 +80,15 @@ export async function POST(request: NextRequest) {
       indexMapping[filteredIdx++] = i;
     }
     // 普通风险点始终避让；低风险点沿用“忽略低风险”设置。
-    cameras.push(
-      ...(await listRiskPointAvoidanceTargets(userToken, ignoreLowRiskCameras))
+    const riskPointTargets = await listRiskPointAvoidanceTargets(
+      userToken,
+      ignoreLowRiskCameras
     );
+    const riskPointIdByPlanningIndex = new Map<number, string>();
+    for (const target of riskPointTargets) {
+      riskPointIdByPlanningIndex.set(cameras.length, target.riskPointId);
+      cameras.push(target.camera);
+    }
 
     // 解析"排除已知路线"参数，用于"再次尝试"时走不同走廊
     const excludePolylines = Array.isArray(reqBody.excludePolylines)
@@ -107,6 +113,10 @@ export async function POST(request: NextRequest) {
       const originalIndex = indexMapping[i];
       return originalIndex === undefined ? [] : [originalIndex];
     });
+    const riskPointIdsOnRoute = finalState.cameraIndices.flatMap((i) => {
+      const riskPointId = riskPointIdByPlanningIndex.get(i);
+      return riskPointId === undefined ? [] : [riskPointId];
+    });
 
     const currentRoute = createRoute(
       start,
@@ -117,7 +127,8 @@ export async function POST(request: NextRequest) {
       finalState.distance,
       finalState.duration,
       undefined,
-      finalState.steps
+      finalState.steps,
+      riskPointIdsOnRoute
     );
 
     const bestRoute = createRoute(
@@ -129,7 +140,8 @@ export async function POST(request: NextRequest) {
       finalState.distance,
       finalState.duration,
       undefined,
-      finalState.steps
+      finalState.steps,
+      riskPointIdsOnRoute
     );
 
     const response: RoutePlanStepResponse = {

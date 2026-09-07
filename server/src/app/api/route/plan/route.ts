@@ -75,17 +75,28 @@ export async function POST(request: NextRequest) {
       cameras.push(cam);
       indexMapping[filteredIdx++] = i;
     }
+    const riskPointIdByPlanningIndex = new Map<number, string>();
     if (avoidCameras) {
       // 普通风险点始终避让；低风险点沿用“忽略低风险”设置。
-      cameras.push(
-        ...(await listRiskPointAvoidanceTargets(userToken, shouldIgnoreLowRisk))
+      const riskPointTargets = await listRiskPointAvoidanceTargets(
+        userToken,
+        shouldIgnoreLowRisk
       );
+      for (const target of riskPointTargets) {
+        riskPointIdByPlanningIndex.set(cameras.length, target.riskPointId);
+        cameras.push(target.camera);
+      }
     }
 
     const toOriginalCameraIndices = (indices: number[]) =>
       indices.flatMap((index) => {
         const originalIndex = indexMapping[index];
         return originalIndex === undefined ? [] : [originalIndex];
+      });
+    const toRiskPointIds = (indices: number[]) =>
+      indices.flatMap((index) => {
+        const riskPointId = riskPointIdByPlanningIndex.get(index);
+        return riskPointId === undefined ? [] : [riskPointId];
       });
 
     let polylinePoints;
@@ -95,6 +106,7 @@ export async function POST(request: NextRequest) {
     let routeDuration: number | undefined;
 
     let routeSteps;
+    let riskPointIdsOnRoute: string[] = [];
     if (avoidCameras) {
       // 规划避开摄像头的路线（腾讯地图备选路线中选摄像头最少的）
       const result = await planAvoidCamerasRoute(
@@ -108,6 +120,7 @@ export async function POST(request: NextRequest) {
       );
       polylinePoints = result.points;
       cameraIndices = toOriginalCameraIndices(result.cameraIndices);
+      riskPointIdsOnRoute = toRiskPointIds(result.cameraIndices);
       routeDistance = result.distance;
       routeDuration = result.duration;
       routeSteps = result.steps;
@@ -117,6 +130,7 @@ export async function POST(request: NextRequest) {
       polylinePoints = result.points;
       const rawIndices = findCamerasNearRoute(polylinePoints, cameras);
       cameraIndices = toOriginalCameraIndices(rawIndices);
+      riskPointIdsOnRoute = toRiskPointIds(rawIndices);
       routeDistance = result.distance;
       routeDuration = result.duration;
       routeSteps = result.steps;
@@ -132,7 +146,8 @@ export async function POST(request: NextRequest) {
       routeDistance,
       routeDuration,
       undefined,
-      routeSteps
+      routeSteps,
+      riskPointIdsOnRoute
     );
 
     const response: RouteResponse = { route };

@@ -20,6 +20,11 @@ export interface RiskPoint {
   createdAt: string;
 }
 
+export interface RiskPointAvoidanceTarget {
+  riskPointId: string;
+  camera: Camera;
+}
+
 const HASH_KEY_PREFIX = 'risk-points:user:';
 
 function userRiskPointsKey(userToken: string): string {
@@ -65,18 +70,23 @@ export async function listRiskPoints(userToken: string): Promise<RiskPoint[]> {
 export async function listRiskPointAvoidanceTargets(
   userToken: string,
   ignoreLowRisk: boolean
-): Promise<Camera[]> {
+): Promise<RiskPointAvoidanceTarget[]> {
   const riskPoints = await listRiskPoints(userToken);
   return riskPoints
     .filter((point) => point.type === 'risk' || !ignoreLowRisk)
     .map((point) => ({
-      // 使用固定名称编码方向，复用现有的行驶方向匹配逻辑。
-      name: point.direction === 'both' ? '用户风险点' : `用户风险点（${riskPointDirectionLabel(point.direction)}）`,
-      lat: point.lat,
-      lng: point.lng,
-      type: 2,
-      date: '',
-      href: '',
+      riskPointId: point.id,
+      camera: {
+        // 使用固定名称编码方向，复用现有的行驶方向匹配逻辑。
+        name: point.direction === 'both'
+            ? '用户风险点'
+            : `用户风险点（${riskPointDirectionLabel(point.direction)}）`,
+        lat: point.lat,
+        lng: point.lng,
+        type: 2,
+        date: '',
+        href: '',
+      },
     }));
 }
 

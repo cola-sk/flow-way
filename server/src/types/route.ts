@@ -64,6 +64,8 @@ export interface Route {
   duration: number;
   routeType: 'normal' | 'avoid_cameras';
   cameraIndicesOnRoute: number[];
+  /** 路线上仍命中的用户风险点 ID */
+  riskPointIdsOnRoute: string[];
   avoidAlgorithmVersion?: string;
   steps?: RouteStep[];
   createdAt: string;
