@@ -74,17 +74,36 @@ void main() {
       expect(service.getDirectionLabel(enterMainRoad), '直行进入主路');
     });
 
-    test('旧路线只回退 instruction，不猜测动作或图标', () {
-      final oldStep = step(
+    test('旧路线从 instruction 提取动作和对应图标', () {
+      final oldRampStep = step(
         instruction: '沿西直门外大街行驶446米,偏右转进入辅路',
         action: null,
         accessorialAction: null,
       );
+      final oldTurnStep = step(
+        instruction: '沿xxx直走1.9公里，右转',
+        action: null,
+        accessorialAction: null,
+      );
+      final oldStraightStep = step(
+        instruction: '沿京藏高速直行20公里',
+        action: null,
+        accessorialAction: null,
+      );
 
-      expect(service.hasStructuredGuidance(oldStep), isFalse);
-      expect(service.isActionableStep(oldStep), isTrue);
-      expect(service.getDirectionLabel(oldStep), '沿西直门外大街行驶446米,偏右转进入辅路');
-      expect(service.getTurnIcon(oldStep), Icons.navigation);
+      expect(service.hasStructuredGuidance(oldRampStep), isFalse);
+      expect(service.isActionableStep(oldRampStep), isTrue);
+      expect(service.getDirectionLabel(oldRampStep), '偏右转进入辅路');
+      expect(service.getTurnIcon(oldRampStep), Icons.alt_route_rounded);
+
+      expect(service.hasStructuredGuidance(oldTurnStep), isFalse);
+      expect(service.isActionableStep(oldTurnStep), isTrue);
+      expect(service.getDirectionLabel(oldTurnStep), '右转');
+      expect(service.getTurnIcon(oldTurnStep), Icons.turn_right);
+
+      expect(service.isActionableStep(oldStraightStep), isFalse);
+      expect(service.getDirectionLabel(oldStraightStep), '直行');
+      expect(service.getTurnIcon(oldStraightStep), Icons.straight);
     });
 
     test('RouteStep JSON 保留辅助动作字段', () {
