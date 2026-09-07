@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import {
   deleteRiskPoint,
   getRiskPoint,
+  normalizeRiskPointDirection,
   normalizeRiskPointType,
   saveRiskPoint,
 } from '@/lib/risk-points-storage';
@@ -24,10 +25,11 @@ export async function PATCH(
     const current = await getRiskPoint(tokenGuard.userToken!, id);
     if (!current) return NextResponse.json({ error: '风险点不存在' }, { status: 404 });
 
-    const { name, note, type } = body;
+    const { name, note, type, direction } = body;
     if ((name !== undefined && (typeof name !== 'string' || !name.trim())) ||
         (note !== undefined && typeof note !== 'string') ||
-        (type !== undefined && !['risk', 'low_risk', 'low_risk_access_road'].includes(type))) {
+        (type !== undefined && !['risk', 'low_risk', 'low_risk_access_road'].includes(type)) ||
+        (direction !== undefined && !['both', 'east_west', 'west_east', 'south_north', 'north_south'].includes(direction))) {
       return NextResponse.json({ error: '参数无效' }, { status: 400 });
     }
     const updated = {
@@ -35,6 +37,9 @@ export async function PATCH(
       name: typeof name === 'string' ? name.trim() : current.name,
       note: typeof note === 'string' ? note.trim() : current.note,
       type: type === undefined ? current.type : normalizeRiskPointType(type),
+      direction: direction === undefined
+        ? normalizeRiskPointDirection(current.direction)
+        : normalizeRiskPointDirection(direction),
     };
     await saveRiskPoint(tokenGuard.userToken!, updated);
     return NextResponse.json(updated);

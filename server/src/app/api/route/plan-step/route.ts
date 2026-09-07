@@ -7,6 +7,7 @@ import {
   isRoutePlanningAbortedError,
 } from '@/lib/route';
 import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
+import { listRiskPointAvoidanceTargets } from '@/lib/risk-points-storage';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
@@ -78,6 +79,10 @@ export async function POST(request: NextRequest) {
       cameras.push(cam);
       indexMapping[filteredIdx++] = i;
     }
+    // 普通风险点始终避让；低风险点沿用“忽略低风险”设置。
+    cameras.push(
+      ...(await listRiskPointAvoidanceTargets(userToken, ignoreLowRiskCameras))
+    );
 
     // 解析"排除已知路线"参数，用于"再次尝试"时走不同走廊
     const excludePolylines = Array.isArray(reqBody.excludePolylines)
@@ -97,7 +102,11 @@ export async function POST(request: NextRequest) {
       excludePolylines
     );
 
-    const globalCameraIndices = finalState.cameraIndices.map((i) => indexMapping[i]);
+    // 手动风险点仅用于服务端避让，不应混入客户端的摄像头索引。
+    const globalCameraIndices = finalState.cameraIndices.flatMap((i) => {
+      const originalIndex = indexMapping[i];
+      return originalIndex === undefined ? [] : [originalIndex];
+    });
 
     const currentRoute = createRoute(
       start,

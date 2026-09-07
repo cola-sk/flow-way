@@ -1362,6 +1362,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     unawaited(_backfillStartPlaceName(immediatePlace));
   }
 
+  WayPoint? _savedWayPointAt(LatLng location) {
+    for (final wayPoint in _wayPoints) {
+      if ((wayPoint.location.latitude - location.latitude).abs() < 0.000001 &&
+          (wayPoint.location.longitude - location.longitude).abs() < 0.000001) {
+        return wayPoint;
+      }
+    }
+    return null;
+  }
+
   void _showPlaceActions(PlaceResult place) {
     showModalBottomSheet(
       context: context,
@@ -1371,6 +1381,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       ),
       builder: (ctx) {
         final bottomInset = MediaQuery.of(ctx).padding.bottom;
+        final savedWayPoint = _savedWayPointAt(place.location);
         return Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset + 8),
           child: Column(
@@ -1492,6 +1503,24 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   label: const Text('标记为风险点'),
                 ),
               ),
+              if (savedWayPoint != null) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _deleteWayPoint(savedWayPoint);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red,
+                      side: const BorderSide(color: Colors.red),
+                    ),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('删除收藏点'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
             ],
           ),
@@ -3916,7 +3945,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     final nameCtrl = TextEditingController(text: place.name);
     final noteCtrl = TextEditingController();
     RiskPointType selectedType = RiskPointType.risk;
-    bool accessRoad = false;
+    RiskPointDirection selectedDirection = RiskPointDirection.both;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -3949,10 +3978,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       ChoiceChip(
                         label: const Text('风险点'),
                         selected: selectedType == RiskPointType.risk,
-                        onSelected: (_) => setDialogState(() {
-                          selectedType = RiskPointType.risk;
-                          accessRoad = false;
-                        }),
+                        onSelected: (_) => setDialogState(
+                          () => selectedType = RiskPointType.risk,
+                        ),
                       ),
                       ChoiceChip(
                         label: const Text('低风险可尝试'),
@@ -3964,14 +3992,30 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                if (selectedType == RiskPointType.lowRisk)
-                  CheckboxListTile(
-                    value: accessRoad,
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('走辅路'),
-                    onChanged: (value) =>
-                        setDialogState(() => accessRoad = value ?? false),
+                const SizedBox(height: 12),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('风险方向'),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: RiskPointDirection.values
+                        .map(
+                          (direction) => ChoiceChip(
+                            label: Text(direction.label),
+                            selected: selectedDirection == direction,
+                            onSelected: (_) => setDialogState(
+                              () => selectedDirection = direction,
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
+                ),
               ],
             ),
           ),
@@ -3991,13 +4035,22 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
 
     if (result == true) {
-      final type = selectedType == RiskPointType.lowRisk && accessRoad
-          ? RiskPointType.lowRiskAccessRoad
-          : selectedType;
+      var type = selectedType;
+      if (type == RiskPointType.lowRisk) {
+        final selectedLowRiskType = await _promptSelectLowRiskType();
+        if (selectedLowRiskType != null) {
+          type = selectedLowRiskType;
+        } else {
+          nameCtrl.dispose();
+          noteCtrl.dispose();
+          return;
+        }
+      }
       final ok = await _apiService.saveRiskPoint(
         name: nameCtrl.text.trim().isEmpty ? place.name : nameCtrl.text.trim(),
         location: place.location,
         type: type,
+        direction: selectedDirection,
         note: noteCtrl.text.trim(),
       );
       if (ok) {
@@ -4054,31 +4107,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   Future<void> _promptMakeRiskPointLowRisk(RiskPoint riskPoint) async {
-    final type = await showDialog<RiskPointType>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('标记为低风险可尝试'),
-        content: const Text('选择经过该点时的通行方式。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.of(ctx).pop(RiskPointType.lowRisk),
-            child: const Text('正常通行'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(RiskPointType.lowRiskAccessRoad),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF81C784),
-            ),
-            child: const Text('走辅路'),
-          ),
-        ],
-      ),
-    );
+    final type = await _promptSelectLowRiskType();
     if (type == null) return;
     final ok = await _apiService.updateRiskPoint(riskPoint.id, type: type);
     if (ok) {
@@ -4090,6 +4119,34 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             : '已标记为低风险可尝试',
       );
     }
+  }
+
+  Future<RiskPointType?> _promptSelectLowRiskType() {
+    return showDialog<RiskPointType>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('标记为低风险可尝试'),
+        content: const Text('该点是否需要走辅路？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(ctx).pop(RiskPointType.lowRisk),
+            child: const Text('否'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(RiskPointType.lowRiskAccessRoad),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF81C784),
+            ),
+            child: const Text('是，走辅路'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showRiskPointInfo(RiskPoint riskPoint) {
@@ -4145,6 +4202,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 12),
               _infoRow('坐标', _formatLatLng(riskPoint.location)),
+              _infoRow('风险方向', riskPoint.direction.label),
               _infoRow('备注', note.isEmpty ? '-' : note),
               _infoRow(
                 '创建时间',

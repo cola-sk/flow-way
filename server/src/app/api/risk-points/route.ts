@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import {
   listRiskPoints,
+  normalizeRiskPointDirection,
   normalizeRiskPointType,
   saveRiskPoint,
   type RiskPoint,
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, lat, lng, type, note } = body;
+    const { name, lat, lng, type, direction, note } = body;
     const tokenGuard = await requireActiveUserTokenFromRequest(
       request,
       body as Record<string, unknown>
@@ -36,6 +37,7 @@ export async function POST(request: NextRequest) {
     }
     if (!Number.isFinite(lat) || !Number.isFinite(lng) ||
         (type !== undefined && !['risk', 'low_risk', 'low_risk_access_road'].includes(type)) ||
+        (direction !== undefined && !['both', 'east_west', 'west_east', 'south_north', 'north_south'].includes(direction)) ||
         (note !== undefined && typeof note !== 'string')) {
       return NextResponse.json({ error: '参数无效' }, { status: 400 });
     }
@@ -46,6 +48,7 @@ export async function POST(request: NextRequest) {
       lat,
       lng,
       type: normalizeRiskPointType(type),
+      direction: normalizeRiskPointDirection(direction),
       note: typeof note === 'string' ? note.trim() : '',
       createdAt: new Date().toISOString(),
     };

@@ -810,6 +810,7 @@ class ApiService {
     required String name,
     required LatLng location,
     required RiskPointType type,
+    required RiskPointDirection direction,
     String note = '',
   }) async {
     try {
@@ -820,6 +821,7 @@ class ApiService {
           'lat': location.latitude,
           'lng': location.longitude,
           'type': type.apiValue,
+          'direction': direction.apiValue,
           'note': note,
         },
       );
@@ -836,6 +838,7 @@ class ApiService {
     String? name,
     String? note,
     RiskPointType? type,
+    RiskPointDirection? direction,
   }) async {
     try {
       await _dio.patch(
@@ -844,6 +847,7 @@ class ApiService {
           if (name != null) 'name': name,
           if (note != null) 'note': note,
           if (type != null) 'type': type.apiValue,
+          if (direction != null) 'direction': direction.apiValue,
         },
       );
       return true;
@@ -1540,11 +1544,31 @@ enum RiskPointType {
   }
 }
 
+enum RiskPointDirection {
+  both('both', '双向'),
+  eastWest('east_west', '东向西'),
+  westEast('west_east', '西向东'),
+  southNorth('south_north', '南向北'),
+  northSouth('north_south', '北向南');
+
+  final String apiValue;
+  final String label;
+  const RiskPointDirection(this.apiValue, this.label);
+
+  static RiskPointDirection fromApiValue(String value) {
+    return RiskPointDirection.values.firstWhere(
+      (item) => item.apiValue == value,
+      orElse: () => RiskPointDirection.both,
+    );
+  }
+}
+
 class RiskPoint {
   final String id;
   final String name;
   final LatLng location;
   final RiskPointType type;
+  final RiskPointDirection direction;
   final String note;
   final DateTime createdAt;
 
@@ -1553,6 +1577,7 @@ class RiskPoint {
     required this.name,
     required this.location,
     required this.type,
+    required this.direction,
     required this.note,
     required this.createdAt,
   });
@@ -1566,6 +1591,9 @@ class RiskPoint {
         (json['lng'] as num).toDouble(),
       ),
       type: RiskPointType.fromApiValue(json['type'] as String? ?? 'risk'),
+      direction: RiskPointDirection.fromApiValue(
+        json['direction'] as String? ?? 'both',
+      ),
       note: json['note'] as String? ?? '',
       createdAt:
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??

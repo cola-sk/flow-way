@@ -9,6 +9,7 @@ import {
   isRoutePlanningAbortedError,
 } from '@/lib/route';
 import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
+import { listRiskPointAvoidanceTargets } from '@/lib/risk-points-storage';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
@@ -74,6 +75,18 @@ export async function POST(request: NextRequest) {
       cameras.push(cam);
       indexMapping[filteredIdx++] = i;
     }
+    if (avoidCameras) {
+      // 普通风险点始终避让；低风险点沿用“忽略低风险”设置。
+      cameras.push(
+        ...(await listRiskPointAvoidanceTargets(userToken, shouldIgnoreLowRisk))
+      );
+    }
+
+    const toOriginalCameraIndices = (indices: number[]) =>
+      indices.flatMap((index) => {
+        const originalIndex = indexMapping[index];
+        return originalIndex === undefined ? [] : [originalIndex];
+      });
 
     let polylinePoints;
     let cameraIndices;
@@ -94,7 +107,7 @@ export async function POST(request: NextRequest) {
         excludePolylines
       );
       polylinePoints = result.points;
-      cameraIndices = result.cameraIndices.map((i) => indexMapping[i]);
+      cameraIndices = toOriginalCameraIndices(result.cameraIndices);
       routeDistance = result.distance;
       routeDuration = result.duration;
       routeSteps = result.steps;
@@ -103,7 +116,7 @@ export async function POST(request: NextRequest) {
       const result = await planRoute(start, end, request.signal);
       polylinePoints = result.points;
       const rawIndices = findCamerasNearRoute(polylinePoints, cameras);
-      cameraIndices = rawIndices.map((i) => indexMapping[i]);
+      cameraIndices = toOriginalCameraIndices(rawIndices);
       routeDistance = result.distance;
       routeDuration = result.duration;
       routeSteps = result.steps;
