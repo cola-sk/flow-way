@@ -6277,11 +6277,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   final isUnavoidable = _unavoidableRiskPointIds.contains(
                     riskPoint.id,
                   );
-                  final isAccessRoad =
-                      riskPoint.type == RiskPointType.lowRiskAccessRoad;
-                  final markerSize = isUnavoidable
-                      ? 42.0
-                      : (isAccessRoad ? 30.0 : 36.0);
+                  final markerSize = isUnavoidable ? 42.0 : 30.0;
                   return Marker(
                     point: riskPoint.location,
                     width: markerSize,
