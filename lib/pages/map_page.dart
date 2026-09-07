@@ -75,6 +75,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
   List<Camera> _cameras = [];
   List<WayPoint> _wayPoints = [];
+  List<RiskPoint> _riskPoints = [];
   bool _loading = true;
   String? _error;
   String _updatedAt = '';
@@ -202,6 +203,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _loadCameras(preferRemote: true);
     _loadWayPoints();
     _loadDismissedCameras();
+    _loadRiskPoints();
     _locateUser(forceRefresh: true);
     _apiService.checkAndReportFirstLaunch();
   }
@@ -757,6 +759,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
 
       await _loadUserSettings();
       await _loadDismissedCameras();
+      await _loadRiskPoints();
       await _loadSavedData(silent: true);
       await _loadRecentData(silent: true);
       await _loadSearchHistoryPlaces();
@@ -1472,6 +1475,22 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _promptSaveRiskPoint(place);
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFBA1A1A),
+                    side: const BorderSide(color: Color(0xFFBA1A1A)),
+                  ),
+                  icon: const Icon(Icons.warning_amber_rounded, size: 16),
+                  label: const Text('标记为风险点'),
+                ),
               ),
               const SizedBox(height: 8),
             ],
@@ -2579,6 +2598,18 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
   }
 
+  Future<void> _loadRiskPoints() async {
+    try {
+      final riskPoints = await _apiService.getRiskPoints();
+      if (!mounted) return;
+      setState(() {
+        _riskPoints = riskPoints;
+      });
+    } catch (e) {
+      print('加载风险点失败: $e');
+    }
+  }
+
   String _cameraCoordKey(double lat, double lng) {
     return '${lat.toStringAsFixed(6)},${lng.toStringAsFixed(6)}';
   }
@@ -3679,6 +3710,28 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ),
               ],
               const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.warning_amber_rounded),
+                  label: const Text('另存为风险点'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFBA1A1A),
+                    side: const BorderSide(color: Color(0xFFBA1A1A)),
+                  ),
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _promptSaveRiskPoint(
+                      PlaceResult(
+                        name: camera.name,
+                        address: camera.typeLabel,
+                        location: LatLng(camera.lat, camera.lng),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
           ),
         );
@@ -3792,6 +3845,369 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           ],
         ),
       ),
+    );
+  }
+
+  String _riskPointTypeLabel(RiskPointType type) {
+    switch (type) {
+      case RiskPointType.risk:
+        return '风险点';
+      case RiskPointType.lowRisk:
+        return '低风险可尝试';
+      case RiskPointType.lowRiskAccessRoad:
+        return '低风险可尝试 · 走辅路';
+    }
+  }
+
+  Color _riskPointColor(RiskPointType type) {
+    return type == RiskPointType.risk
+        ? const Color(0xFFBA1A1A)
+        : const Color(0xFF2E7D32);
+  }
+
+  Widget _buildRiskPointMarker(RiskPoint riskPoint) {
+    final isLowRisk = riskPoint.type != RiskPointType.risk;
+    final isAccessRoad = riskPoint.type == RiskPointType.lowRiskAccessRoad;
+    final color = _riskPointColor(riskPoint.type);
+    return Container(
+      decoration: BoxDecoration(
+        color: isLowRisk ? const Color(0xFFE8F5E9) : color,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: isLowRisk ? const Color(0xFF81C784) : Colors.white,
+          width: isLowRisk ? 1.6 : 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.3),
+            blurRadius: 7,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(
+            isLowRisk ? Icons.warning_amber_rounded : Icons.warning_rounded,
+            color: isLowRisk ? color : Colors.white,
+            size: 19,
+          ),
+          if (isAccessRoad)
+            const Positioned(
+              right: 1,
+              bottom: 0,
+              child: Text(
+                '辅',
+                style: TextStyle(
+                  color: Color(0xFF2E7D32),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  height: 1,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _promptSaveRiskPoint(PlaceResult place) async {
+    final nameCtrl = TextEditingController(text: place.name);
+    final noteCtrl = TextEditingController();
+    RiskPointType selectedType = RiskPointType.risk;
+    bool accessRoad = false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('标记风险点'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: '风险点名称'),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: noteCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: '备注（可选）',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('风险点'),
+                        selected: selectedType == RiskPointType.risk,
+                        onSelected: (_) => setDialogState(() {
+                          selectedType = RiskPointType.risk;
+                          accessRoad = false;
+                        }),
+                      ),
+                      ChoiceChip(
+                        label: const Text('低风险可尝试'),
+                        selected: selectedType == RiskPointType.lowRisk,
+                        onSelected: (_) => setDialogState(
+                          () => selectedType = RiskPointType.lowRisk,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (selectedType == RiskPointType.lowRisk)
+                  CheckboxListTile(
+                    value: accessRoad,
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('走辅路'),
+                    onChanged: (value) =>
+                        setDialogState(() => accessRoad = value ?? false),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: _primary),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true) {
+      final type = selectedType == RiskPointType.lowRisk && accessRoad
+          ? RiskPointType.lowRiskAccessRoad
+          : selectedType;
+      final ok = await _apiService.saveRiskPoint(
+        name: nameCtrl.text.trim().isEmpty ? place.name : nameCtrl.text.trim(),
+        location: place.location,
+        type: type,
+        note: noteCtrl.text.trim(),
+      );
+      if (ok) {
+        await _loadRiskPoints();
+        if (mounted) {
+          _showToast('风险点已标记');
+        }
+      } else if (mounted) {
+        _showToast('风险点标记失败');
+      }
+    }
+    nameCtrl.dispose();
+    noteCtrl.dispose();
+  }
+
+  Future<void> _promptEditRiskPointNote(RiskPoint riskPoint) async {
+    final controller = TextEditingController(text: riskPoint.note);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('编辑风险点备注'),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            hintText: '输入备注（留空表示删除备注）',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text),
+            style: FilledButton.styleFrom(backgroundColor: _primary),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (result == null) return;
+    final ok = await _apiService.updateRiskPoint(
+      riskPoint.id,
+      note: result.trim(),
+    );
+    if (ok) {
+      await _loadRiskPoints();
+      if (!mounted) return;
+      _showToast(result.trim().isEmpty ? '备注已删除' : '备注已更新');
+    }
+  }
+
+  Future<void> _promptMakeRiskPointLowRisk(RiskPoint riskPoint) async {
+    final type = await showDialog<RiskPointType>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('标记为低风险可尝试'),
+        content: const Text('选择经过该点时的通行方式。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('取消'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(ctx).pop(RiskPointType.lowRisk),
+            child: const Text('正常通行'),
+          ),
+          FilledButton(
+            onPressed: () =>
+                Navigator.of(ctx).pop(RiskPointType.lowRiskAccessRoad),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF81C784),
+            ),
+            child: const Text('走辅路'),
+          ),
+        ],
+      ),
+    );
+    if (type == null) return;
+    final ok = await _apiService.updateRiskPoint(riskPoint.id, type: type);
+    if (ok) {
+      await _loadRiskPoints();
+      if (!mounted) return;
+      _showToast(
+        type == RiskPointType.lowRiskAccessRoad
+            ? '已标记低风险可尝试（走辅路）'
+            : '已标记为低风险可尝试',
+      );
+    }
+  }
+
+  void _showRiskPointInfo(RiskPoint riskPoint) {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        final isRisk = riskPoint.type == RiskPointType.risk;
+        final note = riskPoint.note.trim();
+        final color = _riskPointColor(riskPoint.type);
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + MediaQuery.of(ctx).padding.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.warning_rounded, color: color),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      riskPoint.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _riskPointTypeLabel(riskPoint.type),
+                      style: TextStyle(color: color, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _infoRow('坐标', _formatLatLng(riskPoint.location)),
+              _infoRow('备注', note.isEmpty ? '-' : note),
+              _infoRow(
+                '创建时间',
+                riskPoint.createdAt.toLocal().toString().split('.')[0],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.delete_outline),
+                      label: const Text('删除风险点'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final ok = await _apiService.deleteRiskPoint(
+                          riskPoint.id,
+                        );
+                        if (ok) {
+                          await _loadRiskPoints();
+                          if (!mounted) return;
+                          _showToast('风险点已删除');
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      icon: const Icon(Icons.edit_note_rounded),
+                      label: const Text('编辑备注'),
+                      style: FilledButton.styleFrom(backgroundColor: _primary),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _promptEditRiskPointNote(riskPoint);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              if (isRisk) ...[
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    icon: const Icon(Icons.eco_outlined),
+                    label: const Text('标记为低风险可尝试'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF81C784),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _promptMakeRiskPointLowRisk(riskPoint);
+                    },
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -4617,7 +5033,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           ),
           const SizedBox(height: 8),
           Text(
-                      '当前显示: ${_visibleCameraCount()}/${_cameras.length} · 最后爬取 $_updatedAt',
+            '当前显示: ${_visibleCameraCount()}/${_cameras.length} · 最后爬取 $_updatedAt',
             style: const TextStyle(
               fontSize: 12,
               color: _onSurfaceVariant,
@@ -5770,6 +6186,22 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ),
                   );
                 }).toList(),
+              ),
+              // 用户标记的风险点层
+              MarkerLayer(
+                markers: _riskPoints
+                    .map(
+                      (riskPoint) => Marker(
+                        point: riskPoint.location,
+                        width: 36,
+                        height: 36,
+                        child: GestureDetector(
+                          onTap: () => _showRiskPointInfo(riskPoint),
+                          child: _buildRiskPointMarker(riskPoint),
+                        ),
+                      ),
+                    )
+                    .toList(),
               ),
               // 导航模式地点标记
               if (_navMode)

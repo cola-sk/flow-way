@@ -198,6 +198,7 @@ class ApiService {
         path.startsWith('/api/saved-route-plans') ||
         path.startsWith('/api/recent-navigations') ||
         path.startsWith('/api/dismissed-cameras') ||
+        path.startsWith('/api/risk-points') ||
         path.startsWith('/api/search') ||
         path.startsWith('/api/suggest') ||
         path.startsWith('/api/reverse-geocode');
@@ -786,6 +787,78 @@ class ApiService {
       return true;
     } catch (e) {
       print('删除标记点失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 获取用户标记的风险点。
+  Future<List<RiskPoint>> getRiskPoints() async {
+    try {
+      final response = await _dio.get('/api/risk-points');
+      final List<dynamic> data = response.data['riskPoints'] ?? [];
+      return data
+          .map((item) => RiskPoint.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('获取风险点失败: ${_formatError(e)}');
+      return [];
+    }
+  }
+
+  /// 在任意坐标创建风险点。
+  Future<bool> saveRiskPoint({
+    required String name,
+    required LatLng location,
+    required RiskPointType type,
+    String note = '',
+  }) async {
+    try {
+      await _dio.post(
+        '/api/risk-points',
+        data: {
+          'name': name,
+          'lat': location.latitude,
+          'lng': location.longitude,
+          'type': type.apiValue,
+          'note': note,
+        },
+      );
+      return true;
+    } catch (e) {
+      print('保存风险点失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 修改风险点备注或风险等级；传空备注可删除备注。
+  Future<bool> updateRiskPoint(
+    String id, {
+    String? name,
+    String? note,
+    RiskPointType? type,
+  }) async {
+    try {
+      await _dio.patch(
+        '/api/risk-points/$id',
+        data: {
+          if (name != null) 'name': name,
+          if (note != null) 'note': note,
+          if (type != null) 'type': type.apiValue,
+        },
+      );
+      return true;
+    } catch (e) {
+      print('更新风险点失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  Future<bool> deleteRiskPoint(String id) async {
+    try {
+      await _dio.delete('/api/risk-points/$id');
+      return true;
+    } catch (e) {
+      print('删除风险点失败: ${_formatError(e)}');
       return false;
     }
   }
@@ -1447,6 +1520,56 @@ class DismissedCamera {
       markedAt: json['markedAt'] as String? ?? '',
       type: parsedType == 12 ? 12 : 6,
       note: json['note'] as String? ?? '',
+    );
+  }
+}
+
+enum RiskPointType {
+  risk('risk'),
+  lowRisk('low_risk'),
+  lowRiskAccessRoad('low_risk_access_road');
+
+  final String apiValue;
+  const RiskPointType(this.apiValue);
+
+  static RiskPointType fromApiValue(String value) {
+    return RiskPointType.values.firstWhere(
+      (item) => item.apiValue == value,
+      orElse: () => RiskPointType.risk,
+    );
+  }
+}
+
+class RiskPoint {
+  final String id;
+  final String name;
+  final LatLng location;
+  final RiskPointType type;
+  final String note;
+  final DateTime createdAt;
+
+  const RiskPoint({
+    required this.id,
+    required this.name,
+    required this.location,
+    required this.type,
+    required this.note,
+    required this.createdAt,
+  });
+
+  factory RiskPoint.fromJson(Map<String, dynamic> json) {
+    return RiskPoint(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '未命名风险点',
+      location: LatLng(
+        (json['lat'] as num).toDouble(),
+        (json['lng'] as num).toDouble(),
+      ),
+      type: RiskPointType.fromApiValue(json['type'] as String? ?? 'risk'),
+      note: json['note'] as String? ?? '',
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }
