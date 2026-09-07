@@ -6273,28 +6273,28 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
               // 用户标记的风险点层
               MarkerLayer(
-                markers: _riskPoints
-                    .map(
-                      (riskPoint) => Marker(
-                        point: riskPoint.location,
-                        width: _unavoidableRiskPointIds.contains(riskPoint.id)
-                            ? 42
-                            : 36,
-                        height: _unavoidableRiskPointIds.contains(riskPoint.id)
-                            ? 42
-                            : 36,
-                        child: GestureDetector(
-                          onTap: () => _showRiskPointInfo(riskPoint),
-                          child: _buildRiskPointMarker(
-                            riskPoint,
-                            isUnavoidable: _unavoidableRiskPointIds.contains(
-                              riskPoint.id,
-                            ),
-                          ),
-                        ),
+                markers: _riskPoints.map((riskPoint) {
+                  final isUnavoidable = _unavoidableRiskPointIds.contains(
+                    riskPoint.id,
+                  );
+                  final isAccessRoad =
+                      riskPoint.type == RiskPointType.lowRiskAccessRoad;
+                  final markerSize = isUnavoidable
+                      ? 42.0
+                      : (isAccessRoad ? 30.0 : 36.0);
+                  return Marker(
+                    point: riskPoint.location,
+                    width: markerSize,
+                    height: markerSize,
+                    child: GestureDetector(
+                      onTap: () => _showRiskPointInfo(riskPoint),
+                      child: _buildRiskPointMarker(
+                        riskPoint,
+                        isUnavoidable: isUnavoidable,
                       ),
-                    )
-                    .toList(),
+                    ),
+                  );
+                }).toList(),
               ),
               // 导航模式地点标记
               if (_navMode)
