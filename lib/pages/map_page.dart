@@ -3997,17 +3997,37 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     PlaceResult place, {
     required RiskPointType initialType,
   }) async {
+    if (initialType != RiskPointType.risk) {
+      final config = await _promptLowRiskConfig(
+        initialName: place.name,
+        initialNote: '',
+      );
+      if (config == null) return;
+      final ok = await _apiService.saveRiskPoint(
+        name: config.name.isEmpty ? place.name : config.name,
+        location: place.location,
+        type: config.type,
+        direction: RiskPointDirection.both,
+        note: config.note,
+      );
+      if (!mounted) return;
+      if (ok) {
+        await _loadRiskPoints();
+        if (mounted) _showToast('风险点已标记');
+      } else {
+        _showToast('风险点标记失败');
+      }
+      return;
+    }
+
     final nameCtrl = TextEditingController(text: place.name);
     final noteCtrl = TextEditingController();
-    RiskPointType selectedType = initialType;
     RiskPointDirection selectedDirection = RiskPointDirection.both;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: Text(
-            initialType == RiskPointType.risk ? '标记为风险点' : '标记为低风险可尝试',
-          ),
+          title: const Text('标记为风险点'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -4026,63 +4046,32 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     alignLabelWithHint: true,
                   ),
                 ),
-                if (selectedType == RiskPointType.risk) ...[
-                  const SizedBox(height: 12),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('风险方向'),
+                const SizedBox(height: 12),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('风险方向'),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<RiskPointDirection>(
+                  initialValue: selectedDirection,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12),
                   ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 6,
-                      children: RiskPointDirection.values
-                          .map(
-                            (direction) => ChoiceChip(
-                              label: Text(direction.label),
-                              selected: selectedDirection == direction,
-                              onSelected: (_) => setDialogState(
-                                () => selectedDirection = direction,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ),
-                ] else ...[
-                  const SizedBox(height: 12),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('是否走辅路？'),
-                  ),
-                  const SizedBox(height: 6),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Wrap(
-                      spacing: 8,
-                      children: [
-                        ChoiceChip(
-                          label: const Text('否'),
-                          selected: selectedType == RiskPointType.lowRisk,
-                          onSelected: (_) => setDialogState(
-                            () => selectedType = RiskPointType.lowRisk,
-                          ),
+                  items: RiskPointDirection.values
+                      .map(
+                        (direction) => DropdownMenuItem(
+                          value: direction,
+                          child: Text(direction.label),
                         ),
-                        ChoiceChip(
-                          label: const Text('是，走辅路'),
-                          selected:
-                              selectedType == RiskPointType.lowRiskAccessRoad,
-                          onSelected: (_) => setDialogState(
-                            () =>
-                                selectedType = RiskPointType.lowRiskAccessRoad,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                      )
+                      .toList(),
+                  onChanged: (direction) {
+                    if (direction != null) {
+                      setDialogState(() => selectedDirection = direction);
+                    }
+                  },
+                ),
               ],
             ),
           ),
@@ -4102,11 +4091,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
 
     if (result == true) {
-      final type = selectedType;
       final ok = await _apiService.saveRiskPoint(
         name: nameCtrl.text.trim().isEmpty ? place.name : nameCtrl.text.trim(),
         location: place.location,
-        type: type,
+        type: RiskPointType.risk,
         direction: selectedDirection,
         note: noteCtrl.text.trim(),
       );
@@ -4164,46 +4152,115 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   Future<void> _promptMakeRiskPointLowRisk(RiskPoint riskPoint) async {
-    final type = await _promptSelectLowRiskType();
-    if (type == null) return;
-    final ok = await _apiService.updateRiskPoint(riskPoint.id, type: type);
+    final config = await _promptLowRiskConfig(
+      initialName: riskPoint.name,
+      initialNote: riskPoint.note,
+    );
+    if (config == null) return;
+    final ok = await _apiService.updateRiskPoint(
+      riskPoint.id,
+      name: config.name.isEmpty ? riskPoint.name : config.name,
+      note: config.note,
+      type: config.type,
+    );
     if (ok) {
       await _loadRiskPoints();
       if (!mounted) return;
       _showToast(
-        type == RiskPointType.lowRiskAccessRoad
+        config.type == RiskPointType.lowRiskAccessRoad
             ? '已标记低风险可尝试（走辅路）'
             : '已标记为低风险可尝试',
       );
     }
   }
 
-  Future<RiskPointType?> _promptSelectLowRiskType() {
-    return showDialog<RiskPointType>(
+  Future<({RiskPointType type, String name, String note})?>
+  _promptLowRiskConfig({
+    required String initialName,
+    required String initialNote,
+  }) async {
+    final nameCtrl = TextEditingController(text: initialName);
+    final noteCtrl = TextEditingController(text: initialNote);
+    var selectedType = RiskPointType.lowRisk;
+    final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('标记为低风险可尝试'),
-        content: const Text('该点是否需要走辅路？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('取消'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.of(ctx).pop(RiskPointType.lowRisk),
-            child: const Text('否'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(RiskPointType.lowRiskAccessRoad),
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF81C784),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('标记为低风险可尝试'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: '标记名称'),
+                  autofocus: true,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: noteCtrl,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: '备注（可选）',
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('是否走辅路？'),
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('否'),
+                        selected: selectedType == RiskPointType.lowRisk,
+                        onSelected: (_) => setDialogState(
+                          () => selectedType = RiskPointType.lowRisk,
+                        ),
+                      ),
+                      ChoiceChip(
+                        label: const Text('是，走辅路'),
+                        selected:
+                            selectedType == RiskPointType.lowRiskAccessRoad,
+                        onSelected: (_) => setDialogState(
+                          () => selectedType = RiskPointType.lowRiskAccessRoad,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            child: const Text('是，走辅路'),
           ),
-        ],
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: _primary),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
       ),
     );
+    final config = result == true
+        ? (
+            type: selectedType,
+            name: nameCtrl.text.trim(),
+            note: noteCtrl.text.trim(),
+          )
+        : null;
+    nameCtrl.dispose();
+    noteCtrl.dispose();
+    return config;
   }
 
   void _showRiskPointInfo(RiskPoint riskPoint) {
@@ -4271,7 +4328,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   Expanded(
                     child: OutlinedButton.icon(
                       icon: const Icon(Icons.delete_outline),
-                      label: const Text('删除风险点'),
+                      label: Text(isRisk ? '删除风险点' : '删除标记点'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.red,
                       ),
