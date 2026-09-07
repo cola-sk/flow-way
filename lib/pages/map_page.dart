@@ -3763,7 +3763,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 width: double.infinity,
                 child: OutlinedButton.icon(
                   icon: const Icon(Icons.warning_amber_rounded),
-                  label: const Text('另存为风险点'),
+                  label: const Text('标记为风险点'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: const Color(0xFFBA1A1A),
                     side: const BorderSide(color: Color(0xFFBA1A1A)),
@@ -4010,7 +4010,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       ),
                       ChoiceChip(
                         label: const Text('低风险可尝试'),
-                        selected: selectedType == RiskPointType.lowRisk,
+                        selected: selectedType != RiskPointType.risk,
                         onSelected: (_) => setDialogState(
                           () => selectedType = RiskPointType.lowRisk,
                         ),
@@ -4018,30 +4018,63 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('风险方向'),
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: RiskPointDirection.values
-                        .map(
-                          (direction) => ChoiceChip(
-                            label: Text(direction.label),
-                            selected: selectedDirection == direction,
-                            onSelected: (_) => setDialogState(
-                              () => selectedDirection = direction,
-                            ),
-                          ),
-                        )
-                        .toList(),
+                if (selectedType == RiskPointType.risk) ...[
+                  const SizedBox(height: 12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('风险方向'),
                   ),
-                ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: RiskPointDirection.values
+                          .map(
+                            (direction) => ChoiceChip(
+                              label: Text(direction.label),
+                              selected: selectedDirection == direction,
+                              onSelected: (_) => setDialogState(
+                                () => selectedDirection = direction,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 12),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('是否走辅路？'),
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Wrap(
+                      spacing: 8,
+                      children: [
+                        ChoiceChip(
+                          label: const Text('否'),
+                          selected: selectedType == RiskPointType.lowRisk,
+                          onSelected: (_) => setDialogState(
+                            () => selectedType = RiskPointType.lowRisk,
+                          ),
+                        ),
+                        ChoiceChip(
+                          label: const Text('是，走辅路'),
+                          selected:
+                              selectedType == RiskPointType.lowRiskAccessRoad,
+                          onSelected: (_) => setDialogState(
+                            () =>
+                                selectedType = RiskPointType.lowRiskAccessRoad,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -4061,17 +4094,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
 
     if (result == true) {
-      var type = selectedType;
-      if (type == RiskPointType.lowRisk) {
-        final selectedLowRiskType = await _promptSelectLowRiskType();
-        if (selectedLowRiskType != null) {
-          type = selectedLowRiskType;
-        } else {
-          nameCtrl.dispose();
-          noteCtrl.dispose();
-          return;
-        }
-      }
+      final type = selectedType;
       final ok = await _apiService.saveRiskPoint(
         name: nameCtrl.text.trim().isEmpty ? place.name : nameCtrl.text.trim(),
         location: place.location,
