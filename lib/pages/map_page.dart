@@ -3951,7 +3951,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               '辅',
               style: TextStyle(
                 color: isUnavoidable ? Colors.white : color,
-                fontSize: isUnavoidable ? 16 : 17,
+                fontSize: isUnavoidable ? 14 : 12,
                 fontWeight: FontWeight.w900,
                 height: 1,
               ),
