@@ -23,13 +23,14 @@ class WayPoint {
   };
 
   factory WayPoint.fromJson(Map<String, dynamic> json) => WayPoint(
-    id: json['id'] as String,
-    name: json['name'] as String,
+    id: json['id']?.toString() ?? '',
+    name: json['name'] as String? ?? '未命名标记点',
     location: LatLng(
       (json['lat'] as num).toDouble(),
       (json['lng'] as num).toDouble(),
     ),
-    createdAt: DateTime.parse(json['createdAt'] as String),
+    createdAt:
+        DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
   );
 }
 
