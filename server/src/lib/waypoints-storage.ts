@@ -52,7 +52,12 @@ export async function listWayPoints(userToken: string): Promise<WayPoint[]> {
 	const redisClient = requireRedis('waypoints storage is unavailable: Redis env is not configured');
 	const all = await redisClient.hgetall<Record<string, WayPoint>>(userWaypointsKey(userToken));
 	if (!all) return [];
-	return sortByCreatedAtDesc(Object.values(all));
+	return sortByCreatedAtDesc(
+		Object.entries(all).map(([key, point]) => ({
+			...point,
+			id: point.id || key,
+		}))
+	);
 }
 
 export async function saveWayPoint(userToken: string, wayPoint: WayPoint): Promise<void> {
@@ -65,5 +70,16 @@ export async function deleteWayPointById(userToken: string, id: string): Promise
 	await ensureLegacyMigrated(userToken);
 	const redisClient = requireRedis('waypoints storage is unavailable: Redis env is not configured');
 	const deleted = await redisClient.hdel(userWaypointsKey(userToken), id);
-	return deleted > 0;
+	if (deleted > 0) return true;
+
+	const all = await redisClient.hgetall<Record<string, WayPoint>>(userWaypointsKey(userToken));
+	if (all) {
+		for (const [key, point] of Object.entries(all)) {
+			if (point && (point.id === id || key === id)) {
+				const res = await redisClient.hdel(userWaypointsKey(userToken), key);
+				if (res > 0) return true;
+			}
+		}
+	}
+	return false;
 }

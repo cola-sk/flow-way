@@ -1534,9 +1534,19 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: () {
+                    onPressed: () async {
                       Navigator.pop(ctx);
-                      _deleteWayPoint(savedWayPoint);
+                      final ok = await _apiService.deleteWayPoint(
+                        savedWayPoint.id,
+                      );
+                      if (ok) {
+                        await _loadWayPoints();
+                        if (mounted) {
+                          _showToast('标记点已删除');
+                        }
+                      } else if (mounted) {
+                        _showToast('删除失败');
+                      }
                     },
                     style: OutlinedButton.styleFrom(
                       foregroundColor: Colors.red,
@@ -3169,7 +3179,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                       (point) => Padding(
                         padding: const EdgeInsets.only(bottom: 4),
                         child: Text(
-                          '• ${point.name} · ${point.direction.label}',
+                          point.type == RiskPointType.risk
+                              ? '• ${point.name} · ${point.direction.label}'
+                              : '• ${point.name}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontSize: 13),
@@ -3436,6 +3448,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         if (mounted) {
           _showToast('标记点已删除');
         }
+      } else if (mounted) {
+        _showToast('删除失败');
       }
     }
   }
@@ -3858,68 +3872,150 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   }
 
   void _showWayPointInfo(WayPoint wayPoint) {
+    final place = PlaceResult(
+      name: wayPoint.name,
+      location: wayPoint.location,
+      address: '收藏点',
+    );
     showModalBottomSheet(
       context: context,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.bookmark, color: Colors.amber),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    wayPoint.name,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+      builder: (ctx) {
+        final bottomInset = MediaQuery.of(ctx).padding.bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset + 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.bookmark_rounded, color: Colors.amber),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      wayPoint.name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            _infoRow(
-              '坐标',
-              '${wayPoint.location.longitude}, ${wayPoint.location.latitude}',
-            ),
-            _infoRow('创建时间', wayPoint.createdAt.toString().split('.')[0]),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _deleteWayPoint(wayPoint);
-                  },
-                  child: const Text('删除', style: TextStyle(color: Colors.red)),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _showPlaceActions(
-                      PlaceResult(
-                        name: wayPoint.name,
-                        location: wayPoint.location,
-                        address: '收藏点',
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      '已收藏',
+                      style: TextStyle(color: Colors.amber, fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _infoRow(
+                '坐标',
+                '${wayPoint.location.longitude.toStringAsFixed(6)}, ${wayPoint.location.latitude.toStringAsFixed(6)}',
+              ),
+              _infoRow(
+                '创建时间',
+                wayPoint.createdAt.toLocal().toString().split('.')[0],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _setEndPlaceFromAction(place);
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _primary,
+                        foregroundColor: Colors.white,
                       ),
-                    );
-                  },
-                  child: const Text('路点操作...'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
+                      icon: const Icon(Icons.directions, size: 16),
+                      label: const Text('去这里'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _setStartPlaceFromAction(place);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.green.shade700,
+                        side: BorderSide(
+                          color: Colors.green.shade400,
+                          width: 1.2,
+                        ),
+                      ),
+                      icon: const Icon(Icons.navigation, size: 16),
+                      label: const Text('从这里出发'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _addNavWaypointFromPlace(place);
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.orange.shade700,
+                        side: BorderSide(
+                          color: Colors.orange.shade400,
+                          width: 1.2,
+                        ),
+                      ),
+                      icon: const Icon(Icons.add_road_rounded, size: 16),
+                      label: const Text('作为途径点'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        final ok = await _apiService.deleteWayPoint(wayPoint.id);
+                        if (ok) {
+                          await _loadWayPoints();
+                          if (mounted) {
+                            _showToast('标记点已删除');
+                          }
+                        } else if (mounted) {
+                          _showToast('删除失败');
+                        }
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                      icon: const Icon(Icons.delete_outline, size: 16),
+                      label: const Text('删除标记点'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -4316,7 +4412,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
               const SizedBox(height: 12),
               _infoRow('坐标', _formatLatLng(riskPoint.location)),
-              _infoRow('风险方向', riskPoint.direction.label),
+              if (isRisk) _infoRow('风险方向', riskPoint.direction.label),
               _infoRow('备注', note.isEmpty ? '-' : note),
               _infoRow(
                 '创建时间',
