@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCameras } from '@/lib/cache';
 import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
-import { listRiskPointAvoidanceTargets } from '@/lib/risk-points-storage';
+import {
+  listRiskPointAvoidanceTargets,
+  listRiskPoints,
+} from '@/lib/risk-points-storage';
 import { findCamerasNearRoute } from '@/lib/route';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 import type { RoutePoint } from '@/types/route';
@@ -52,6 +55,13 @@ export async function POST(request: NextRequest) {
       body.avoidCameras === true && body.ignoreOutsideSixthRing === true;
     const shouldIgnoreLowRisk =
       body.avoidCameras === true && body.ignoreLowRiskCameras === true;
+    const riskPointCoords = body.avoidCameras === true
+      ? new Set(
+          (await listRiskPoints(tokenGuard.userToken!)).map((point) =>
+            coordKey(point.lat, point.lng)
+          )
+        )
+      : new Set<string>();
 
     const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
@@ -61,6 +71,11 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < originalCameras.length; i++) {
       const cam = originalCameras[i];
       const markType = dismissedMap.get(coordKey(cam.lat, cam.lng));
+
+      // 风险点配置优先于原始摄像头，避免重新检测时又把它当作普通摄像头。
+      if (riskPointCoords.has(coordKey(cam.lat, cam.lng))) {
+        continue;
+      }
 
       if (markType !== undefined) {
         if (markType === 12 && !shouldIgnoreLowRisk) {

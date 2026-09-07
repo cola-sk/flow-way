@@ -9,7 +9,10 @@ import {
   isRoutePlanningAbortedError,
 } from '@/lib/route';
 import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
-import { listRiskPointAvoidanceTargets } from '@/lib/risk-points-storage';
+import {
+  listRiskPointAvoidanceTargets,
+  listRiskPoints,
+} from '@/lib/risk-points-storage';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +52,13 @@ export async function POST(request: NextRequest) {
       avoidCameras && ignoreOutsideSixthRing === true;
     const shouldIgnoreLowRisk =
       avoidCameras && ignoreLowRiskCameras === true;
+    const riskPointCoords = avoidCameras
+      ? new Set(
+          (await listRiskPoints(userToken)).map((point) =>
+            coordKey(point.lat, point.lng)
+          )
+        )
+      : new Set<string>();
 
     // 解析出客户端传过来的除当前正在规划以外的历史路线（用于再试一次）
     const excludePolylines = (body as any).excludePolylines as RoutePoint[][] | undefined;
@@ -60,6 +70,12 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < originalCameras.length; i++) {
       const cam = originalCameras[i];
       const markType = dismissedMap.get(coordKey(cam.lat, cam.lng));
+
+      // 同坐标已被用户配置为风险点时，由风险点目标接管，避免原摄像头
+      // 无视方向/低风险配置继续触发普通摄像头避让。
+      if (riskPointCoords.has(coordKey(cam.lat, cam.lng))) {
+        continue;
+      }
 
       if (markType !== undefined) {
         if (markType === 12 && !shouldIgnoreLowRisk) {
