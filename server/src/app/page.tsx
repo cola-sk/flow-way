@@ -1,5 +1,6 @@
 import { CHANGELOG } from './changelog';
 import { ContactMeButton } from './contact-me-button';
+import { OfficialDownloadButton } from './official-download-button';
 
 export default function Home() {
   const latest = CHANGELOG[0];
@@ -20,21 +21,7 @@ export default function Home() {
           进京证摄像头绕行导航 · Android 客户端
         </p>
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <a
-            href="/api/download"
-            style={{
-              display: 'inline-block',
-              padding: '0.55rem 1.25rem',
-              background: '#1a56db',
-              color: '#fff',
-              borderRadius: 8,
-              textDecoration: 'none',
-              fontWeight: 600,
-              fontSize: '0.95rem',
-            }}
-          >
-            ↓ 下载最新版 v{latest.version}
-          </a>
+          <OfficialDownloadButton version={latest.version} />
           <ContactMeButton />
         </div>
       </div>

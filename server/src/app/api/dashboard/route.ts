@@ -16,6 +16,8 @@ export async function GET(request: Request) {
   const [
     overview,
     installs,
+    downloads,
+    dailyDownloads,
     appOpens,
     tokenChanges,
     routePlan,
@@ -39,6 +41,39 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE data->>'platform' = 'web') AS web
       FROM event_logs
       WHERE event = 'first_install'
+    `,
+    // 下载汇总
+    sql`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (
+          WHERE data->>'type' = 'official' OR (data->>'type' IS NULL AND (data->>'version' IS NULL OR data->>'version' != 'beta'))
+        ) AS official_count,
+        COUNT(*) FILTER (
+          WHERE data->>'type' = 'beta' OR data->>'version' = 'beta'
+        ) AS beta_count,
+        COUNT(*) FILTER (
+          WHERE created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai'
+        ) AS downloads_7d
+      FROM event_logs
+      WHERE event IN ('download_click', 'download_apk')
+    `,
+    // 每日下载明细
+    sql`
+      SELECT
+        TO_CHAR(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD') AS date,
+        COUNT(*) FILTER (
+          WHERE data->>'type' = 'official' OR (data->>'type' IS NULL AND (data->>'version' IS NULL OR data->>'version' != 'beta'))
+        ) AS official_downloads,
+        COUNT(*) FILTER (
+          WHERE data->>'type' = 'beta' OR data->>'version' = 'beta'
+        ) AS beta_downloads,
+        COUNT(*) AS total_downloads
+      FROM event_logs
+      WHERE event IN ('download_click', 'download_apk')
+      GROUP BY TO_CHAR(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD')
+      ORDER BY date DESC
+      LIMIT 30
     `,
     // App 启动
     sql`
@@ -99,6 +134,15 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE event = 'route_plan_click') AS route_plans,
         COUNT(*) FILTER (WHERE event = 'navigation_start') AS navigations,
         COUNT(*) FILTER (WHERE event = 'cruise_start') AS cruises,
+        COUNT(*) FILTER (
+          WHERE (event = 'download_click' OR event = 'download_apk')
+          AND (data->>'type' = 'official' OR (data->>'type' IS NULL AND (data->>'version' IS NULL OR data->>'version' != 'beta')))
+        ) AS official_downloads,
+        COUNT(*) FILTER (
+          WHERE (event = 'download_click' OR event = 'download_apk')
+          AND (data->>'type' = 'beta' OR data->>'version' = 'beta')
+        ) AS beta_downloads,
+        COUNT(*) FILTER (WHERE event = 'download_click' OR event = 'download_apk') AS total_downloads,
         COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS active_users
       FROM event_logs
       WHERE created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai'
@@ -110,6 +154,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     overview: overview[0],
     installs: installs[0],
+    downloads: downloads[0],
+    dailyDownloads,
     appOpens: appOpens[0],
     tokenChanges: tokenChanges[0],
     routePlan: routePlan[0],

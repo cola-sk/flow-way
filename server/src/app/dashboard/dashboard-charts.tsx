@@ -78,6 +78,25 @@ function Badge({ children, tone }: { children: React.ReactNode; tone: string }) 
   );
 }
 
+interface DownloadStats {
+  total: number;
+  official_count: number;
+  beta_count: number;
+  downloads_7d: number;
+}
+
+interface DailyDownloadItem {
+  date: string;
+  official_downloads: number;
+  beta_downloads: number;
+  total_downloads: number;
+}
+
+interface DashboardMetrics {
+  downloads?: DownloadStats;
+  dailyDownloads?: DailyDownloadItem[];
+}
+
 function SummaryCard({ label, value, tone = '#0f766e' }: { label: string; value: number; tone?: string }) {
   return (
     <div style={{ ...cardStyle, padding: '16px 18px', flex: '1 1 150px', borderTop: `3px solid ${tone}` }}>
@@ -89,29 +108,37 @@ function SummaryCard({ label, value, tone = '#0f766e' }: { label: string; value:
 
 export function DashboardCharts() {
   const [userTokens, setUserTokens] = useState<UserToken[]>([]);
+  const [dashboardData, setDashboardData] = useState<DashboardMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<TokenFilter>('all');
 
-  const fetchUserTokens = async () => {
+  const fetchData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/user-tokens');
-      if (!response.ok) throw new Error('无法获取 Token 数据');
-      setUserTokens(await response.json());
+      const [tokensRes, dashboardRes] = await Promise.all([
+        fetch('/api/user-tokens'),
+        fetch('/api/dashboard'),
+      ]);
+      if (!tokensRes.ok) throw new Error('无法获取 Token 数据');
+      setUserTokens(await tokensRes.json());
+
+      if (dashboardRes.ok) {
+        setDashboardData(await dashboardRes.json());
+      }
     } catch (fetchError) {
-      console.error('Failed to fetch user tokens:', fetchError);
-      setError('加载 Token 数据失败，请稍后重试。');
+      console.error('Failed to fetch dashboard data:', fetchError);
+      setError('加载数据失败，请稍后重试。');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    void fetchUserTokens();
+    void fetchData();
   }, []);
 
   const summary = useMemo(() => ({
@@ -134,6 +161,63 @@ export function DashboardCharts() {
 
   return (
     <div>
+      {/* 下载数据统计 */}
+      <div style={{ marginBottom: 28 }}>
+        <h2 style={{ fontSize: 18, color: '#1f2937', margin: '0 0 12px 0', fontWeight: 700 }}>
+          📦 下载数据统计
+        </h2>
+        <section style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16 }} aria-label="下载数据概览">
+          <SummaryCard label="累计下载总量" value={Number(dashboardData?.downloads?.total || 0)} tone="#1a56db" />
+          <SummaryCard label="正式版下载" value={Number(dashboardData?.downloads?.official_count || 0)} tone="#16a34a" />
+          <SummaryCard label="Beta 测试版下载" value={Number(dashboardData?.downloads?.beta_count || 0)} tone="#7c3aed" />
+          <SummaryCard label="近 7 天下载" value={Number(dashboardData?.downloads?.downloads_7d || 0)} tone="#0ea5e9" />
+        </section>
+
+        {/* 每日下载统计表 */}
+        <section style={{ ...cardStyle, marginBottom: 24 }}>
+          <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid #e5e7eb' }}>
+            <h3 style={{ margin: 0, color: '#1f2937', fontSize: 16, fontWeight: 700 }}>📅 每日下载次数</h3>
+            <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>区分正式版和 Beta 版每天的下载次数统计</p>
+          </div>
+          {(!dashboardData?.dailyDownloads || dashboardData.dailyDownloads.length === 0) ? (
+            <div style={{ textAlign: 'center', color: '#6b7280', padding: 24 }}>暂无下载记录</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: 500, borderCollapse: 'collapse', fontSize: 14 }}>
+                <thead>
+                  <tr style={{ background: '#f9fafb', color: '#374151', textAlign: 'left' }}>
+                    <th style={{ padding: '11px 20px', fontWeight: 600 }}>日期</th>
+                    <th style={{ padding: '11px 16px', fontWeight: 600 }}>正式版下载</th>
+                    <th style={{ padding: '11px 16px', fontWeight: 600 }}>Beta 版下载</th>
+                    <th style={{ padding: '11px 20px', fontWeight: 600 }}>当日总下载</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboardData.dailyDownloads.map((item) => (
+                    <tr key={item.date} style={{ borderTop: '1px solid #f3f4f6' }}>
+                      <td style={{ padding: '12px 20px', color: '#111827', fontWeight: 600 }}>{item.date}</td>
+                      <td style={{ padding: '12px 16px', color: '#16a34a', fontWeight: 600 }}>
+                        {Number(item.official_downloads)} 次
+                      </td>
+                      <td style={{ padding: '12px 16px', color: '#7c3aed', fontWeight: 600 }}>
+                        {Number(item.beta_downloads)} 次
+                      </td>
+                      <td style={{ padding: '12px 20px', color: '#111827', fontWeight: 700 }}>
+                        {Number(item.total_downloads)} 次
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <h2 style={{ fontSize: 18, color: '#1f2937', margin: '0 0 12px 0', fontWeight: 700 }}>
+        🔑 Token 与用户分析
+      </h2>
+
       <section style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }} aria-label="Token 状态概览">
         <SummaryCard label="全部 Token" value={summary.total} />
         <SummaryCard label="当前有效" value={summary.active} tone="#16a34a" />
@@ -150,7 +234,7 @@ export function DashboardCharts() {
             </div>
             <button
               type="button"
-              onClick={() => void fetchUserTokens()}
+              onClick={() => void fetchData()}
               disabled={loading}
               style={{ border: '1px solid #99f6e4', borderRadius: 8, padding: '7px 12px', background: '#f0fdfa', color: '#0f766e', fontWeight: 600, cursor: loading ? 'wait' : 'pointer' }}
             >
