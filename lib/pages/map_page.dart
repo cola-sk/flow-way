@@ -1490,20 +1490,44 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 ],
               ),
               const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _promptSaveRiskPoint(place);
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFBA1A1A),
-                    side: const BorderSide(color: Color(0xFFBA1A1A)),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _promptSaveRiskPoint(
+                          place,
+                          initialType: RiskPointType.risk,
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFBA1A1A),
+                        side: const BorderSide(color: Color(0xFFBA1A1A)),
+                      ),
+                      icon: const Icon(Icons.warning_amber_rounded, size: 16),
+                      label: const Text('标记为风险点'),
+                    ),
                   ),
-                  icon: const Icon(Icons.warning_amber_rounded, size: 16),
-                  label: const Text('标记为风险点'),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _promptSaveRiskPoint(
+                          place,
+                          initialType: RiskPointType.lowRisk,
+                        );
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF2E7D32),
+                        side: const BorderSide(color: Color(0xFF81C784)),
+                      ),
+                      icon: const Icon(Icons.eco_outlined, size: 16),
+                      label: const Text('标记为低风险可尝试'),
+                    ),
+                  ),
+                ],
               ),
               if (savedWayPoint != null) ...[
                 const SizedBox(height: 8),
@@ -3733,52 +3757,54 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     },
                   ),
                 ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.eco_outlined),
-                    label: const Text('标记为低风险可尝试'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF81C784),
-                    ),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      final ok = await _apiService.markCameraDismissed(
-                        lat: camera.lat,
-                        lng: camera.lng,
-                        name: camera.name,
-                        type: 12,
-                      );
-                      if (ok && mounted) {
-                        await _loadDismissedCameras();
-                        _showToast('已标记为低风险可尝试，路线规划将自动排除此摄像头');
-                      }
-                    },
-                  ),
-                ),
               ],
               const SizedBox(height: 8),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.warning_amber_rounded),
-                  label: const Text('标记为风险点'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFBA1A1A),
-                    side: const BorderSide(color: Color(0xFFBA1A1A)),
-                  ),
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _promptSaveRiskPoint(
-                      PlaceResult(
-                        name: camera.name,
-                        address: camera.typeLabel,
-                        location: LatLng(camera.lat, camera.lng),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.warning_amber_rounded, size: 16),
+                      label: const Text('标记为风险点'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFFBA1A1A),
+                        side: const BorderSide(color: Color(0xFFBA1A1A)),
                       ),
-                    );
-                  },
-                ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _promptSaveRiskPoint(
+                          PlaceResult(
+                            name: camera.name,
+                            address: camera.typeLabel,
+                            location: LatLng(camera.lat, camera.lng),
+                          ),
+                          initialType: RiskPointType.risk,
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.eco_outlined, size: 16),
+                      label: const Text('标记为低风险可尝试'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF2E7D32),
+                        side: const BorderSide(color: Color(0xFF81C784)),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _promptSaveRiskPoint(
+                          PlaceResult(
+                            name: camera.name,
+                            address: camera.typeLabel,
+                            location: LatLng(camera.lat, camera.lng),
+                          ),
+                          initialType: RiskPointType.lowRisk,
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
             ],
@@ -3967,23 +3993,28 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _promptSaveRiskPoint(PlaceResult place) async {
+  Future<void> _promptSaveRiskPoint(
+    PlaceResult place, {
+    required RiskPointType initialType,
+  }) async {
     final nameCtrl = TextEditingController(text: place.name);
     final noteCtrl = TextEditingController();
-    RiskPointType selectedType = RiskPointType.risk;
+    RiskPointType selectedType = initialType;
     RiskPointDirection selectedDirection = RiskPointDirection.both;
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('标记风险点'),
+          title: Text(
+            initialType == RiskPointType.risk ? '标记为风险点' : '标记为低风险可尝试',
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(labelText: '风险点名称'),
+                  decoration: const InputDecoration(labelText: '标记名称'),
                   autofocus: true,
                 ),
                 const SizedBox(height: 8),
@@ -3993,29 +4024,6 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   decoration: const InputDecoration(
                     labelText: '备注（可选）',
                     alignLabelWithHint: true,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Wrap(
-                    spacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('风险点'),
-                        selected: selectedType == RiskPointType.risk,
-                        onSelected: (_) => setDialogState(
-                          () => selectedType = RiskPointType.risk,
-                        ),
-                      ),
-                      ChoiceChip(
-                        label: const Text('低风险可尝试'),
-                        selected: selectedType != RiskPointType.risk,
-                        onSelected: (_) => setDialogState(
-                          () => selectedType = RiskPointType.lowRisk,
-                        ),
-                      ),
-                    ],
                   ),
                 ),
                 if (selectedType == RiskPointType.risk) ...[
