@@ -9,6 +9,17 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.2.3',
+    date: '2026-09-08',
+    title: '风险点避让与导航语音体验提升',
+    highlights: [
+      '支持按方向避让风险点及自定义标记风险点，优化风险点标记与路线避让逻辑。',
+      '修复进京证申办参数映射、续签校验与默认生效日期逻辑。',
+      '优化导航转向逻辑与语音播报体验，增强 TTS 自愈能力并展示剩余导航距离。',
+      '优化 Dashboard 下载量统计并提供 Beta 版独立下载页。',
+    ],
+  },
+  {
     version: '1.2.2',
     date: '2026-08-25',
     title: '进京证与联系方式体验优化',
