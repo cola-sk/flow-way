@@ -56,7 +56,7 @@ export async function GET(request: Request) {
           WHERE created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai'
         ) AS downloads_7d
       FROM event_logs
-      WHERE event IN ('download_click', 'download_apk')
+      WHERE event = 'download_apk'
     `,
     // 每日下载明细
     sql`
@@ -70,7 +70,7 @@ export async function GET(request: Request) {
         ) AS beta_downloads,
         COUNT(*) AS total_downloads
       FROM event_logs
-      WHERE event IN ('download_click', 'download_apk')
+      WHERE event = 'download_apk'
       GROUP BY TO_CHAR(created_at AT TIME ZONE 'Asia/Shanghai', 'YYYY-MM-DD')
       ORDER BY date DESC
       LIMIT 30
@@ -135,14 +135,14 @@ export async function GET(request: Request) {
         COUNT(*) FILTER (WHERE event = 'navigation_start') AS navigations,
         COUNT(*) FILTER (WHERE event = 'cruise_start') AS cruises,
         COUNT(*) FILTER (
-          WHERE (event = 'download_click' OR event = 'download_apk')
+          WHERE event = 'download_apk'
           AND (data->>'type' = 'official' OR (data->>'type' IS NULL AND (data->>'version' IS NULL OR data->>'version' != 'beta')))
         ) AS official_downloads,
         COUNT(*) FILTER (
-          WHERE (event = 'download_click' OR event = 'download_apk')
+          WHERE event = 'download_apk'
           AND (data->>'type' = 'beta' OR data->>'version' = 'beta')
         ) AS beta_downloads,
-        COUNT(*) FILTER (WHERE event = 'download_click' OR event = 'download_apk') AS total_downloads,
+        COUNT(*) FILTER (WHERE event = 'download_apk') AS total_downloads,
         COUNT(DISTINCT user_token) FILTER (WHERE user_token IS NOT NULL) AS active_users
       FROM event_logs
       WHERE created_at >= (NOW() AT TIME ZONE 'Asia/Shanghai' - INTERVAL '7 days') AT TIME ZONE 'Asia/Shanghai'
