@@ -4,6 +4,8 @@ import path from 'path';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'url';
 
+const BETA_DOWNLOAD_PAGE_URL = 'https://flow-way-preview.tz0618.uk/beta';
+
 // 兼容 ES Module 的 __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,8 +57,8 @@ async function uploadApk() {
     });
     console.log('✅ Versioned upload:', blob.url);
 
-    // 如果提供了版本号，同时更新版本清单（仅当新版本 >= 当前记录版本时）
-    if (versionTag) {
+    // Beta 包只供 Preview 服务下载，不能影响正式版版本清单。
+    if (versionTag && versionTag !== 'beta') {
       // 读取当前 version.json
       let currentVersion: string | null = null;
       try {
@@ -103,8 +105,12 @@ async function uploadApk() {
     }
 
     console.log('--------------------------------------------------');
-    console.log('Download latest : /api/download');
-    if (versionTag) {
+    if (versionTag === 'beta') {
+      console.log(`Download Beta   : ${BETA_DOWNLOAD_PAGE_URL}`);
+    } else {
+      console.log('Download latest : /api/download');
+    }
+    if (versionTag && versionTag !== 'beta') {
       console.log(`Download v${versionTag}: /api/download?version=${versionTag}`);
     }
     console.log('--------------------------------------------------');

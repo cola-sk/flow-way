@@ -1,5 +1,6 @@
 import { list } from '@vercel/blob';
 import { NextRequest, NextResponse } from 'next/server';
+import { kvLog, getLogMetadata } from '@/lib/kv-logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,6 +8,14 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
     const version = searchParams.get('version');
+    const type = version === 'beta' ? 'beta' : 'official';
+    const metadata = getLogMetadata(request);
+
+    kvLog('download_apk', {
+      ...metadata,
+      type,
+      version: version || 'latest',
+    });
 
     if (version) {
       // 指定版本：直接查找对应 APK

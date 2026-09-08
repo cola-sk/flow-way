@@ -9,6 +9,10 @@ import {
   isRoutePlanningAbortedError,
 } from '@/lib/route';
 import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
+import {
+  listRiskPointAvoidanceTargets,
+  listRiskPoints,
+} from '@/lib/risk-points-storage';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
@@ -48,6 +52,13 @@ export async function POST(request: NextRequest) {
       avoidCameras && ignoreOutsideSixthRing === true;
     const shouldIgnoreLowRisk =
       avoidCameras && ignoreLowRiskCameras === true;
+    const riskPointCoords = avoidCameras
+      ? new Set(
+          (await listRiskPoints(userToken)).map((point) =>
+            coordKey(point.lat, point.lng)
+          )
+        )
+      : new Set<string>();
 
     // 解析出客户端传过来的除当前正在规划以外的历史路线（用于再试一次）
     const excludePolylines = (body as any).excludePolylines as RoutePoint[][] | undefined;
@@ -59,6 +70,12 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < originalCameras.length; i++) {
       const cam = originalCameras[i];
       const markType = dismissedMap.get(coordKey(cam.lat, cam.lng));
+
+      // 同坐标已被用户配置为风险点时，由风险点目标接管，避免原摄像头
+      // 无视方向/低风险配置继续触发普通摄像头避让。
+      if (riskPointCoords.has(coordKey(cam.lat, cam.lng))) {
+        continue;
+      }
 
       if (markType !== undefined) {
         if (markType === 12 && !shouldIgnoreLowRisk) {
@@ -74,6 +91,29 @@ export async function POST(request: NextRequest) {
       cameras.push(cam);
       indexMapping[filteredIdx++] = i;
     }
+    const riskPointIdByPlanningIndex = new Map<number, string>();
+    if (avoidCameras) {
+      // 普通风险点始终避让；低风险点沿用“忽略低风险”设置。
+      const riskPointTargets = await listRiskPointAvoidanceTargets(
+        userToken,
+        shouldIgnoreLowRisk
+      );
+      for (const target of riskPointTargets) {
+        riskPointIdByPlanningIndex.set(cameras.length, target.riskPointId);
+        cameras.push(target.camera);
+      }
+    }
+
+    const toOriginalCameraIndices = (indices: number[]) =>
+      indices.flatMap((index) => {
+        const originalIndex = indexMapping[index];
+        return originalIndex === undefined ? [] : [originalIndex];
+      });
+    const toRiskPointIds = (indices: number[]) =>
+      indices.flatMap((index) => {
+        const riskPointId = riskPointIdByPlanningIndex.get(index);
+        return riskPointId === undefined ? [] : [riskPointId];
+      });
 
     let polylinePoints;
     let cameraIndices;
@@ -82,6 +122,7 @@ export async function POST(request: NextRequest) {
     let routeDuration: number | undefined;
 
     let routeSteps;
+    let riskPointIdsOnRoute: string[] = [];
     if (avoidCameras) {
       // 规划避开摄像头的路线（腾讯地图备选路线中选摄像头最少的）
       const result = await planAvoidCamerasRoute(
@@ -94,7 +135,8 @@ export async function POST(request: NextRequest) {
         excludePolylines
       );
       polylinePoints = result.points;
-      cameraIndices = result.cameraIndices.map((i) => indexMapping[i]);
+      cameraIndices = toOriginalCameraIndices(result.cameraIndices);
+      riskPointIdsOnRoute = toRiskPointIds(result.cameraIndices);
       routeDistance = result.distance;
       routeDuration = result.duration;
       routeSteps = result.steps;
@@ -103,7 +145,8 @@ export async function POST(request: NextRequest) {
       const result = await planRoute(start, end, request.signal);
       polylinePoints = result.points;
       const rawIndices = findCamerasNearRoute(polylinePoints, cameras);
-      cameraIndices = rawIndices.map((i) => indexMapping[i]);
+      cameraIndices = toOriginalCameraIndices(rawIndices);
+      riskPointIdsOnRoute = toRiskPointIds(rawIndices);
       routeDistance = result.distance;
       routeDuration = result.duration;
       routeSteps = result.steps;
@@ -119,7 +162,8 @@ export async function POST(request: NextRequest) {
       routeDistance,
       routeDuration,
       undefined,
-      routeSteps
+      routeSteps,
+      riskPointIdsOnRoute
     );
 
     const response: RouteResponse = { route };

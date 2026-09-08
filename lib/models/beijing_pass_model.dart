@@ -165,7 +165,7 @@ class BeijingPassConfig {
     this.passType = BeijingPassType.outsideSixth,
     this.entranceName = '其他道路',
     this.destination = '其它',
-    this.isInBeijing = false,
+    this.isInBeijing = true,
     this.inBeijingAddress = '昌平北站',
     this.sqdzgdjd = '116.231525',
     this.sqdzgdwd = '40.231452',
@@ -301,12 +301,17 @@ class BeijingPassConfig {
 
   bool get isTokenConfigured => token.trim().isNotEmpty;
 
-  bool get isEssentialInfoComplete =>
-      licensePlate.trim().isNotEmpty &&
-      engineNo.trim().isNotEmpty &&
-      vin.trim().isNotEmpty &&
-      driverName.trim().isNotEmpty &&
-      driverLicence.trim().isNotEmpty;
+  /// 车辆及驾驶人信息是否满足提交办证的基本要求。
+  /// 若已绑定交管系统车辆 ID (carId)，官方接口只需车牌与驾驶人身份即可提交；
+  /// 若未绑定车辆 ID，则需要发动机号与车架号进行核验。
+  bool get isEssentialInfoComplete {
+    final hasPlate = licensePlate.trim().isNotEmpty;
+    final hasDriver =
+        driverName.trim().isNotEmpty && driverLicence.trim().isNotEmpty;
+    if (!hasPlate || !hasDriver) return false;
+    if (carId.trim().isNotEmpty) return true;
+    return engineNo.trim().isNotEmpty && vin.trim().isNotEmpty;
+  }
 }
 
 /// 只在提交办证时使用、且与某一车辆绑定的补充资料。
@@ -355,6 +360,8 @@ class BeijingPassRecord {
   final String statusDesc;
   final int totalCount;
   final int usedCount;
+  final String driverName;
+  final String driverLicence;
   final String rawJson;
 
   const BeijingPassRecord({
@@ -367,6 +374,8 @@ class BeijingPassRecord {
     this.statusDesc = '',
     this.totalCount = 0,
     this.usedCount = 0,
+    this.driverName = '',
+    this.driverLicence = '',
     this.rawJson = '',
   });
 
@@ -394,20 +403,19 @@ class BeijingPassRecord {
     return !today.isBefore(start) && !today.isAfter(end);
   }
 
-  /// 建议的下一次续签起始日期
+  /// 建议的下一次续签起始日期：任何时候默认生效时间都是今天，除非今天在上一个有效期内
   DateTime get suggestedNextStartDate {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    if (endDate != null && endDate!.isAfter(today)) {
-      // 顺延到现有进京证结束日期的次日
-      return DateTime(
-        endDate!.year,
-        endDate!.month,
-        endDate!.day,
-      ).add(const Duration(days: 1));
+    if (endDate != null) {
+      final endDay = DateTime(endDate!.year, endDate!.month, endDate!.day);
+      if (!today.isAfter(endDay)) {
+        // 今天在上一个有效期内（含有效期最后一天），顺延到现有进京证结束日期的次日
+        return endDay.add(const Duration(days: 1));
+      }
     }
-    // 默认明天（避免当天中午12点后无法办理限制）
-    return today.add(const Duration(days: 1));
+    // 任何其他时候（包括上个证已过期），默认的生效时间都是今天
+    return today;
   }
 }
 
@@ -427,6 +435,10 @@ class BeijingPassVehicle {
     this.records = const [],
   });
 
+  /// 当前生效的进京证记录（isValidNow == true）。
+  /// 若没有任何生效中的记录，则返回最新的历史记录（可能已过期/被拒绝）；
+  /// 若 records 为空则返回 null。
+  /// **注意**：使用前必须检查 isValidNow，不能假设返回值一定是有效记录。
   BeijingPassRecord? get activeRecord {
     for (final record in records) {
       if (record.isValidNow) return record;
@@ -437,5 +449,23 @@ class BeijingPassVehicle {
   String get displayName {
     final plate = licensePlate.isEmpty ? '未命名车辆' : licensePlate;
     return vehicleType.isEmpty ? plate : '$plate · $vehicleType';
+  }
+
+  /// 从该车辆历史记录中获取最近填写的驾驶人姓名
+  String get lastDriverName {
+    for (final record in records) {
+      if (record.driverName.trim().isNotEmpty) return record.driverName.trim();
+    }
+    return '';
+  }
+
+  /// 从该车辆历史记录中获取最近填写的驾驶人身份证/驾驶证号
+  String get lastDriverLicence {
+    for (final record in records) {
+      if (record.driverLicence.trim().isNotEmpty) {
+        return record.driverLicence.trim();
+      }
+    }
+    return '';
   }
 }

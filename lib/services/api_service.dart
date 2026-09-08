@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
@@ -51,8 +52,25 @@ String resolveApiBaseUrl() {
 }
 
 bool _isBetaEnv() {
-  const customUrl = String.fromEnvironment('API_BASE_URL');
-  return customUrl.contains('beta');
+  return const bool.fromEnvironment('IS_BETA');
+}
+
+class _EventClientMetadata {
+  final String appVersion;
+  final String appBuildNumber;
+  final bool isBeta;
+
+  const _EventClientMetadata({
+    required this.appVersion,
+    required this.appBuildNumber,
+    required this.isBeta,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'app_version': appVersion,
+    'app_build_number': appBuildNumber,
+    'is_beta': isBeta,
+  };
 }
 
 String _formatError(Object e) {
@@ -104,8 +122,29 @@ class ApiService {
   static const String firstLaunchDefaultUserToken = 'test_token_v2026';
 
   static final RegExp _userTokenPattern = RegExp(r'^[A-Za-z0-9_]{16}$');
+  static Future<_EventClientMetadata>? _eventClientMetadata;
 
   bool get isBeta => _isBetaEnv();
+
+  static Future<_EventClientMetadata> _loadEventClientMetadata() {
+    return _eventClientMetadata ??= () async {
+      try {
+        final packageInfo = await PackageInfo.fromPlatform();
+        return _EventClientMetadata(
+          appVersion: packageInfo.version,
+          appBuildNumber: packageInfo.buildNumber,
+          isBeta: _isBetaEnv(),
+        );
+      } catch (_) {
+        // 埋点不能因读取版本信息失败而中断，保留可识别的兜底值。
+        return _EventClientMetadata(
+          appVersion: 'unknown',
+          appBuildNumber: '',
+          isBeta: _isBetaEnv(),
+        );
+      }
+    }();
+  }
 
   final Dio _dio;
   void Function(TokenAccessDeniedError error)? onTokenAccessDenied;
@@ -159,6 +198,7 @@ class ApiService {
         path.startsWith('/api/saved-route-plans') ||
         path.startsWith('/api/recent-navigations') ||
         path.startsWith('/api/dismissed-cameras') ||
+        path.startsWith('/api/risk-points') ||
         path.startsWith('/api/search') ||
         path.startsWith('/api/suggest') ||
         path.startsWith('/api/reverse-geocode');
@@ -244,9 +284,15 @@ class ApiService {
   Future<void> reportEvent(String event, [Map<String, dynamic>? data]) async {
     try {
       final userToken = await ensureUserToken();
+      final clientMetadata = await _loadEventClientMetadata();
       await _dio.post(
         '/api/logs',
-        data: {'event': event, 'data': data ?? {}, 'userToken': userToken},
+        data: {
+          'event': event,
+          // 元数据后合并，确保所有埋点都带有真实的客户端版本与渠道标识。
+          'data': {...?data, ...clientMetadata.toJson()},
+          'userToken': userToken,
+        },
       );
     } catch (e) {
       // 日志上报失败不影响主流程
@@ -741,6 +787,82 @@ class ApiService {
       return true;
     } catch (e) {
       print('删除标记点失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 获取用户标记的风险点。
+  Future<List<RiskPoint>> getRiskPoints() async {
+    try {
+      final response = await _dio.get('/api/risk-points');
+      final List<dynamic> data = response.data['riskPoints'] ?? [];
+      return data
+          .map((item) => RiskPoint.fromJson(item as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      print('获取风险点失败: ${_formatError(e)}');
+      return [];
+    }
+  }
+
+  /// 在任意坐标创建风险点。
+  Future<bool> saveRiskPoint({
+    required String name,
+    required LatLng location,
+    required RiskPointType type,
+    required RiskPointDirection direction,
+    String note = '',
+  }) async {
+    try {
+      await _dio.post(
+        '/api/risk-points',
+        data: {
+          'name': name,
+          'lat': location.latitude,
+          'lng': location.longitude,
+          'type': type.apiValue,
+          'direction': direction.apiValue,
+          'note': note,
+        },
+      );
+      return true;
+    } catch (e) {
+      print('保存风险点失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  /// 修改风险点备注或风险等级；传空备注可删除备注。
+  Future<bool> updateRiskPoint(
+    String id, {
+    String? name,
+    String? note,
+    RiskPointType? type,
+    RiskPointDirection? direction,
+  }) async {
+    try {
+      await _dio.patch(
+        '/api/risk-points/$id',
+        data: {
+          if (name != null) 'name': name,
+          if (note != null) 'note': note,
+          if (type != null) 'type': type.apiValue,
+          if (direction != null) 'direction': direction.apiValue,
+        },
+      );
+      return true;
+    } catch (e) {
+      print('更新风险点失败: ${_formatError(e)}');
+      return false;
+    }
+  }
+
+  Future<bool> deleteRiskPoint(String id) async {
+    try {
+      await _dio.delete('/api/risk-points/$id');
+      return true;
+    } catch (e) {
+      print('删除风险点失败: ${_formatError(e)}');
       return false;
     }
   }
@@ -1402,6 +1524,80 @@ class DismissedCamera {
       markedAt: json['markedAt'] as String? ?? '',
       type: parsedType == 12 ? 12 : 6,
       note: json['note'] as String? ?? '',
+    );
+  }
+}
+
+enum RiskPointType {
+  risk('risk'),
+  lowRisk('low_risk'),
+  lowRiskAccessRoad('low_risk_access_road');
+
+  final String apiValue;
+  const RiskPointType(this.apiValue);
+
+  static RiskPointType fromApiValue(String value) {
+    return RiskPointType.values.firstWhere(
+      (item) => item.apiValue == value,
+      orElse: () => RiskPointType.risk,
+    );
+  }
+}
+
+enum RiskPointDirection {
+  both('both', '双向'),
+  eastWest('east_west', '东向西'),
+  westEast('west_east', '西向东'),
+  southNorth('south_north', '南向北'),
+  northSouth('north_south', '北向南');
+
+  final String apiValue;
+  final String label;
+  const RiskPointDirection(this.apiValue, this.label);
+
+  static RiskPointDirection fromApiValue(String value) {
+    return RiskPointDirection.values.firstWhere(
+      (item) => item.apiValue == value,
+      orElse: () => RiskPointDirection.both,
+    );
+  }
+}
+
+class RiskPoint {
+  final String id;
+  final String name;
+  final LatLng location;
+  final RiskPointType type;
+  final RiskPointDirection direction;
+  final String note;
+  final DateTime createdAt;
+
+  const RiskPoint({
+    required this.id,
+    required this.name,
+    required this.location,
+    required this.type,
+    required this.direction,
+    required this.note,
+    required this.createdAt,
+  });
+
+  factory RiskPoint.fromJson(Map<String, dynamic> json) {
+    return RiskPoint(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '未命名风险点',
+      location: LatLng(
+        (json['lat'] as num).toDouble(),
+        (json['lng'] as num).toDouble(),
+      ),
+      type: RiskPointType.fromApiValue(json['type'] as String? ?? 'risk'),
+      direction: RiskPointDirection.fromApiValue(
+        json['direction'] as String? ?? 'both',
+      ),
+      note: json['note'] as String? ?? '',
+      createdAt:
+          DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }

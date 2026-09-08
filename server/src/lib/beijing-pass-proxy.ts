@@ -83,10 +83,34 @@ export async function proxyBeijingPassRequest(
     });
 
     const responseBody = await upstream.text();
+    const contentType = upstream.headers.get('content-type') ?? '';
+    const isHtmlOrWaf =
+      upstream.status === 405 ||
+      contentType.includes('text/html') ||
+      responseBody.includes('damddos') ||
+      responseBody.includes('Method Not Allowed');
+
+    if (isHtmlOrWaf) {
+      return NextResponse.json(
+        {
+          code: 405,
+          msg: '上游交警服务拦截了请求（WAF 405）。Web端代理部署在海外节点被限制访问，请在 Android 手机客户端直接使用。',
+          res: null,
+        },
+        {
+          status: 405,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        }
+      );
+    }
+
     return new NextResponse(responseBody, {
       status: upstream.status,
       headers: {
-        'Content-Type': upstream.headers.get('content-type') ?? 'application/json; charset=utf-8',
+        'Content-Type': contentType || 'application/json; charset=utf-8',
         'Cache-Control': 'no-store',
       },
     });

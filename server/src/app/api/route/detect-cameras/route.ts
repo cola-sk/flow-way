@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCameras } from '@/lib/cache';
 import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
+import {
+  listRiskPointAvoidanceTargets,
+  listRiskPoints,
+} from '@/lib/risk-points-storage';
 import { findCamerasNearRoute } from '@/lib/route';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 import type { RoutePoint } from '@/types/route';
@@ -51,14 +55,27 @@ export async function POST(request: NextRequest) {
       body.avoidCameras === true && body.ignoreOutsideSixthRing === true;
     const shouldIgnoreLowRisk =
       body.avoidCameras === true && body.ignoreLowRiskCameras === true;
+    const riskPointCoords = body.avoidCameras === true
+      ? new Set(
+          (await listRiskPoints(tokenGuard.userToken!)).map((point) =>
+            coordKey(point.lat, point.lng)
+          )
+        )
+      : new Set<string>();
 
     const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
+    const riskPointIdByPlanningIndex = new Map<number, string>();
     let filteredIdx = 0;
 
     for (let i = 0; i < originalCameras.length; i++) {
       const cam = originalCameras[i];
       const markType = dismissedMap.get(coordKey(cam.lat, cam.lng));
+
+      // 风险点配置优先于原始摄像头，避免重新检测时又把它当作普通摄像头。
+      if (riskPointCoords.has(coordKey(cam.lat, cam.lng))) {
+        continue;
+      }
 
       if (markType !== undefined) {
         if (markType === 12 && !shouldIgnoreLowRisk) {
@@ -76,11 +93,28 @@ export async function POST(request: NextRequest) {
       indexMapping[filteredIdx++] = i;
     }
 
-    const cameraIndicesOnRoute = findCamerasNearRoute(points, cameras).map(
-      (idx) => indexMapping[idx]
-    );
+    if (body.avoidCameras === true) {
+      const riskPointTargets = await listRiskPointAvoidanceTargets(
+        tokenGuard.userToken!,
+        shouldIgnoreLowRisk
+      );
+      for (const target of riskPointTargets) {
+        riskPointIdByPlanningIndex.set(cameras.length, target.riskPointId);
+        cameras.push(target.camera);
+      }
+    }
 
-    return NextResponse.json({ cameraIndicesOnRoute });
+    const matchedIndices = findCamerasNearRoute(points, cameras);
+    const cameraIndicesOnRoute = matchedIndices.flatMap((idx) => {
+      const cameraIndex = indexMapping[idx];
+      return cameraIndex === undefined ? [] : [cameraIndex];
+    });
+    const riskPointIdsOnRoute = matchedIndices.flatMap((idx) => {
+      const riskPointId = riskPointIdByPlanningIndex.get(idx);
+      return riskPointId === undefined ? [] : [riskPointId];
+    });
+
+    return NextResponse.json({ cameraIndicesOnRoute, riskPointIdsOnRoute });
   } catch (error) {
     console.error('Failed to detect cameras on route:', error);
     return NextResponse.json(

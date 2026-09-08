@@ -6,14 +6,28 @@ export async function GET() {
   try {
     // 从 event_logs 获取 token 使用统计
     const rows = await sql`
+      WITH latest_client_metadata AS (
+        SELECT DISTINCT ON (user_token)
+          user_token,
+          data->>'app_version' AS app_version,
+          data->>'app_build_number' AS app_build_number,
+          CASE WHEN data->>'is_beta' = 'true' THEN true ELSE false END AS is_beta
+        FROM event_logs
+        WHERE user_token IS NOT NULL AND data ? 'app_version'
+        ORDER BY user_token, created_at DESC
+      )
       SELECT
-        user_token,
-        TO_CHAR(MIN(created_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD HH24:MI:SS') AS first_event_date,
-        TO_CHAR(MAX(created_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD HH24:MI:SS') AS last_event_date,
-        COUNT(*) AS total_events
+        event_logs.user_token,
+        TO_CHAR(MIN(event_logs.created_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD HH24:MI:SS') AS first_event_date,
+        TO_CHAR(MAX(event_logs.created_at AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD HH24:MI:SS') AS last_event_date,
+        COUNT(*) AS total_events,
+        latest_client_metadata.app_version,
+        latest_client_metadata.app_build_number,
+        latest_client_metadata.is_beta
       FROM event_logs
-      WHERE user_token IS NOT NULL
-      GROUP BY user_token
+      LEFT JOIN latest_client_metadata USING (user_token)
+      WHERE event_logs.user_token IS NOT NULL
+      GROUP BY event_logs.user_token, latest_client_metadata.app_version, latest_client_metadata.app_build_number, latest_client_metadata.is_beta
       ORDER BY last_event_date DESC
       LIMIT 100
     `;
@@ -51,6 +65,9 @@ export async function GET() {
           first_event_date: stats?.first_event_date ?? null,
           last_event_date: stats?.last_event_date ?? null,
           total_events: stats?.total_events ?? 0,
+          app_version: stats?.app_version ?? null,
+          app_build_number: stats?.app_build_number ?? null,
+          is_beta: stats?.is_beta ?? null,
           state,
           validity,
           expiresAt,

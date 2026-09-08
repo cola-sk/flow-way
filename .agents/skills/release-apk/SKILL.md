@@ -1,6 +1,6 @@
 ---
 name: release-apk
-description: 构建 flow-way Android APK 并发布。分为两种模式：正式版（连接生产接口，走完整升版+构建+上传+更新 version.json 流程）和 Beta 版（连接指定 Preview 接口，用于测试验证）。当用户说"发版"、"release"、"打包"、"升级版本"、"更新 changelog"时触发正式版流程；当用户说"打 beta 包"、"发 beta"、"测试包"时触发 Beta 版流程。
+description: 构建 flow-way Android APK 并发布。分为两种模式：正式版（连接生产接口，走完整升版+构建+上传+更新 version.json 流程）和 Beta 版（连接指定 Preview 接口，用于测试验证，可上传或安装到手机）。当用户说"发版"、"release"、"打包"、"升级版本"、"更新 changelog"时触发正式版流程；当用户说"打 beta 包"、"发 beta"、"测试包"、"更新 beta"时触发 Beta 版流程。
 metadata:
   pattern: tool-wrapper
   domain: flow-way/release
@@ -18,7 +18,7 @@ metadata:
 3. **本次更新亮点**：用一句话描述核心改动，供写更新日志用
 4. **是否更新 changelog**：若有用户可见的功能变化，必须更新
 5. **联系方式与闲鱼链接**：若闲鱼地址或微信号有变更，可通过 `pnpm run sync-contact` 将 `server/src/config/contact.json` 同步保存到数据库
-6. **Beta 接口地址**（仅 Beta 版需要）：默认 `https://flow-way-git-beta-skingpts-projects.vercel.app`，也可指定其他 Vercel Preview URL
+6. **Beta 接口地址**（仅 Beta 版需要）：默认使用项目 `server/package.json` 中 `build-apk:beta` 配置的 `https://flow-way-preview.tz0618.uk`，也可指定其他 Preview URL
 
 ---
 
@@ -101,33 +101,80 @@ git push  # Vercel 自动部署，使新的 changelog 和 version.json 生效
 
 ## Beta 版流程（连接 Preview 接口）
 
-适用于内部测试验证，连接非生产环境的接口。产物通过 `/api/download?version=beta` 分发，不会更新 `flow-way-version.json`。
+适用于内部测试验证，连接非生产环境的接口。必须严格按以下顺序执行：
 
-### 步骤一：构建 Beta APK
-
-**触发场景**：用户说"打个 beta 包"、"发个 beta"、"测试包"。
-
-使用 `--dart-define` 将 Preview 接口地址注入到 Flutter 应用中：
+### 步骤一：确认分支
 
 ```bash
-# 在项目根目录执行
-flutter build apk --release --dart-define=API_BASE_URL=https://flow-way-git-beta-skingpts-projects.vercel.app
+git branch --show-current
 ```
 
-> 若用户指定了其他 Preview URL，替换 `API_BASE_URL=` 后的值即可。
+当前分支必须是 `preview`。如果不是，停止流程并询问用户，不要自动切换或创建分支。
 
-### 步骤二：上传 Beta APK
+### 步骤二：检查并提交改动
+
+先检查工作区和差异，只提交本次 Beta 更新相关文件；不要把无关改动一起提交。提交必须发生在构建之前。
 
 ```bash
-cd server/
-# 上传且带上 "beta" 标签，产物为 flow-way-beta.apk
-pnpm run upload-apk:beta
-# 或者使用 pnpm run upload-apk -- beta
+git status --short --branch
+git diff --check
+git add <本次改动文件>
+git commit -m "<本次改动说明>"
 ```
 
-### 步骤三：下载验证
+如果没有需要提交的改动，应明确告知用户并继续询问是否仍要构建；不要为了发 Beta 创建空提交。
 
-通过 `/api/download?version=beta` 下载此 Beta 版。该版本会访问到注入的 Preview 接口而非线上生产接口。
+### 步骤三：构建 Beta Release APK
+
+默认使用项目已有脚本（它会注入 Preview API 和 `IS_BETA=true`）：
+
+```bash
+pnpm --dir server run build-apk:beta
+```
+
+该命令等价于在项目根目录执行：
+
+```bash
+flutter build apk --release \
+  --dart-define=API_BASE_URL=https://flow-way-preview.tz0618.uk \
+  --dart-define=IS_BETA=true
+```
+
+若用户指定其他 Preview URL，使用该 URL 替换 `API_BASE_URL`，并保留 `IS_BETA=true`。构建产物通常位于 `build/app/outputs/flutter-apk/app-release.apk`。
+
+### 步骤四：构建完成后询问交付方式
+
+构建成功后必须询问用户选择以下一种方式，不能默认上传或默认安装：
+
+1. **上传 Beta APK**
+2. **安装到手机**
+
+如果选择上传：
+
+```bash
+pnpm --dir server run upload-apk:beta
+```
+
+产物会以 `flow-way-beta.apk` 上传，可通过 `/api/download?version=beta` 下载。Beta 上传不会更新 `flow-way-version.json`。
+
+如果选择安装：
+
+```bash
+flutter devices
+adb -s <device_id> install -r build/app/outputs/flutter-apk/app-release.apk
+```
+
+设备多于一个时，先询问用户要安装到哪台设备；没有 Android 设备时，提示用户连接设备，不要擅自改为上传。
+
+### 步骤五：最后推送
+
+仅当构建以及用户选择的上传/安装动作成功后，才执行最后的推送：
+
+```bash
+git push origin preview
+```
+
+如果构建、上传或安装失败，不要推送，先报告失败原因并等待用户决定是否继续。
 
 > **注意**：Beta 版不升级版本号、不更新 `flow-way-version.json`、不影响正式版下载入口。
 

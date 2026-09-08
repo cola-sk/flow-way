@@ -208,6 +208,129 @@ class BeijingPassService {
     return null;
   }
 
+  /// 根据进京/在京详细地址自动解析所属北京行政区名（如“昌平区”）
+  static String extractDistrict(String address) {
+    const districts = [
+      '东城区',
+      '西城区',
+      '朝阳区',
+      '丰台区',
+      '石景山区',
+      '海淀区',
+      '门头沟区',
+      '房山区',
+      '通州区',
+      '顺义区',
+      '昌平区',
+      '大兴区',
+      '怀柔区',
+      '平谷区',
+      '密云区',
+      '延庆区',
+    ];
+    final trimmed = address.trim();
+    if (trimmed.isEmpty) return '昌平区';
+    for (final d in districts) {
+      if (trimmed.contains(d)) return d;
+    }
+    for (final d in districts) {
+      final nameWithoutQu = d.substring(0, d.length - 1);
+      if (trimmed.contains(nameWithoutQu)) return d;
+    }
+    return '昌平区';
+  }
+
+  /// 构建符合北京交警 insertApplyRecord 官方接口规范的请求负载
+  static Map<String, dynamic> buildApplyPayload({
+    required BeijingPassConfig config,
+    required DateTime applyDate,
+    String? applyIdOld,
+    String? vId,
+  }) {
+    final applyDateStr =
+        '${applyDate.year.toString().padLeft(4, '0')}-${applyDate.month.toString().padLeft(2, '0')}-${applyDate.day.toString().padLeft(2, '0')}';
+
+    final effectiveVId = (vId != null && vId.trim().isNotEmpty)
+        ? vId.trim()
+        : config.carId.trim();
+    final inBjAddress = config.inBeijingAddress.trim().isNotEmpty
+        ? config.inBeijingAddress.trim()
+        : '昌平北站';
+    final district = extractDistrict(inBjAddress);
+
+    final gdjd = double.tryParse(config.sqdzgdjd.trim()) ?? 116.231525;
+    final gdwd = double.tryParse(config.sqdzgdwd.trim()) ?? 40.231452;
+    final bdjd = double.tryParse(config.sqdzbdjd.trim()) ?? 116.237936;
+    final bdwd = double.tryParse(config.sqdzbdwd.trim()) ?? 40.237461;
+
+    final hpzl = config.plateType.trim().isNotEmpty
+        ? config.plateType.trim()
+        : (config.licensePlate.trim().length >= 8 ? '52' : '02');
+    final driverLicence = config.driverLicence.trim();
+    final driverName = config.driverName.trim();
+
+    // 目的地与进京目的字典严格配对（01: 自驾旅游，06: 其它）
+    final isTravel = config.destination.trim() == '自驾旅游';
+    final jjmd = isTravel ? '01' : '06';
+    final jjmdmc = isTravel ? '自驾旅游' : '其它';
+
+    // 进京道口字典严格配对（00401: 京藏高速，00606: 其他道路）
+    final isJingzang = config.entranceName.trim() == '京藏高速';
+    final jjlk = isJingzang ? '00401' : '00606';
+    final jjlkmc = isJingzang ? '京藏高速' : '其他道路';
+
+    // 官方线上办理规范：sfzj 必须为整数 1（车辆在京/线上申办免核验模式）或 0。
+    // 经实测，线上申请六环外进京证时若传 0 或字符串 '0' 会直接触发交管服务端 500（"目前办证人数较多，请稍后!"）；
+    // 因此不论 isInBeijing 初始值为何，有在京地址或线上办理时统一按整型数值 1 提交。
+    final int sfzj = (config.isInBeijing || inBjAddress.isNotEmpty) ? 1 : 0;
+
+    final payload = <String, dynamic>{
+      'dabh': 'null',
+      'hphm': config.licensePlate.trim(),
+      'hpzl': hpzl,
+      'vId': effectiveVId,
+      'jjdq': district,
+      'jjlk': jjlk,
+      'jjlkmc': jjlkmc,
+      'jjmd': jjmd,
+      'jjmdmc': jjmdmc,
+      'jjrq': applyDateStr,
+      'jjzzl': config.passType.officialCode,
+      'jsrxm': driverName,
+      'jszh': driverLicence,
+      'sfzmhm': driverLicence,
+      'xxdz': inBjAddress,
+      'sqdzbdjd': bdjd,
+      'sqdzbdwd': bdwd,
+      'sfzj': sfzj,
+    };
+
+    if (applyIdOld != null && applyIdOld.trim().isNotEmpty) {
+      payload['applyIdOld'] = applyIdOld.trim();
+    }
+
+    return payload;
+  }
+
+  static String? _checkWafOrHtmlResponse(
+    dynamic responseData,
+    int? statusCode,
+  ) {
+    if (statusCode == 405) {
+      return '上游交警服务拦截了请求（WAF 405）。Web 预览端受海外节点网络限制，请在 Android 手机客户端运行使用。';
+    }
+    if (responseData is String) {
+      final s = responseData.toLowerCase();
+      if (s.contains('<!doctype html') ||
+          s.contains('<html') ||
+          s.contains('damddos') ||
+          s.contains('method not allowed')) {
+        return '上游交警服务拦截了网络请求（防火墙阻断）。Web 预览端受海外节点限制，请在 Android 手机客户端运行使用。';
+      }
+    }
+    return null;
+  }
+
   /// 查询进京证办证状态
   Future<BeijingPassFetchResult> fetchPassStatus(
     BeijingPassConfig config,
@@ -227,6 +350,14 @@ class BeijingPassService {
         // stateList 仅需 Authorization Token；服务端会返回该账号绑定的全部车辆。
         data: const <String, dynamic>{},
       );
+
+      final wafErr = _checkWafOrHtmlResponse(
+        response.data,
+        response.statusCode,
+      );
+      if (wafErr != null) {
+        return BeijingPassFetchResult.failure(wafErr);
+      }
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         return BeijingPassFetchResult.failure(
@@ -326,6 +457,13 @@ class BeijingPassService {
 
       return BeijingPassFetchResult.failure('接口返回格式异常: ${response.data}');
     } on DioException catch (e) {
+      final wafErr = _checkWafOrHtmlResponse(
+        e.response?.data,
+        e.response?.statusCode,
+      );
+      if (wafErr != null) {
+        return BeijingPassFetchResult.failure(wafErr);
+      }
       final proxyUserTokenError = _proxyUserTokenError(e);
       if (proxyUserTokenError != null) {
         return BeijingPassFetchResult.failure(proxyUserTokenError);
@@ -355,76 +493,29 @@ class BeijingPassService {
     if (!config.isTokenConfigured) {
       return BeijingPassApplyResult.failure('未配置 Token，无法提交申请');
     }
-    if (!config.isEssentialInfoComplete) {
-      return BeijingPassApplyResult.failure('车辆必填信息不完整（车牌、发动机号、车架号、驾驶人信息）');
+    final effectiveVId = (vId != null && vId.trim().isNotEmpty)
+        ? vId.trim()
+        : config.carId.trim();
+    if (config.licensePlate.trim().isEmpty) {
+      return BeijingPassApplyResult.failure('未指定车牌号码');
+    }
+    if (config.driverName.trim().isEmpty ||
+        config.driverLicence.trim().isEmpty) {
+      return BeijingPassApplyResult.failure('请先填写驾驶人姓名与身份证/驾驶证号');
+    }
+    // 若未绑定交管系统车辆 ID，则需要发动机号与车架号
+    if (effectiveVId.isEmpty &&
+        (config.engineNo.trim().isEmpty || config.vin.trim().isEmpty)) {
+      return BeijingPassApplyResult.failure('车辆未绑定且缺少发动机号/车架号');
     }
 
     final token = config.token.trim();
-
-    final applyDateStr =
-        '${applyDate.year.toString().padLeft(4, '0')}-${applyDate.month.toString().padLeft(2, '0')}-${applyDate.day.toString().padLeft(2, '0')}';
-    final applyEndDate = applyDate.add(Duration(days: applyDays - 1));
-    final applyEndDateStr =
-        '${applyEndDate.year.toString().padLeft(4, '0')}-${applyEndDate.month.toString().padLeft(2, '0')}-${applyEndDate.day.toString().padLeft(2, '0')}';
-
-    final effectiveVId =
-        (vId != null && vId.isNotEmpty) ? vId : config.carId;
-    final inBjAddress = config.inBeijingAddress.trim().isNotEmpty
-        ? config.inBeijingAddress.trim()
-        : '昌平北站';
-    final gdjd =
-        config.sqdzgdjd.trim().isNotEmpty ? config.sqdzgdjd.trim() : '116.231525';
-    final gdwd =
-        config.sqdzgdwd.trim().isNotEmpty ? config.sqdzgdwd.trim() : '40.231452';
-    final bdjd =
-        config.sqdzbdjd.trim().isNotEmpty ? config.sqdzbdjd.trim() : '116.237936';
-    final bdwd =
-        config.sqdzbdwd.trim().isNotEmpty ? config.sqdzbdwd.trim() : '40.237461';
-
-    // 字段名以 stateList / insertApplyRecord 官方交警接口为准
-    final payload = {
-      'hphm': config.licensePlate,
-      if (config.plateType.isNotEmpty) 'hpzl': config.plateType,
-      'vId': effectiveVId,
-      'jjzzl': config.passType.officialCode,
-      if (applyIdOld != null && applyIdOld.isNotEmpty) 'applyIdOld': applyIdOld,
-      'sfzj': config.isInBeijing ? '1' : '0',
-      'zjxxdz': inBjAddress,
-      'xxdz': inBjAddress,
-      // 社区地址经纬度（高德+百度坐标）
-      'sqdzgdjd': gdjd,
-      'sqdzgdwd': gdwd,
-      'sqdzbdjd': bdjd,
-      'sqdzbdwd': bdwd,
-      'txrxx': const <Object>[],
-      'jjdq': '010',
-      'jjmd': '06',
-      'jjlk': '00606',
-      'jjmdmc': config.destination.isNotEmpty ? config.destination : '其它',
-      'jjlkmc': config.entranceName.isNotEmpty ? config.entranceName : '其他道路',
-      'jjrq': applyDateStr,
-      'yxqs': applyDateStr,
-      'yxqz': applyEndDateStr,
-      'sqsj': applyDateStr,
-      'cllx': config.carModel,
-      'fdjh': config.engineNo,
-      'clsbdh': config.vin,
-      'jsrxm': config.driverName,
-      'jszh': config.driverLicence,
-      // 兼容旧接口字段
-      'applyType': config.passType.code,
-      'applyTime': applyDateStr,
-      'applyDays': applyDays.toString(),
-      'carId': effectiveVId,
-      'licensePlate': config.licensePlate,
-      'carModel': config.carModel,
-      'engineNo': config.engineNo,
-      'vin': config.vin,
-      'driverName': config.driverName,
-      'driverLicence': config.driverLicence,
-      'entranceName': config.entranceName,
-      'destination': config.destination,
-    };
+    final payload = buildApplyPayload(
+      config: config,
+      applyDate: applyDate,
+      applyIdOld: applyIdOld,
+      vId: vId,
+    );
 
     try {
       final response = await _dio.post(
@@ -432,6 +523,14 @@ class BeijingPassService {
         options: Options(headers: await _requestHeaders(token)),
         data: payload,
       );
+
+      final wafErr = _checkWafOrHtmlResponse(
+        response.data,
+        response.statusCode,
+      );
+      if (wafErr != null) {
+        return BeijingPassApplyResult.failure(wafErr);
+      }
 
       if (response.statusCode == 401 || response.statusCode == 403) {
         return BeijingPassApplyResult.failure(
@@ -449,7 +548,10 @@ class BeijingPassService {
             data['resMsg']?.toString() ??
             '';
 
-        if (code == '200' || code == '0' || msg.contains('成功')) {
+        if (code == '200' ||
+            code == '0' ||
+            msg.contains('成功') ||
+            msg.contains('审核')) {
           final applyId =
               data['data']?['id']?.toString() ??
               data['data']?['applyId']?.toString();
@@ -476,6 +578,13 @@ class BeijingPassService {
 
       return BeijingPassApplyResult.failure('返回格式异常: ${response.data}');
     } on DioException catch (e) {
+      final wafErr = _checkWafOrHtmlResponse(
+        e.response?.data,
+        e.response?.statusCode,
+      );
+      if (wafErr != null) {
+        return BeijingPassApplyResult.failure(wafErr);
+      }
       final proxyUserTokenError = _proxyUserTokenError(e);
       if (proxyUserTokenError != null) {
         return BeijingPassApplyResult.failure(proxyUserTokenError);
@@ -590,6 +699,16 @@ class BeijingPassService {
         ) ??
         0;
 
+    final driverName =
+        json['jsrxm']?.toString() ??
+        json['driverName']?.toString() ??
+        '';
+    final driverLicence =
+        json['jszh']?.toString() ??
+        json['sfzmhm']?.toString() ??
+        json['driverLicence']?.toString() ??
+        '';
+
     return BeijingPassRecord(
       id: id,
       licensePlate: plate,
@@ -600,6 +719,8 @@ class BeijingPassService {
       statusDesc: statusDesc.isNotEmpty ? statusDesc : status.label,
       totalCount: total,
       usedCount: used,
+      driverName: driverName,
+      driverLicence: driverLicence,
       rawJson: jsonEncode(json),
     );
   }

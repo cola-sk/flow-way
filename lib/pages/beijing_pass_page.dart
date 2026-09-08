@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/beijing_pass_model.dart';
-import '../models/route.dart' show PlaceResult;
 import '../services/api_service.dart';
 import '../services/beijing_pass_service.dart';
 
@@ -54,9 +53,11 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       TextEditingController();
 
   BeijingPassType _selectedPassType = BeijingPassType.outsideSixth;
-  bool _isInBeijing = false;
-  DateTime _selectedApplyStartDate = DateTime.now().add(
-    const Duration(days: 1),
+  bool _isInBeijing = true;
+  DateTime _selectedApplyStartDate = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
   );
 
   @override
@@ -175,13 +176,16 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   BeijingPassRecord? get _selectedActiveRecord =>
       _selectedVehicle?.activeRecord;
 
-  bool get _supplementComplete =>
-      _plateController.text.trim().isNotEmpty &&
-      _carModelController.text.trim().isNotEmpty &&
-      _engineNoController.text.trim().isNotEmpty &&
-      _vinController.text.trim().isNotEmpty &&
-      _driverNameController.text.trim().isNotEmpty &&
-      _driverLicenceController.text.trim().isNotEmpty;
+  bool get _supplementComplete {
+    final hasPlate = _plateController.text.trim().isNotEmpty;
+    final hasDriver =
+        _driverNameController.text.trim().isNotEmpty &&
+        _driverLicenceController.text.trim().isNotEmpty;
+    if (!hasPlate || !hasDriver) return false;
+    if (_selectedVehicle != null) return true;
+    return _engineNoController.text.trim().isNotEmpty &&
+        _vinController.text.trim().isNotEmpty;
+  }
 
   void _storeCurrentVehicleSupplement() {
     final vehicleId = _selectedVehicleId;
@@ -209,9 +213,21 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
         : _config.carModel;
     _engineNoController.text = supplement?.engineNo ?? _config.engineNo;
     _vinController.text = supplement?.vin ?? _config.vin;
-    _driverNameController.text = supplement?.driverName ?? _config.driverName;
-    _driverLicenceController.text =
-        supplement?.driverLicence ?? _config.driverLicence;
+
+    // 优先使用交警系统官方历史记录中已核验的驾驶人，其次使用已保存补充资料或全局配置
+    final driverName = vehicle.lastDriverName.isNotEmpty
+        ? vehicle.lastDriverName
+        : supplement?.driverName.isNotEmpty == true
+        ? supplement!.driverName
+        : _config.driverName;
+    final driverLicence = vehicle.lastDriverLicence.isNotEmpty
+        ? vehicle.lastDriverLicence
+        : supplement?.driverLicence.isNotEmpty == true
+        ? supplement!.driverLicence
+        : _config.driverLicence;
+
+    _driverNameController.text = driverName;
+    _driverLicenceController.text = driverLicence;
     _supplementExpanded = !_supplementComplete;
 
     final record = vehicle.activeRecord;
@@ -438,8 +454,10 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     }
     if (!cfg.isEssentialInfoComplete) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请先完善车辆及驾驶人必填信息（车牌、发动机号、车架号、驾驶人信息）'),
+        SnackBar(
+          content: Text(_selectedVehicle != null
+              ? '请先完善驾驶人姓名与身份证/驾驶证号'
+              : '请先完善车辆及驾驶人必填信息（车牌、发动机号、车架号、驾驶人信息）'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -448,15 +466,59 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
 
     final isInsideSixth = cfg.passType == BeijingPassType.insideSixth;
     final vehicle = _selectedVehicle;
-    final latestRecord = vehicle?.records.isNotEmpty == true
-        ? vehicle!.records.first
-        : _lastFetchResult?.activeRecord;
-    final applyIdOld = latestRecord?.id;
+    final activeRecord = vehicle?.activeRecord;
+
+    // 续签时间提示：交警系统规定同类型进京证仅在到期前最后 1 天内允许申请顺延续签
+    if (activeRecord != null &&
+        activeRecord.isValidNow &&
+        activeRecord.passType == cfg.passType &&
+        activeRecord.remainingDays > 1) {
+      final endStr = activeRecord.endDate != null
+          ? _formatDate(activeRecord.endDate!)
+          : '';
+      final canContinue = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('当前进京证尚未到期'),
+          content: Text(
+            '当前${activeRecord.passType.label}还有 ${activeRecord.remainingDays} 天有效期${endStr.isNotEmpty ? '（至 $endStr）' : ''}。\n\n'
+            '交管部门规定：进京证仅可在有效期的最后一天（剩余 1 天以内）办理顺延续签，提前提交将被交警系统退回。\n\n'
+            '确定仍要尝试提交吗？',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('稍后再办'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.amber.shade800,
+              ),
+              child: const Text('仍然提交'),
+            ),
+          ],
+        ),
+      );
+      if (canContinue != true) {
+        return;
+      }
+      if (!mounted) return;
+    }
+
+    // 仅当当前车辆存在相同类型、且当前有效/生效中的进京证时，才传递 applyIdOld 进行顺延续签
+    final applyIdOld = (activeRecord != null &&
+            activeRecord.isValidNow &&
+            activeRecord.passType == cfg.passType &&
+            activeRecord.id.isNotEmpty)
+        ? activeRecord.id
+        : null;
     final vId = vehicle?.id.isNotEmpty == true ? vehicle!.id : cfg.carId;
 
     // 确认弹窗
     final applyDateStr =
         '${_selectedApplyStartDate.year}-${_selectedApplyStartDate.month.toString().padLeft(2, '0')}-${_selectedApplyStartDate.day.toString().padLeft(2, '0')}';
+    final districtName = BeijingPassService.extractDistrict(cfg.inBeijingAddress);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -535,6 +597,8 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
             ],
             const SizedBox(height: 6),
             Text('生效日期：$applyDateStr (7天)'),
+            const SizedBox(height: 4),
+            Text('所属行政区：$districtName'),
             const SizedBox(height: 4),
             Text('进京/在京地址：${cfg.inBeijingAddress}'),
             const SizedBox(height: 4),
@@ -1330,7 +1394,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
-                        labelText: '发动机号 *',
+                        labelText: _selectedVehicle != null
+                            ? '发动机号（可选）'
+                            : '发动机号 *',
                         labelStyle: const TextStyle(fontSize: 12),
                         hintText: '行驶证发动机号',
                         hintStyle: const TextStyle(fontSize: 12),
@@ -1351,7 +1417,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                       style: const TextStyle(fontSize: 13),
                       decoration: InputDecoration(
                         isDense: true,
-                        labelText: '车架号/VIN *',
+                        labelText: _selectedVehicle != null
+                            ? '车架号/VIN（可选）'
+                            : '车架号/VIN *',
                         labelStyle: const TextStyle(fontSize: 12),
                         hintText: 'VIN后6位或完整',
                         hintStyle: const TextStyle(fontSize: 12),

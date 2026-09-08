@@ -9,13 +9,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
+import '../services/navigation_voice_service.dart';
 import '../utils/coordinate_transform.dart';
-
-import 'save_route_dialog.dart';
 
 class _NearestSegmentMatch {
   final int segmentIndex;
@@ -38,14 +38,14 @@ class ActiveNavigationPage extends StatefulWidget {
   final List<PlaceResult> stops;
 
   const ActiveNavigationPage({
-    Key? key,
+    super.key,
     required this.route,
     required this.camerasOnRoute,
     required this.allCameras,
     required this.cameraMarksByCoord,
     required this.apiService,
     required this.stops,
-  }) : super(key: key);
+  });
 
   @override
   State<ActiveNavigationPage> createState() => _ActiveNavigationPageState();
@@ -59,7 +59,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   StreamSubscription<Position>? _positionStream;
   Position? _currentPosition;
   LatLng? _currentMapPosition;
-  double _currentSpeed = 0.0; // m/s
   double _heading = 0.0;     // degrees
   DateTime? _navStartTime;
 
@@ -67,6 +66,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   bool _isFollowing = true;
   bool _isOffRoute = false;
   int _offRouteCounter = 0; // 连续偏离计数器
+  final NavigationVoiceService _voiceService = const NavigationVoiceService();
+  VoiceGuidanceMode _voiceMode = VoiceGuidanceMode.detailed;
   bool _muteVoiceGuidance = false;
   bool _showAllCameras = false;
 
@@ -84,12 +85,12 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   bool _isOverviewMode = false;
 
-  RouteStep? _nextStep;
-  double? _distanceToNextStep;
-
   // 当前所在路段（用于底部道路信息显示）
   RouteStep? _currentStep;
   double? _distanceRemainingInStep;  // 当前路段剩余距离
+
+  // 路线步骤（自动完成端到端双倍索引检测与纠正）
+  late final List<RouteStep> _steps;
 
   // 路线进度游标：记录用户已走过的最远线段下标，只前进不后退，
   // 防止弯道上把身后的线段识别为「当前位置」导致距离偏长
@@ -119,10 +120,31 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     return camera.typeLabel;
   }
 
+  double _calculateBearing(LatLng from, LatLng to) {
+    final phi1 = from.latitude * (math.pi / 180.0);
+    final phi2 = to.latitude * (math.pi / 180.0);
+    final dLambda = (to.longitude - from.longitude) * (math.pi / 180.0);
+
+    final y = math.sin(dLambda) * math.cos(phi2);
+    final x = math.cos(phi1) * math.sin(phi2) -
+        math.sin(phi1) * math.cos(phi2) * math.cos(dLambda);
+
+    final bearing = (math.atan2(y, x) * (180.0 / math.pi) + 360.0) % 360.0;
+    return bearing;
+  }
+
+  double _angleGapDeg(double a, double b) {
+    double diff = (a - b).abs() % 360.0;
+    if (diff > 180.0) diff = 360.0 - diff;
+    return diff;
+  }
+
   _NearestSegmentMatch _findNearestSegmentOnRoute(
     LatLng currentLoc, {
     int? startSegmentIdx,
     int? endSegmentIdx,
+    double? vehicleHeading,
+    double maxHeadingGapDeg = 85.0,
   }) {
     final points = widget.route.polylinePoints;
     final maxSegIdx = math.max(0, points.length - 2);
@@ -132,6 +154,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     int bestIdx = start;
     double minDistance = double.infinity;
     LatLng bestSnapped = points[start];
+
+    int? bestHeadingIdx;
+    double minHeadingDistance = double.infinity;
+    LatLng? bestHeadingSnapped;
 
     for (int i = start; i <= end; i++) {
       final p1 = points[i];
@@ -143,6 +169,25 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         bestIdx = i;
         bestSnapped = projected;
       }
+
+      if (vehicleHeading != null) {
+        final segBearing = _calculateBearing(p1, p2);
+        if (_angleGapDeg(vehicleHeading, segBearing) <= maxHeadingGapDeg) {
+          if (d < minHeadingDistance) {
+            minHeadingDistance = d;
+            bestHeadingIdx = i;
+            bestHeadingSnapped = projected;
+          }
+        }
+      }
+    }
+
+    if (bestHeadingIdx != null && minHeadingDistance <= minDistance + 25) {
+      return _NearestSegmentMatch(
+        segmentIndex: bestHeadingIdx,
+        distanceMeters: minHeadingDistance,
+        snappedPoint: bestHeadingSnapped!,
+      );
     }
 
     return _NearestSegmentMatch(
@@ -155,9 +200,33 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   @override
   void initState() {
     super.initState();
+    final rawSteps = widget.route.steps ?? [];
+    final pointsLen = widget.route.polylinePoints.length;
+    final needsIndexHalf = rawSteps.isNotEmpty &&
+        pointsLen > 0 &&
+        rawSteps.any((s) => s.polylineIdxEnd >= pointsLen);
+
+    if (needsIndexHalf) {
+      _steps = rawSteps
+          .map(
+            (s) => RouteStep(
+              instruction: s.instruction,
+              distance: s.distance,
+              duration: s.duration,
+              polylineIdxStart: s.polylineIdxStart ~/ 2,
+              polylineIdxEnd: s.polylineIdxEnd ~/ 2,
+              action: s.action,
+              accessorialAction: s.accessorialAction,
+              direction: s.direction,
+            ),
+          )
+          .toList();
+    } else {
+      _steps = List.of(rawSteps);
+    }
+
     unawaited(WakelockPlus.enable());
-    unawaited(_initTts());
-    _startNavigation();
+    unawaited(_initializeNavigation());
     _navStartTime = DateTime.now();
     widget.apiService.reportEvent('navigation_start', {
       'timestamp': _navStartTime!.toIso8601String(),
@@ -167,14 +236,239 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     });
   }
 
+  Future<void> _initializeNavigation() async {
+    // 先读取静音设置，避免已选择静音的用户进入页面时仍听到启动播报。
+    await _loadVoiceSettings();
+    if (!mounted) return;
+    await _initTts();
+    if (!mounted) return;
+    await _startNavigation();
+  }
+
+  Future<void> _loadVoiceSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final modeStr = prefs.getString('nav_voice_guidance_mode');
+      if (modeStr == 'concise') {
+        _voiceMode = VoiceGuidanceMode.concise;
+      } else {
+        _voiceMode = VoiceGuidanceMode.detailed;
+      }
+      final muted = prefs.getBool('nav_voice_guidance_muted');
+      if (muted != null) {
+        _muteVoiceGuidance = muted;
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      debugPrint('加载语音设置失败：$e');
+    }
+  }
+
+  Future<void> _selectVoiceMode({
+    required bool mute,
+    VoiceGuidanceMode? mode,
+  }) async {
+    if (mute) {
+      _muteVoiceGuidance = true;
+      await _flutterTts.stop();
+    } else {
+      _muteVoiceGuidance = false;
+      if (mode != null) {
+        _voiceMode = mode;
+      }
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('nav_voice_guidance_mode', _voiceMode.name);
+      await prefs.setBool('nav_voice_guidance_muted', _muteVoiceGuidance);
+    } catch (e) {
+      debugPrint('保存语音设置失败：$e');
+    }
+
+    if (!mounted) return;
+    setState(() {});
+
+    final msg = _muteVoiceGuidance
+        ? '已静音'
+        : (_voiceMode == VoiceGuidanceMode.detailed
+            ? '已切换为详细播报模式'
+            : '已切换为简洁播报模式');
+    _showToast(msg);
+    if (!_muteVoiceGuidance) {
+      _speak(msg);
+    }
+  }
+
+  void _showVoiceModeSelectionSheet() {
+    showModalBottomSheet(
+      context: context,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final currentSelection = _muteVoiceGuidance
+            ? 'muted'
+            : (_voiceMode == VoiceGuidanceMode.detailed ? 'detailed' : 'concise');
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            16,
+            16,
+            16 + MediaQuery.of(ctx).padding.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '语音播报模式',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildVoiceOptionTile(
+                ctx: ctx,
+                isSelected: currentSelection == 'detailed',
+                icon: Icons.record_voice_over_rounded,
+                iconColor: Colors.blue,
+                title: '详细播报',
+                subtitle: '特殊路段提前预告，普通动作分段提醒',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectVoiceMode(mute: false, mode: VoiceGuidanceMode.detailed);
+                },
+              ),
+              const SizedBox(height: 8),
+              _buildVoiceOptionTile(
+                ctx: ctx,
+                isSelected: currentSelection == 'concise',
+                icon: Icons.volume_down_rounded,
+                iconColor: const Color(0xFF00695C),
+                title: '简洁播报',
+                subtitle: '短促精炼、仅播报关键转向与特殊路段动作',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectVoiceMode(mute: false, mode: VoiceGuidanceMode.concise);
+                },
+              ),
+              const SizedBox(height: 8),
+              _buildVoiceOptionTile(
+                ctx: ctx,
+                isSelected: currentSelection == 'muted',
+                icon: Icons.volume_off_rounded,
+                iconColor: Colors.grey[700]!,
+                title: '静音',
+                subtitle: '关闭所有路线指引与路段语音',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectVoiceMode(mute: true);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildVoiceOptionTile({
+    required BuildContext ctx,
+    required bool isSelected,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? iconColor.withValues(alpha: 0.1)
+              : Colors.grey.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? iconColor : Colors.transparent,
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: isSelected
+                  ? iconColor.withValues(alpha: 0.2)
+                  : Colors.grey.withValues(alpha: 0.15),
+              child: Icon(icon, color: iconColor, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.w600,
+                      color: isSelected ? iconColor : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              Icon(Icons.check_circle_rounded, color: iconColor, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _initTts() async {
     try {
+      // 启动前重置 TTS 引擎，清理可能残留的阻塞状态或悬挂的音频焦点
+      await _flutterTts.stop();
+
       final isAndroid =
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
       if (isAndroid) {
         await _flutterTts.setAudioAttributesForNavigation();
       }
+
+      _flutterTts.setErrorHandler((msg) {
+        debugPrint('TTS 引擎错误: $msg');
+      });
+      _flutterTts.setCancelHandler(() {
+        debugPrint('TTS 播报已取消');
+      });
 
       // 部分 Android TTS 引擎不声明精确的 zh-CN 支持，但仍能使用
       // 系统默认中文声音正常播报，因此不能仅凭返回值判定服务不可用。
@@ -182,7 +476,16 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       await _flutterTts.setSpeechRate(0.5);
       await _flutterTts.setVolume(1.0);
       await _flutterTts.setPitch(1.0);
-      await _speak('开始导航，请沿路线行驶。');
+
+      // 起步播报：优先结合首段道路引导，避免长直行起步时陷入无声真空期
+      String startPrompt = '开始导航，请沿路线行驶。';
+      if (_steps.isNotEmpty) {
+        final first = _steps.first.instruction.trim();
+        if (first.isNotEmpty) {
+          startPrompt = '开始导航，$first。';
+        }
+      }
+      await _speak(startPrompt);
     } catch (error) {
       debugPrint('语音服务初始化失败：$error');
     }
@@ -193,24 +496,23 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       return;
     }
     try {
-      await _flutterTts.speak(text, focus: true);
+      final res = await _flutterTts.speak(text, focus: true);
+      // Android 上若返回值不为 1 (例如 0 表示未成功入队或引擎阻塞)，尝试复位一次以自愈
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          res != 1) {
+        debugPrint('TTS speak 返回异常 ($res)，执行自愈复位');
+        await _flutterTts.stop();
+      }
     } catch (error) {
       debugPrint('语音播报失败：$error');
+      try {
+        await _flutterTts.stop();
+      } catch (_) {}
     }
   }
 
-  Future<void> _toggleVoiceMute() async {
-    final next = !_muteVoiceGuidance;
-    if (next) {
-      await _flutterTts.stop();
-    }
-    if (!mounted) return;
-    setState(() {
-      _muteVoiceGuidance = next;
-    });
-  }
-
-  void _startNavigation() async {
+  Future<void> _startNavigation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
 
@@ -248,7 +550,6 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         _currentPosition = position;
         _currentMapPosition = mapPos;
         _snappedMapPosition = snappedPos;
-        _currentSpeed = position.speed; // m/s
         if (position.speed > 1.0) {
           _heading = position.heading; // degrees
         }
@@ -279,10 +580,16 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     final maxSegIdx = widget.route.polylinePoints.length - 2;
     final localStart = math.max(0, _routeProgressIdx - 3);
     final localEnd = math.min(maxSegIdx, _routeProgressIdx + 15);
+    final double? reliableHeading =
+        (_currentPosition != null && _currentPosition!.speed > 1.5)
+            ? _heading
+            : null;
+
     final localMatch = _findNearestSegmentOnRoute(
       currentLoc,
       startSegmentIdx: localStart,
       endSegmentIdx: localEnd,
+      vehicleHeading: reliableHeading,
     );
 
     var selected = localMatch;
@@ -290,12 +597,17 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         localMatch.distanceMeters > 35 || _offRouteCounter > 0;
 
     if (needGlobalProbe) {
-      final globalMatch = _findNearestSegmentOnRoute(currentLoc);
+      final globalMatch = _findNearestSegmentOnRoute(
+        currentLoc,
+        vehicleHeading: reliableHeading,
+      );
       final globalClearlyBetter =
+          globalMatch.distanceMeters <= 35 &&
           globalMatch.distanceMeters + 10 < localMatch.distanceMeters;
       final likelyJumpedAhead =
+          _routeProgressIdx > 3 &&
           globalMatch.segmentIndex > _routeProgressIdx + 18 &&
-          globalMatch.distanceMeters < 45;
+          globalMatch.distanceMeters <= 30;
       if (globalClearlyBetter || likelyJumpedAhead) {
         selected = globalMatch;
       }
@@ -331,58 +643,26 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
   }
 
   /// 从步骤中提取方向关键词（用于语音和显示）
-  String _getDirectionLabel(RouteStep step) {
-    final text = _guidanceText(step);
-    if (_isUturnText(text)) return '掉头';
-    if (_isStraightText(text)) return '直行';
-    if (_isSlightLeftText(text) || _isKeepLeftText(text)) return '靠左行驶';
-    if (_isSlightRightText(text) || _isKeepRightText(text)) return '靠右行驶';
-    if (_isLeftTurnText(text)) return '左转';
-    if (_isRightTurnText(text)) return '右转';
-    return step.instruction;
-  }
+  String _getDirectionLabel(RouteStep step) =>
+      _voiceService.getDirectionLabel(step);
 
-  String _guidanceText(RouteStep step) {
-    final action = (step.action ?? '').trim();
-    final instruction = step.instruction.trim();
-
-    // “注意直行”优先级最高，避免和“右转车道”等文字同时出现时误判为右转。
-    if (action.contains('注意直行') || action.contains('请直行')) return action;
-    if (instruction.contains('注意直行') || instruction.contains('请直行')) {
-      return instruction;
+  // 顶部只显示简短动作，完整 step 文案留给下方转向卡片展示。
+  String _getCompactDirectionLabel(RouteStep step) {
+    final label = _getDirectionLabel(step);
+    final commaIndex = label.lastIndexOf(',');
+    final chineseCommaIndex = label.lastIndexOf('，');
+    final splitIndex = commaIndex > chineseCommaIndex
+        ? commaIndex
+        : chineseCommaIndex;
+    if (splitIndex >= 0 && splitIndex + 1 < label.length) {
+      return label.substring(splitIndex + 1).trim();
     }
-    return action.isNotEmpty ? action : instruction;
-  }
-
-  bool _isUturnText(String text) => text.contains('掉头') || text.contains('调头');
-  bool _isLeftTurnText(String text) => text.contains('左转');
-  bool _isRightTurnText(String text) => text.contains('右转');
-  bool _isKeepLeftText(String text) => text.contains('靠左');
-  bool _isKeepRightText(String text) => text.contains('靠右');
-  bool _isSlightLeftText(String text) =>
-      text.contains('左前方') || text.contains('左前') || text.contains('左侧');
-  bool _isSlightRightText(String text) =>
-      text.contains('右前方') || text.contains('右前') || text.contains('右侧');
-  bool _isStraightText(String text) {
-    return text.contains('注意直行') ||
-        text.contains('请直行') ||
-        text.contains('继续直行') ||
-        text.contains('直行') ||
-        text.contains('直走');
+    return label;
   }
 
   /// 判断步骤是否包含需要提示的转向动作（非直行/出发）
-  bool _isActionableStep(RouteStep step) {
-    final text = _guidanceText(step);
-    if (_isStraightText(text)) return false;
-    return _isLeftTurnText(text) ||
-        _isRightTurnText(text) ||
-        _isUturnText(text) ||
-        _isKeepLeftText(text) ||
-        _isKeepRightText(text) ||
-        _isSlightLeftText(text) ||
-        _isSlightRightText(text);
-  }
+  bool _isActionableStep(RouteStep step) =>
+      _voiceService.isActionableStep(step);
 
   void _processNavigationLogic(LatLng currentLoc) {
     if (widget.route.polylinePoints.isEmpty) return;
@@ -392,6 +672,10 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         _lastGlobalMatchAt == null ||
         now.difference(_lastGlobalMatchAt!).inSeconds >= 2;
     final maxSegIdx = widget.route.polylinePoints.length - 2;
+    final double? reliableHeading =
+        (_currentPosition != null && _currentPosition!.speed > 1.5)
+            ? _heading
+            : null;
 
     // 1. 局部搜索：在进度游标附近搜索最近线段 [游标-3, 游标+15]
     // 允许少量回溯（-3）以应对 GPS 抖动，但局部通常只前进不后退，防止弯道把身后路段误判为当前位置
@@ -401,6 +685,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       currentLoc,
       startSegmentIdx: localStart,
       endSegmentIdx: localEnd,
+      vehicleHeading: reliableHeading,
     );
 
     var selectedMatch = localMatch;
@@ -417,14 +702,26 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
     if (needGlobalProbe) {
       _lastGlobalMatchAt = now;
-      final globalMatch = _findNearestSegmentOnRoute(currentLoc);
+      final globalMatch = _findNearestSegmentOnRoute(
+        currentLoc,
+        vehicleHeading: reliableHeading,
+      );
+
+      // 全局更优条件：必须真正在路线上（<= 35米），且显著优于局部匹配
       final globalClearlyBetter =
+          globalMatch.distanceMeters <= 35 &&
           globalMatch.distanceMeters + 12 < localMatch.distanceMeters;
+
+      // 沿下游汇入：要求不是刚起步（游标已走过前3段）、距离真正贴合路线（<= 30米）
       final likelyRejoinedAhead =
+          _routeProgressIdx > 3 &&
           globalMatch.segmentIndex > _routeProgressIdx + 18 &&
-          globalMatch.distanceMeters < 45;
+          globalMatch.distanceMeters <= 30;
+
+      // 从偏航恢复：用户之前已偏航，现在重新进入路线（<= 35米）
       final recoveringFromOffRoute =
-          _offRouteCounter > 0 && globalMatch.distanceMeters < 55;
+          (_offRouteCounter > 0 || _isOffRoute) &&
+          globalMatch.distanceMeters <= 35;
 
       if (globalClearlyBetter ||
           likelyRejoinedAhead ||
@@ -440,10 +737,18 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
     if (usedGlobalMatch) {
       // 全局纠偏允许直接跳到重入路段，防止提示长期停留在旧步骤。
+      final oldProgress = _routeProgressIdx;
       _routeProgressIdx = bestSegIdx;
+      // 若发生跨步骤跳跃，清理后续误报记录
+      if ((bestSegIdx - oldProgress).abs() > 8) {
+        _alertedSteps.clear();
+      }
     } else {
-      // 局部模式下保持“只前进不后退”，避免抖动回跳。
-      _routeProgressIdx = math.max(_routeProgressIdx, bestSegIdx);
+      // 局部模式：若当前车辆未偏航（<= 45米），保持“只前进不后退”推进游标；
+      // 若车辆正偏离路线，冻结游标，防止被外部平行道路拉扯前进。
+      if (minDistanceToRoute <= 45) {
+        _routeProgressIdx = math.max(_routeProgressIdx, bestSegIdx);
+      }
     }
 
     final nearestSegIdx = _routeProgressIdx;
@@ -489,7 +794,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       _nextCamera = nearestCam;
       _distanceToNextCamera = nearestCam != null ? minCamDist : null;
     });
-    if (nearestCam != null && minCamDist < 300) {
+    if (!_muteVoiceGuidance && nearestCam != null && minCamDist < 300) {
       final camId = "${nearestCam.lat}_${nearestCam.lng}";
       if (!_alertedCameras.contains(camId)) {
         _alertedCameras.add(camId);
@@ -498,37 +803,19 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     }
 
     // 3. 步骤检测：找第一个 polylineIdxEnd > nearestSegIdx 的步骤
-    if (widget.route.steps == null || widget.route.steps!.isEmpty) return;
+    if (_steps.isEmpty) return;
 
-    int currentStepIndex = widget.route.steps!.length - 1;
-    for (int i = 0; i < widget.route.steps!.length; i++) {
-      if (widget.route.steps![i].polylineIdxEnd > nearestSegIdx) {
+    int currentStepIndex = _steps.length - 1;
+    for (int i = 0; i < _steps.length; i++) {
+      if (_steps[i].polylineIdxEnd > nearestSegIdx) {
         currentStepIndex = i;
         break;
       }
     }
 
-    final curStep = widget.route.steps![currentStepIndex];
+    final curStep = _steps[currentStepIndex];
 
-    // 4. 计算到下一步骤起点的路线距离（从吸附点沿路线累加）
-    RouteStep? nextStep;
-    double distToNext = 0.0;
-    if (currentStepIndex + 1 < widget.route.steps!.length) {
-      nextStep = widget.route.steps![currentStepIndex + 1];
-      final targetIdx = nextStep.polylineIdxStart;
-      if (nearestSegIdx + 1 < widget.route.polylinePoints.length) {
-        distToNext = _distanceCalc(
-            snappedOnRoute, widget.route.polylinePoints[nearestSegIdx + 1]);
-        for (int i = nearestSegIdx + 1;
-            i < targetIdx && i + 1 < widget.route.polylinePoints.length;
-            i++) {
-          distToNext += _distanceCalc(
-              widget.route.polylinePoints[i], widget.route.polylinePoints[i + 1]);
-        }
-      }
-    }
-
-    // 5. 当前路段剩余距离
+    // 4. 当前路段剩余距离
     double remainingInStep = 0.0;
     final endIdx = curStep.polylineIdxEnd;
     if (nearestSegIdx + 1 < widget.route.polylinePoints.length &&
@@ -546,26 +833,21 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     setState(() {
       _currentStep = curStep;
       _distanceRemainingInStep = remainingInStep;
-      _nextStep = nextStep;
-      _distanceToNextStep = nextStep != null ? distToNext : null;
     });
 
-    // 转向语音播报：基于当前步骤末端的转向动作和剩余距离
-    if (_isActionableStep(curStep) && remainingInStep > 0) {
-      final stepId = curStep.polylineIdxStart.toString();
-      final dirLabel = _getDirectionLabel(curStep);
-      if (remainingInStep <= 150 && remainingInStep > 30) {
-        final key150 = "${stepId}_150m";
-        if (!_alertedSteps.contains(key150)) {
-          _alertedSteps.add(key150);
-          _speak("前方 ${remainingInStep.round()} 米，$dirLabel");
-        }
-      } else if (remainingInStep <= 30) {
-        final key30 = "${stepId}_30m";
-        if (!_alertedSteps.contains(key30)) {
-          _alertedSteps.add(key30);
-          _speak(dirLabel);
-        }
+    // 静音时不评估也不消耗去重键，解除静音后仍能收到当前阶段提示。
+    if (!_muteVoiceGuidance &&
+        _isActionableStep(curStep) &&
+        remainingInStep > 0) {
+      final prompt = _voiceService.evaluateVoicePrompt(
+        step: curStep,
+        remainingDistance: remainingInStep,
+        mode: _voiceMode,
+        alertedKeys: _alertedSteps,
+      );
+      if (prompt != null) {
+        _alertedSteps.add(prompt.alertKey);
+        _speak(prompt.text);
       }
     }
   }
@@ -868,20 +1150,7 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     );
   }
 
-  IconData _getTurnIcon(RouteStep step) {
-    final text = _guidanceText(step);
-    if (_isUturnText(text)) return Icons.u_turn_left;
-    if (_isStraightText(text)) return Icons.straight;
-    if (_isSlightLeftText(text) || _isKeepLeftText(text)) {
-      return Icons.turn_slight_left;
-    }
-    if (_isSlightRightText(text) || _isKeepRightText(text)) {
-      return Icons.turn_slight_right;
-    }
-    if (_isLeftTurnText(text)) return Icons.turn_left;
-    if (_isRightTurnText(text)) return Icons.turn_right;
-    return Icons.navigation;
-  }
+  IconData _getTurnIcon(RouteStep step) => _voiceService.getTurnIcon(step);
 
   Widget _buildLocationIcon() {
     return Stack(
@@ -920,86 +1189,108 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
         _distanceRemainingInStep != null &&
         _distanceRemainingInStep! <= 500;
 
+    final String distanceText = _distanceRemainingInStep != null
+        ? (_distanceRemainingInStep! >= 1000
+            ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)}公里'
+            : '${_distanceRemainingInStep!.toInt()}米')
+        : '';
+
+    final String actionText = _currentStep != null
+        ? (isTurningSoon
+            ? _getDirectionLabel(_currentStep!)
+            : _getCompactDirectionLabel(_currentStep!))
+        : '';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
+        color: isTurningSoon
+            ? const Color(0xFFF0F7FF)
+            : Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(16),
+        border: isTurningSoon
+            ? Border.all(color: Colors.blue.withValues(alpha: 0.3), width: 1.5)
+            : null,
         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                '时速: ${(_currentSpeed * 3.6).toStringAsFixed(1)} km/h',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              if (isTurningSoon && _currentStep != null)
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  margin: const EdgeInsets.only(right: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    _getTurnIcon(_currentStep!),
+                    size: 26,
+                    color: Colors.blue[800],
+                  ),
+                ),
+              Expanded(
+                child: Text(
+                  _currentStep != null && _distanceRemainingInStep != null
+                      ? '剩余 $distanceText $actionText'
+                      : '剩余距离计算中',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: isTurningSoon ? Colors.blue[900] : Colors.black87,
+                  ),
+                ),
               ),
               if (_isOffRoute)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.red,
-                    borderRadius: BorderRadius.circular(8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: GestureDetector(
+                    onTap: _reroute,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        '已偏离',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
                   ),
-                  child: const Text('已偏离', style: TextStyle(color: Colors.white)),
                 ),
             ],
           ),
           if (_nextCamera != null && _distanceToNextCamera != null)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              padding: const EdgeInsets.only(top: 8.0),
               child: Row(
                 children: [
-                  const Icon(Icons.videocam, color: Colors.red, size: 24),
-                  const SizedBox(width: 8),
+                  const Icon(Icons.videocam, color: Colors.red, size: 22),
+                  const SizedBox(width: 6),
                   Text(
                     '前方摄像头: ${_distanceToNextCamera! < 1000 ? '${_distanceToNextCamera!.toStringAsFixed(0)}米' : '${(_distanceToNextCamera! / 1000).toStringAsFixed(1)}公里'}',
-                    style: const TextStyle(fontSize: 16, color: Colors.red),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      color: Colors.red,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
-          
-          // 转向提示卡片：仅在 500m 内显示；否则显示直行剩余距离
-          if (isTurningSoon)
-            Container(
-              margin: const EdgeInsets.only(top: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.blue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withValues(alpha: 0.2),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _getTurnIcon(_currentStep!),
-                      size: 28,
-                      color: Colors.blue[800],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      '${_distanceRemainingInStep! >= 1000 ? '${(_distanceRemainingInStep! / 1000).toStringAsFixed(1)}公里' : '${_distanceRemainingInStep!.toInt()}米'} ${_getDirectionLabel(_currentStep!)}',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue[800],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            )
         ],
       ),
     );
@@ -1009,11 +1300,57 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
     Navigator.of(context).pop('reroute');
   }
 
+  Widget _buildVoiceButtonChild() {
+    if (_muteVoiceGuidance) {
+      return const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.volume_off_rounded, color: Colors.white, size: 22),
+          SizedBox(height: 1),
+          Text(
+            '静音',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      );
+    }
+
+    final isDetailed = _voiceMode == VoiceGuidanceMode.detailed;
+    final color = isDetailed ? Colors.blue[800]! : const Color(0xFF00695C);
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          isDetailed
+              ? Icons.record_voice_over_rounded
+              : Icons.volume_down_rounded,
+          color: color,
+          size: 20,
+        ),
+        const SizedBox(height: 1),
+        Text(
+          isDetailed ? '详细' : '简洁',
+          style: TextStyle(
+            fontSize: 10,
+            color: color,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBottomPanel() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // 左侧：退出 + 摄像头开关 + 换航
+        // 左侧：退出 + 摄像头开关
         Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1035,30 +1372,26 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
                 color: _showAllCameras ? Colors.white : Colors.grey,
               ),
             ),
-            const SizedBox(height: 8),
-            FloatingActionButton.extended(
-              heroTag: null,
-              backgroundColor: Colors.orange,
-              onPressed: _reroute,
-              icon: const Icon(Icons.alt_route, color: Colors.white, size: 20),
-              label: const Text('换航', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-            ),
           ],
         ),
         
         // 右侧控制区域
         Row(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // 语音开关
+            // 语音模式切换按钮（详细/简洁/静音）
             FloatingActionButton(
               heroTag: null,
-              backgroundColor: _muteVoiceGuidance ? const Color(0xFF546E7A) : Colors.white,
-              onPressed: _toggleVoiceMute,
-              child: Icon(
-                _muteVoiceGuidance ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                color: _muteVoiceGuidance ? Colors.white : Colors.blue,
-              ),
+              backgroundColor:
+                  _muteVoiceGuidance ? const Color(0xFF546E7A) : Colors.white,
+              onPressed: _showVoiceModeSelectionSheet,
+              tooltip: _muteVoiceGuidance
+                  ? '语音已静音（点击设置）'
+                  : (_voiceMode == VoiceGuidanceMode.detailed
+                      ? '详细播报模式（点击设置）'
+                      : '简洁播报模式（点击设置）'),
+              child: _buildVoiceButtonChild(),
             ),
             const SizedBox(width: 12),
             

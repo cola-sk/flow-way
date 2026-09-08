@@ -7,6 +7,10 @@ import {
   isRoutePlanningAbortedError,
 } from '@/lib/route';
 import { getDismissedMap, coordKey } from '@/lib/dismissed-cameras';
+import {
+  listRiskPointAvoidanceTargets,
+  listRiskPoints,
+} from '@/lib/risk-points-storage';
 import { requireActiveUserTokenFromRequest } from '@/lib/user-context';
 
 export const dynamic = 'force-dynamic';
@@ -53,6 +57,11 @@ export async function POST(request: NextRequest) {
     const dismissedMap = await getDismissedMap(userToken);
     const ignoreOutsideSixthRing = reqBody.ignoreOutsideSixthRing === true;
     const ignoreLowRiskCameras = reqBody.ignoreLowRiskCameras === true;
+    const riskPointCoords = new Set(
+      (await listRiskPoints(userToken)).map((point) =>
+        coordKey(point.lat, point.lng)
+      )
+    );
 
     const cameras: typeof originalCameras = [];
     const indexMapping: Record<number, number> = {};
@@ -61,6 +70,11 @@ export async function POST(request: NextRequest) {
     for (let i = 0; i < originalCameras.length; i++) {
       const cam = originalCameras[i];
       const markType = dismissedMap.get(coordKey(cam.lat, cam.lng));
+
+      // 风险点配置优先于原始摄像头，避免同一点被普通摄像头逻辑重复避让。
+      if (riskPointCoords.has(coordKey(cam.lat, cam.lng))) {
+        continue;
+      }
 
       if (markType !== undefined) {
         // 如果标记为低风险 (type=12)，且用户选择不忽略低风险，则将其视为有效摄像头进行避让
@@ -77,6 +91,16 @@ export async function POST(request: NextRequest) {
       }
       cameras.push(cam);
       indexMapping[filteredIdx++] = i;
+    }
+    // 普通风险点始终避让；低风险点沿用“忽略低风险”设置。
+    const riskPointTargets = await listRiskPointAvoidanceTargets(
+      userToken,
+      ignoreLowRiskCameras
+    );
+    const riskPointIdByPlanningIndex = new Map<number, string>();
+    for (const target of riskPointTargets) {
+      riskPointIdByPlanningIndex.set(cameras.length, target.riskPointId);
+      cameras.push(target.camera);
     }
 
     // 解析"排除已知路线"参数，用于"再次尝试"时走不同走廊
@@ -97,7 +121,15 @@ export async function POST(request: NextRequest) {
       excludePolylines
     );
 
-    const globalCameraIndices = finalState.cameraIndices.map((i) => indexMapping[i]);
+    // 手动风险点仅用于服务端避让，不应混入客户端的摄像头索引。
+    const globalCameraIndices = finalState.cameraIndices.flatMap((i) => {
+      const originalIndex = indexMapping[i];
+      return originalIndex === undefined ? [] : [originalIndex];
+    });
+    const riskPointIdsOnRoute = finalState.cameraIndices.flatMap((i) => {
+      const riskPointId = riskPointIdByPlanningIndex.get(i);
+      return riskPointId === undefined ? [] : [riskPointId];
+    });
 
     const currentRoute = createRoute(
       start,
@@ -108,7 +140,8 @@ export async function POST(request: NextRequest) {
       finalState.distance,
       finalState.duration,
       undefined,
-      finalState.steps
+      finalState.steps,
+      riskPointIdsOnRoute
     );
 
     const bestRoute = createRoute(
@@ -120,7 +153,8 @@ export async function POST(request: NextRequest) {
       finalState.distance,
       finalState.duration,
       undefined,
-      finalState.steps
+      finalState.steps,
+      riskPointIdsOnRoute
     );
 
     const response: RoutePlanStepResponse = {

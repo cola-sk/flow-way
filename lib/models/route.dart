@@ -23,13 +23,14 @@ class WayPoint {
   };
 
   factory WayPoint.fromJson(Map<String, dynamic> json) => WayPoint(
-    id: json['id'] as String,
-    name: json['name'] as String,
+    id: json['id']?.toString() ?? '',
+    name: json['name'] as String? ?? '未命名标记点',
     location: LatLng(
       (json['lat'] as num).toDouble(),
       (json['lng'] as num).toDouble(),
     ),
-    createdAt: DateTime.parse(json['createdAt'] as String),
+    createdAt:
+        DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
   );
 }
 
@@ -41,6 +42,7 @@ class RouteStep {
   final int polylineIdxStart;
   final int polylineIdxEnd;
   final String? action;
+  final String? accessorialAction;
   final String? direction;
 
   RouteStep({
@@ -50,6 +52,7 @@ class RouteStep {
     required this.polylineIdxStart,
     required this.polylineIdxEnd,
     this.action,
+    this.accessorialAction,
     this.direction,
   });
 
@@ -60,6 +63,7 @@ class RouteStep {
     'polylineIdxStart': polylineIdxStart,
     'polylineIdxEnd': polylineIdxEnd,
     'action': action,
+    'accessorialAction': accessorialAction,
     'direction': direction,
   };
 
@@ -70,6 +74,7 @@ class RouteStep {
     polylineIdxStart: (json['polylineIdxStart'] as num?)?.toInt() ?? 0,
     polylineIdxEnd: (json['polylineIdxEnd'] as num?)?.toInt() ?? 0,
     action: json['action'] as String?,
+    accessorialAction: json['accessorialAction'] as String?,
     direction: json['direction'] as String?,
   );
 }
@@ -84,6 +89,7 @@ class NavigationRoute {
   final int duration; // 秒
   final String routeType; // 'normal' 或 'avoid_cameras'
   final List<int> cameraIndicesOnRoute; // 路线上的摄像头索引
+  final List<String> riskPointIdsOnRoute; // 路线上仍命中的手动风险点
   final List<RouteStep>? steps; // 转向建议
   final DateTime createdAt;
 
@@ -96,6 +102,7 @@ class NavigationRoute {
     required this.duration,
     required this.routeType,
     required this.cameraIndicesOnRoute,
+    this.riskPointIdsOnRoute = const [],
     this.steps,
     required this.createdAt,
   });
@@ -109,6 +116,7 @@ class NavigationRoute {
     int? duration,
     String? routeType,
     List<int>? cameraIndicesOnRoute,
+    List<String>? riskPointIdsOnRoute,
     List<RouteStep>? steps,
     DateTime? createdAt,
   }) {
@@ -121,6 +129,7 @@ class NavigationRoute {
       duration: duration ?? this.duration,
       routeType: routeType ?? this.routeType,
       cameraIndicesOnRoute: cameraIndicesOnRoute ?? this.cameraIndicesOnRoute,
+      riskPointIdsOnRoute: riskPointIdsOnRoute ?? this.riskPointIdsOnRoute,
       steps: steps ?? this.steps,
       createdAt: createdAt ?? this.createdAt,
     );
@@ -137,6 +146,7 @@ class NavigationRoute {
     'duration': duration,
     'routeType': routeType,
     'cameraIndicesOnRoute': cameraIndicesOnRoute,
+    'riskPointIdsOnRoute': riskPointIdsOnRoute,
     'steps': steps?.map((s) => s.toJson()).toList(),
     'createdAt': createdAt.toIso8601String(),
   };
@@ -169,6 +179,9 @@ class NavigationRoute {
         cameraIndicesOnRoute: json['cameraIndicesOnRoute'] != null
             ? List<int>.from(json['cameraIndicesOnRoute'] as List)
             : [],
+        riskPointIdsOnRoute: json['riskPointIdsOnRoute'] != null
+            ? List<String>.from(json['riskPointIdsOnRoute'] as List)
+            : [],
         steps: json['steps'] != null
             ? (json['steps'] as List)
                   .map((s) => RouteStep.fromJson(s as Map<String, dynamic>))
@@ -198,10 +211,12 @@ class RouteResponse {
 /// 已有路线折线的摄像头重新检测响应
 class RouteCameraDetectionResponse {
   final List<int> cameraIndicesOnRoute;
+  final List<String> riskPointIdsOnRoute;
   final String? errorMessage;
 
   RouteCameraDetectionResponse({
     this.cameraIndicesOnRoute = const [],
+    this.riskPointIdsOnRoute = const [],
     this.errorMessage,
   });
 
@@ -209,6 +224,9 @@ class RouteCameraDetectionResponse {
     return RouteCameraDetectionResponse(
       cameraIndicesOnRoute: json['cameraIndicesOnRoute'] != null
           ? List<int>.from(json['cameraIndicesOnRoute'] as List)
+          : [],
+      riskPointIdsOnRoute: json['riskPointIdsOnRoute'] != null
+          ? List<String>.from(json['riskPointIdsOnRoute'] as List)
           : [],
       errorMessage: json['errorMessage'] as String?,
     );
