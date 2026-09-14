@@ -76,6 +76,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   List<Camera> _cameras = [];
   List<WayPoint> _wayPoints = [];
   List<RiskPoint> _riskPoints = [];
+  Set<String> _riskPointCoordKeys = {};
   bool _loading = true;
   String? _error;
   String _updatedAt = '';
@@ -803,6 +804,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     }
     if (_hideInsideFourthMarkers &&
         _isInsideRing(cam, _fourthRingRadiusMeters)) {
+      return false;
+    }
+    if (_riskPointCoordKeys.contains(_cameraCoordKey(cam.lat, cam.lng))) {
       return false;
     }
     return true;
@@ -2687,6 +2691,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       if (!mounted) return;
       setState(() {
         _riskPoints = riskPoints;
+        _riskPointCoordKeys = riskPoints
+            .map(
+              (p) => _cameraCoordKey(
+                p.location.latitude,
+                p.location.longitude,
+              ),
+            )
+            .toSet();
       });
     } catch (e) {
       print('加载风险点失败: $e');
@@ -4078,9 +4090,15 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 height: 1,
               ),
             )
+          else if (isLowRisk)
+            Icon(
+              Icons.videocam_rounded,
+              color: isUnavoidable ? Colors.white : color,
+              size: isUnavoidable ? 18 : 16,
+            )
           else
             Icon(
-              isLowRisk ? Icons.warning_amber_rounded : Icons.warning_rounded,
+              Icons.warning_rounded,
               color: isUnavoidable ? Colors.white : color,
               size: isUnavoidable ? 18 : 19,
             ),
@@ -4383,7 +4401,14 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             children: [
               Row(
                 children: [
-                  Icon(Icons.warning_rounded, color: color),
+                  Icon(
+                    isRisk
+                        ? Icons.warning_rounded
+                        : (riskPoint.type == RiskPointType.lowRiskAccessRoad
+                            ? Icons.alt_route_rounded
+                            : Icons.videocam_rounded),
+                    color: color,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
