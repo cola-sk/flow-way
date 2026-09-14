@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.2.4',
+    date: '2026-09-14',
+    title: '优化低风险摄像头与辅路标记展示',
+    highlights: [
+      '优化摄像头低风险标记展示，普通低风险点显示绿色摄像头图标，走辅路低风险点显示绿色“辅”字。',
+      '优化标记点与底层原始摄像头图层联动，被标记的摄像头不再重复叠加显示。',
+    ],
+  },
+  {
     version: '1.2.3',
     date: '2026-09-08',
     title: '风险点避让与导航语音体验提升',
