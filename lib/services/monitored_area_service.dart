@@ -14,6 +14,7 @@ class MonitoredAreaService {
   static const String _unreadSummariesKey = 'monitored_area_unread_summaries_v1';
   static const String _snapshotPrefix = 'monitored_area_snapshot_';
   static const String _monitoringEnabledKey = 'settings_area_monitoring_enabled';
+  static const String _showAreasOnMapKey = 'settings_area_show_on_map';
 
   final Uuid _uuid = const Uuid();
 
@@ -27,6 +28,18 @@ class MonitoredAreaService {
   Future<void> setMonitoringEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_monitoringEnabledKey, enabled);
+  }
+
+  /// 是否在地图上绘制已保存的区域范围（默认显示）
+  Future<bool> isShowAreasOnMap() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_showAreasOnMapKey) ?? true;
+  }
+
+  /// 设置是否在地图上绘制已保存的区域范围
+  Future<void> setShowAreasOnMap(bool show) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_showAreasOnMapKey, show);
   }
 
   /// 获取所有保存的监控区域

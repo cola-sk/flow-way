@@ -235,5 +235,16 @@ void main() {
       final unread = await service.getUnreadSummaries();
       expect(unread.isNotEmpty, isTrue);
     });
+
+    test('map overlay visibility defaults on and can be hidden', () async {
+      final service = MonitoredAreaService();
+      expect(await service.isShowAreasOnMap(), isTrue);
+
+      await service.setShowAreasOnMap(false);
+      expect(await service.isShowAreasOnMap(), isFalse);
+
+      await service.setShowAreasOnMap(true);
+      expect(await service.isShowAreasOnMap(), isTrue);
+    });
   });
 }

@@ -185,6 +185,9 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   List<AreaChangeSummary> _unreadAreaChangeSummaries = [];
   bool _monitoredBannerDismissed = false;
   bool _isSelectingMonitoredArea = false;
+  bool _showMonitoredAreasOnMap = true;
+  String? _peekMonitoredAreaId;
+  Timer? _areaOverlayPeekTimer;
   AreaShapeType _selectionShapeType = AreaShapeType.circle;
   LatLng _selectionCenter = const LatLng(39.9042, 116.4074);
   double _selectionRadiusMeters = 3000;
@@ -264,6 +267,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _userTokenController.dispose();
     _areaNameController.dispose();
     _highlightTimer?.cancel();
+    _areaOverlayPeekTimer?.cancel();
     super.dispose();
   }
 
@@ -2735,10 +2739,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     try {
       final areas = await _monitoredAreaService.getAreas();
       final unread = await _monitoredAreaService.getUnreadSummaries();
+      final showOnMap = await _monitoredAreaService.isShowAreasOnMap();
       if (!mounted) return;
       setState(() {
         _monitoredAreas = areas;
         _unreadAreaChangeSummaries = unread;
+        _showMonitoredAreasOnMap = showOnMap;
       });
     } catch (e) {
       print('加载监控区域失败: $e');
@@ -2886,7 +2892,32 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
       onLocateArea: (area) => _locateMonitoredArea(area),
       onSimulateTest: (areaId) => _simulateTestChange(areaId),
       onRefresh: () async => await _loadMonitoredAreas(),
+      onShowOnMapChanged: (show) {
+        if (!mounted) return;
+        _areaOverlayPeekTimer?.cancel();
+        setState(() {
+          _showMonitoredAreasOnMap = show;
+          if (!show) _peekMonitoredAreaId = null;
+        });
+      },
     );
+  }
+
+  bool _shouldDrawMonitoredArea(MonitoredArea area) {
+    if (!area.enabled) return false;
+    return _showMonitoredAreasOnMap || area.id == _peekMonitoredAreaId;
+  }
+
+  Future<void> _toggleMonitoredAreasOnMap() async {
+    final next = !_showMonitoredAreasOnMap;
+    await _monitoredAreaService.setShowAreasOnMap(next);
+    if (!mounted) return;
+    _areaOverlayPeekTimer?.cancel();
+    setState(() {
+      _showMonitoredAreasOnMap = next;
+      _peekMonitoredAreaId = null;
+    });
+    _showToast(next ? '已在地图上显示监控区域' : '已隐藏区域范围，变动提醒仍会继续');
   }
 
   void _openAreaChangesSummary() {
@@ -2933,6 +2964,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
         (area.southWestLng! + area.northEastLng!) / 2,
       );
       _mapController.move(center, 12.5);
+    }
+    if (!_showMonitoredAreasOnMap) {
+      _areaOverlayPeekTimer?.cancel();
+      setState(() => _peekMonitoredAreaId = area.id);
+      _areaOverlayPeekTimer = Timer(const Duration(seconds: 8), () {
+        if (!mounted) return;
+        setState(() => _peekMonitoredAreaId = null);
+      });
+      _showToast('已定位至【${area.name}】，范围暂时显示 8 秒');
+      return;
     }
     _showToast('已定位至监控区域【${area.name}】');
   }
@@ -7063,6 +7104,12 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     // 底部安全区高度 + 导航栏估算高度（icon+label+padding ≈ 72，外层 Padding bottom:8）
     final bottomInset = MediaQuery.of(context).padding.bottom;
     final navBarHeight = 72.0 + bottomInset + 8;
+    final showAreaVisibilityButton = !_isSelectingMonitoredArea &&
+        _monitoredAreas.any((a) => a.enabled);
+    final fenceBottom = navBarHeight + (canShowCruiseButton ? 112 : 60);
+    final areaVisibilityBottom = fenceBottom + 52;
+    final betaBottom =
+        (showAreaVisibilityButton ? areaVisibilityBottom : fenceBottom) + 56;
     return Scaffold(
       resizeToAvoidBottomInset: false,
       body: Stack(
@@ -7113,7 +7160,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 circles: [
                   ..._monitoredAreas
                       .where((a) =>
-                          a.enabled && a.shapeType == AreaShapeType.circle)
+                          _shouldDrawMonitoredArea(a) &&
+                          a.shapeType == AreaShapeType.circle)
                       .map((a) => CircleMarker(
                             point: LatLng(a.centerLat!, a.centerLng!),
                             radius: a.radiusMeters!,
@@ -7139,7 +7187,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 polygons: [
                   ..._monitoredAreas
                       .where((a) =>
-                          a.enabled && a.shapeType == AreaShapeType.rectangle)
+                          _shouldDrawMonitoredArea(a) &&
+                          a.shapeType == AreaShapeType.rectangle)
                       .map((a) {
                     final minLat =
                         math.min(a.southWestLat!, a.northEastLat!);
@@ -7431,7 +7480,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               MarkerLayer(
                 markers: [
                   if (!_isSelectingMonitoredArea)
-                    ..._monitoredAreas.where((a) => a.enabled).map((a) {
+                    ..._monitoredAreas.where(_shouldDrawMonitoredArea).map((a) {
                       final center = a.shapeType == AreaShapeType.circle
                           ? LatLng(a.centerLat!, a.centerLng!)
                           : LatLng(
@@ -7666,7 +7715,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           if (_apiService.isBeta)
             Positioned(
               right: 16,
-              bottom: navBarHeight + (canShowCruiseButton ? 168 : 116),
+              bottom: betaBottom,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -7692,11 +7741,35 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               ),
             ),
 
+          if (showAreaVisibilityButton)
+            Positioned(
+              right: 16,
+              bottom: areaVisibilityBottom,
+              child: FloatingActionButton.small(
+                heroTag: 'area-visibility-btn',
+                backgroundColor: _showMonitoredAreasOnMap
+                    ? _primaryContainer
+                    : Colors.white,
+                foregroundColor: _showMonitoredAreasOnMap
+                    ? _primary
+                    : const Color(0xFF94A3B8),
+                elevation: 2,
+                tooltip:
+                    _showMonitoredAreasOnMap ? '隐藏监控区域范围' : '显示监控区域范围',
+                onPressed: _toggleMonitoredAreasOnMap,
+                child: Icon(
+                  _showMonitoredAreasOnMap
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
+                ),
+              ),
+            ),
+
           // 区域监控与变动提醒按钮
           if (!_isSelectingMonitoredArea)
             Positioned(
               right: 16,
-              bottom: navBarHeight + (canShowCruiseButton ? 112 : 60),
+              bottom: fenceBottom,
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [

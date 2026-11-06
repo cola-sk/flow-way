@@ -75,3 +75,6 @@ demo*
 .claude
 .flutter-plugins-dependencies
 release
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/

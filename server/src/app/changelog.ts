@@ -9,6 +9,15 @@ export interface ReleaseNote {
 
 export const CHANGELOG: ReleaseNote[] = [
   {
+    version: '1.3.1',
+    date: '2026-11-06',
+    title: '监控区域范围可以按需显示',
+    highlights: [
+      '地图上可随时隐藏或显示已设置的监控区域，圆圈和矩形不再一直铺在地图上。',
+      '隐藏范围不影响变动检测与提醒。需要核对位置时，从区域列表定位会短暂显示该区域。',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-11-06',
     title: '区域摄像头变动监控与实时变动提醒',

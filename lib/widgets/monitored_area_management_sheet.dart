@@ -9,6 +9,7 @@ class MonitoredAreaManagementSheet extends StatefulWidget {
   final void Function(MonitoredArea area) onLocateArea;
   final Future<void> Function(String areaId) onSimulateTest;
   final Future<void> Function() onRefresh;
+  final ValueChanged<bool> onShowOnMapChanged;
 
   const MonitoredAreaManagementSheet({
     super.key,
@@ -17,6 +18,7 @@ class MonitoredAreaManagementSheet extends StatefulWidget {
     required this.onLocateArea,
     required this.onSimulateTest,
     required this.onRefresh,
+    required this.onShowOnMapChanged,
   });
 
   static Future<void> show({
@@ -26,6 +28,7 @@ class MonitoredAreaManagementSheet extends StatefulWidget {
     required void Function(MonitoredArea area) onLocateArea,
     required Future<void> Function(String areaId) onSimulateTest,
     required Future<void> Function() onRefresh,
+    required ValueChanged<bool> onShowOnMapChanged,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -38,6 +41,7 @@ class MonitoredAreaManagementSheet extends StatefulWidget {
         onLocateArea: onLocateArea,
         onSimulateTest: onSimulateTest,
         onRefresh: onRefresh,
+        onShowOnMapChanged: onShowOnMapChanged,
       ),
     );
   }
@@ -52,6 +56,7 @@ class _MonitoredAreaManagementSheetState
   final MonitoredAreaService _service = MonitoredAreaService();
   late List<MonitoredArea> _areas;
   bool _monitoringGlobalEnabled = true;
+  bool _showOnMap = true;
 
   @override
   void initState() {
@@ -62,8 +67,12 @@ class _MonitoredAreaManagementSheetState
 
   Future<void> _loadGlobalSwitch() async {
     final enabled = await _service.isMonitoringEnabled();
+    final showOnMap = await _service.isShowAreasOnMap();
     if (mounted) {
-      setState(() => _monitoringGlobalEnabled = enabled);
+      setState(() {
+        _monitoringGlobalEnabled = enabled;
+        _showOnMap = showOnMap;
+      });
     }
   }
 
@@ -73,6 +82,14 @@ class _MonitoredAreaManagementSheetState
       setState(() => _monitoringGlobalEnabled = val);
     }
     await widget.onRefresh();
+  }
+
+  Future<void> _toggleShowOnMap(bool val) async {
+    await _service.setShowAreasOnMap(val);
+    if (mounted) {
+      setState(() => _showOnMap = val);
+    }
+    widget.onShowOnMapChanged(val);
   }
 
   Future<void> _toggleArea(String areaId, bool val) async {
@@ -179,6 +196,22 @@ class _MonitoredAreaManagementSheetState
               ),
               subtitle: const Text(
                 '每次刷新或打开时，自动比对所选区域内探头新增或变动',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SwitchListTile.adaptive(
+              value: _showOnMap,
+              onChanged: _toggleShowOnMap,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                '在地图上显示区域范围',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+              subtitle: const Text(
+                '关闭后不再绘制圆圈和矩形，变动检测与提醒不受影响',
                 style: TextStyle(fontSize: 11, color: Colors.grey),
               ),
             ),
