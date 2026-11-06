@@ -725,13 +725,10 @@ class BeijingPassService {
     );
   }
 
-  /// 从车辆列表中选出最优先办理的车辆：
-  /// 1. 若当前会话中用户已显式选择车辆（[selectedVehicleId]），保持该选择；
-  /// 2. 总是优先从小客车（isPassengerCar 为 true）中选择，排除摩托车、货车等；
-  /// 3. 寻找“上次办理的小客车”：
-  ///    - 从各车辆的历史办证记录（records）中，优先选择最近一次办理过进京证的车辆（按最近记录日期或当前生效中判定）；
-  ///    - 若接口记录相同或未返回记录，则优先匹配本地配置中上次保存/办理的车辆（[savedCarId] 或 [savedLicensePlate]）；
-  /// 4. 兜底返回候选池中的首辆车。
+  /// 从车辆列表中选出默认办理的车辆：
+  /// 1. 若当前会话中用户已手动切换过车辆（[selectedVehicleId]），保持该选择；
+  /// 2. 优先选中“上次办理”的车辆（从办证记录判定最近办理的车辆，或匹配本地上次办理/保存的车辆）；
+  /// 3. 否则直接选中第一个车辆（vehicles.first）。
   static BeijingPassVehicle preferredVehicle({
     required List<BeijingPassVehicle> vehicles,
     String? selectedVehicleId,
@@ -749,16 +746,12 @@ class BeijingPassService {
       }
     }
 
-    // 2. 优先从小客车中选择（排除摩托车、货车等）
-    final passengerCars = vehicles.where((v) => v.isPassengerCar).toList();
-    final candidates = passengerCars.isNotEmpty ? passengerCars : vehicles;
-
-    // 3. 匹配本地上次保存的车辆
+    // 2. 匹配本地上次保存/办理的车辆
     final sCarId = savedCarId?.trim() ?? '';
     final sPlate = savedLicensePlate?.trim().toUpperCase() ?? '';
     BeijingPassVehicle? matchedSaved;
     if (sCarId.isNotEmpty || sPlate.isNotEmpty) {
-      for (final v in candidates) {
+      for (final v in vehicles) {
         if ((sCarId.isNotEmpty && v.id == sCarId) ||
             (sPlate.isNotEmpty &&
                 v.licensePlate.trim().toUpperCase() == sPlate)) {
@@ -768,10 +761,10 @@ class BeijingPassService {
       }
     }
 
-    // 4. 从交警办证记录中寻找最近办理过进京证的车辆
+    // 3. 从交警办证记录中寻找最近办理过进京证的车辆
     BeijingPassVehicle? latestApplied;
     DateTime? latestDate;
-    for (final v in candidates) {
+    for (final v in vehicles) {
       final date = v.latestRecordDate;
       if (date != null) {
         if (latestDate == null || date.isAfter(latestDate)) {
@@ -781,7 +774,7 @@ class BeijingPassService {
       }
     }
 
-    // 5. 判定最近办理车辆：
+    // 判定上次办理的车辆：
     if (latestApplied != null) {
       if (matchedSaved == null ||
           matchedSaved.id == latestApplied.id ||
@@ -801,12 +794,7 @@ class BeijingPassService {
       return matchedSaved;
     }
 
-    // 若有当前生效中进京证的车辆，返回该车辆
-    for (final v in candidates) {
-      if (v.activeRecord?.isValidNow == true) return v;
-    }
-
-    // 兜底返回候选池第一辆车
-    return candidates.first;
+    // 4. 否则直接选中第一个车辆
+    return vehicles.first;
   }
 }

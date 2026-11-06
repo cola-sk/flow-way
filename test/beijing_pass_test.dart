@@ -297,50 +297,6 @@ void main() {
       expect(vehicle.lastDriverLicence, '130102199202021234');
     });
 
-    test('BeijingPassVehicle isPassengerCar correctly classifies vehicles', () {
-      const car1 = BeijingPassVehicle(
-        licensePlate: '冀A12345',
-        plateType: '02',
-        vehicleType: '小型普通客车',
-      );
-      expect(car1.isPassengerCar, isTrue);
-
-      const newEnergyCar = BeijingPassVehicle(
-        licensePlate: '津ADY1951',
-        plateType: '52',
-        vehicleType: '小型新能源汽车',
-      );
-      expect(newEnergyCar.isPassengerCar, isTrue);
-
-      const sedan = BeijingPassVehicle(
-        licensePlate: '京A88888',
-        plateType: '02',
-        vehicleType: '小型轿车',
-      );
-      expect(sedan.isPassengerCar, isTrue);
-
-      const motorcycle = BeijingPassVehicle(
-        licensePlate: '京B99999',
-        plateType: '07',
-        vehicleType: '普通二轮摩托车',
-      );
-      expect(motorcycle.isPassengerCar, isFalse);
-
-      const lightMotorcycle = BeijingPassVehicle(
-        licensePlate: '京B88888',
-        plateType: '08',
-        vehicleType: '轻便二轮摩托车',
-      );
-      expect(lightMotorcycle.isPassengerCar, isFalse);
-
-      const truck = BeijingPassVehicle(
-        licensePlate: '冀B77777',
-        plateType: '01',
-        vehicleType: '重型货车',
-      );
-      expect(truck.isPassengerCar, isFalse);
-    });
-
     test('BeijingPassVehicle latestRecordDate identifies most recent pass date', () {
       final vNoRecord = const BeijingPassVehicle(id: 'v0');
       expect(vNoRecord.latestRecordDate, isNull);
@@ -363,53 +319,10 @@ void main() {
       expect(vWithRecords.latestRecordDate, DateTime(2026, 10, 21));
     });
 
-    test('BeijingPassService.preferredVehicle always prefers last applied passenger car', () {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-
-      final motorcycleWithActivePass = BeijingPassVehicle(
-        id: 'moto-1',
-        licensePlate: '京B11111',
-        plateType: '07',
-        vehicleType: '普通二轮摩托车',
-        records: [
-          BeijingPassRecord(
-            id: 'm-rec',
-            startDate: today.subtract(const Duration(days: 2)),
-            endDate: today.add(const Duration(days: 4)),
-            status: BeijingPassStatus.valid,
-          ),
-        ],
-      );
-
-      final carWithExpiredPass = BeijingPassVehicle(
-        id: 'car-1',
-        licensePlate: '冀A88888',
-        plateType: '02',
-        vehicleType: '小型普通客车',
-        records: [
-          BeijingPassRecord(
-            id: 'c-rec',
-            startDate: today.subtract(const Duration(days: 10)),
-            endDate: today.subtract(const Duration(days: 3)),
-            status: BeijingPassStatus.expired,
-          ),
-        ],
-      );
-
-      // 1. 即使摩托车有生效中进京证，也必须优先选中办理过的小客车
-      final selected1 = BeijingPassService.preferredVehicle(
-        vehicles: [motorcycleWithActivePass, carWithExpiredPass],
-      );
-      expect(selected1.id, 'car-1');
-      expect(selected1.isPassengerCar, isTrue);
-
-      // 2. 多辆小客车时，优先选中最近一次办理进京证的车辆
-      final carOlder = BeijingPassVehicle(
-        id: 'car-old',
+    test('BeijingPassService.preferredVehicle prefers last applied vehicle or defaults to first', () {
+      final vOlder = BeijingPassVehicle(
+        id: 'v-old',
         licensePlate: '冀A11111',
-        plateType: '02',
-        vehicleType: '小型普通客车',
         records: [
           BeijingPassRecord(
             id: 'r-old',
@@ -418,11 +331,9 @@ void main() {
           ),
         ],
       );
-      final carRecent = BeijingPassVehicle(
-        id: 'car-new',
+      final vRecent = BeijingPassVehicle(
+        id: 'v-new',
         licensePlate: '冀A22222',
-        plateType: '02',
-        vehicleType: '小型普通客车',
         records: [
           BeijingPassRecord(
             id: 'r-new',
@@ -432,36 +343,39 @@ void main() {
         ],
       );
 
+      // 1. 优先选中最近一次办理进京证的车辆（上次办理的）
+      final selected1 = BeijingPassService.preferredVehicle(
+        vehicles: [vOlder, vRecent],
+      );
+      expect(selected1.id, 'v-new');
+
+      // 2. 用户在当前会话已手动选择时保持当前选择
       final selected2 = BeijingPassService.preferredVehicle(
-        vehicles: [carOlder, carRecent],
+        vehicles: [vOlder, vRecent],
+        selectedVehicleId: 'v-old',
       );
-      expect(selected2.id, 'car-new');
+      expect(selected2.id, 'v-old');
 
-      // 3. 用户在当前会话已手动选择时保持当前选择
-      final selected3 = BeijingPassService.preferredVehicle(
-        vehicles: [carOlder, carRecent],
-        selectedVehicleId: 'car-old',
-      );
-      expect(selected3.id, 'car-old');
-
-      // 4. 若无有效记录，匹配本地保存的上次办理车辆
-      const carA = BeijingPassVehicle(
-        id: 'c-a',
+      // 3. 若无接口有效记录，匹配本地保存的上次办理车辆
+      const vA = BeijingPassVehicle(
+        id: 'v-a',
         licensePlate: '冀A12345',
-        plateType: '02',
-        vehicleType: '小型轿车',
       );
-      const carB = BeijingPassVehicle(
-        id: 'c-b',
+      const vB = BeijingPassVehicle(
+        id: 'v-b',
         licensePlate: '冀A67890',
-        plateType: '02',
-        vehicleType: '小型轿车',
       );
+      final selected3 = BeijingPassService.preferredVehicle(
+        vehicles: [vA, vB],
+        savedCarId: 'v-b',
+      );
+      expect(selected3.id, 'v-b');
+
+      // 4. 若无记录且无保存配置，兜底选中第一个车辆
       final selected4 = BeijingPassService.preferredVehicle(
-        vehicles: [carA, carB],
-        savedCarId: 'c-b',
+        vehicles: [vA, vB],
       );
-      expect(selected4.id, 'c-b');
+      expect(selected4.id, 'v-a');
     });
   });
 }

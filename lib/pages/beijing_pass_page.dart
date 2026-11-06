@@ -164,7 +164,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     return _preferredVehicle(vehicles);
   }
 
-  /// 优先默认选中上次办理的小客车，用户手动选择后保持当前选择。
+  /// 优先默认选中上次办理的车辆，否则选中第一辆车。
   BeijingPassVehicle _preferredVehicle(List<BeijingPassVehicle> vehicles) {
     return BeijingPassService.preferredVehicle(
       vehicles: vehicles,
