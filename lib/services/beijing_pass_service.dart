@@ -726,9 +726,10 @@ class BeijingPassService {
   }
 
   /// 从车辆列表中选出默认办理的车辆：
-  /// 1. 若当前会话中用户已手动切换过车辆（[selectedVehicleId]），保持该选择；
-  /// 2. 优先选中“上次办理”的车辆（从办证记录判定最近办理的车辆，或匹配本地上次办理/保存的车辆）；
-  /// 3. 否则直接选中第一个车辆（vehicles.first）。
+  /// 1. 若当前会话中用户已手动切换过车辆（[selectedVehicleId]），保持用户的当前选择；
+  /// 2. 若有名下车辆当前有生效中的进京证，优先直接展示生效中的车辆；
+  /// 3. 若均无生效进京证，优先选中“上次办理”的车辆（从办证记录判定最近办理的车辆，或匹配本地上次办理/保存的车辆）；
+  /// 4. 否则直接选中第一个车辆（vehicles.first）。
   static BeijingPassVehicle preferredVehicle({
     required List<BeijingPassVehicle> vehicles,
     String? selectedVehicleId,
@@ -739,14 +740,33 @@ class BeijingPassService {
       throw ArgumentError('vehicles must not be empty');
     }
 
-    // 1. 若当前会话中用户已手动切换过车辆，保持用户的当前选择
+    // 1. 若当前会话中用户已手动切换过车辆，保持该选择
     if (selectedVehicleId != null && selectedVehicleId.isNotEmpty) {
       for (final v in vehicles) {
         if (v.id == selectedVehicleId) return v;
       }
     }
 
-    // 2. 匹配本地上次保存/办理的车辆
+    // 2. 若有名下车辆当前有生效中的进京证，优先直接展示生效中的车辆
+    // （若有多辆车同时生效，优先选到期时间或生效时间最近的那辆）
+    BeijingPassVehicle? activeVehicle;
+    DateTime? activeDate;
+    for (final v in vehicles) {
+      if (v.activeRecord?.isValidNow == true) {
+        final d = v.latestRecordDate;
+        if (activeVehicle == null ||
+            (d != null && (activeDate == null || d.isAfter(activeDate)))) {
+          activeVehicle = v;
+          activeDate = d;
+        }
+      }
+    }
+    if (activeVehicle != null) {
+      return activeVehicle;
+    }
+
+    // 3. 若当前均无生效进京证，寻找“上次办理”的车辆：
+    //    3.1 匹配本地上次保存/办理的车辆
     final sCarId = savedCarId?.trim() ?? '';
     final sPlate = savedLicensePlate?.trim().toUpperCase() ?? '';
     BeijingPassVehicle? matchedSaved;
@@ -761,7 +781,7 @@ class BeijingPassService {
       }
     }
 
-    // 3. 从交警办证记录中寻找最近办理过进京证的车辆
+    //    3.2 从交警办证记录中寻找最近办理过进京证的车辆
     BeijingPassVehicle? latestApplied;
     DateTime? latestDate;
     for (final v in vehicles) {
@@ -776,9 +796,7 @@ class BeijingPassService {
 
     // 判定上次办理的车辆：
     if (latestApplied != null) {
-      if (matchedSaved == null ||
-          matchedSaved.id == latestApplied.id ||
-          latestApplied.activeRecord?.isValidNow == true) {
+      if (matchedSaved == null || matchedSaved.id == latestApplied.id) {
         return latestApplied;
       }
       final savedDate = matchedSaved.latestRecordDate;

@@ -343,7 +343,27 @@ void main() {
         ],
       );
 
-      // 1. 优先选中最近一次办理进京证的车辆（上次办理的）
+      // 0. 若名下有生效中的进京证，优先直接展示生效中的车辆
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final vActive = BeijingPassVehicle(
+        id: 'v-active',
+        licensePlate: '冀A33333',
+        records: [
+          BeijingPassRecord(
+            id: 'r-act',
+            startDate: today.subtract(const Duration(days: 2)),
+            endDate: today.add(const Duration(days: 4)),
+            status: BeijingPassStatus.valid,
+          ),
+        ],
+      );
+      final selectedActive = BeijingPassService.preferredVehicle(
+        vehicles: [vOlder, vActive],
+      );
+      expect(selectedActive.id, 'v-active');
+
+      // 1. 若均未生效，优先选中最近一次办理进京证的车辆（上次办理的）
       final selected1 = BeijingPassService.preferredVehicle(
         vehicles: [vOlder, vRecent],
       );
