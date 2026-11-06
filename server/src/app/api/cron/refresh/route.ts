@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { refreshCameras } from '@/lib/cache';
+import { getLatestCameraDiffReport } from '@/lib/camera-changes';
 
 /**
  * Vercel Cron Job 端点：定时刷新摄像头数据
@@ -22,10 +23,28 @@ export async function GET(request: Request) {
     console.info(
       `[camera-cron] refresh job succeeded: total=${cameras.length}, sourceUpdatedAt=${updatedAt}`
     );
+
+    let diffSummary = null;
+    try {
+      const report = await getLatestCameraDiffReport();
+      if (report) {
+        diffSummary = {
+          totalChanges: report.totalChanges,
+          added: report.addedCount,
+          removed: report.removedCount,
+          typeChanged: report.typeChangedCount,
+          infoChanged: report.infoChangedCount,
+        };
+      }
+    } catch (_) {
+      // 容错兜底：变动读取异常绝不影响定时任务正常返回
+    }
+
     return NextResponse.json({
       ok: true,
       total: cameras.length,
       updatedAt,
+      diffSummary,
     });
   } catch (error) {
     console.error('[camera-cron] refresh job failed', error);

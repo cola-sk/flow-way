@@ -5,6 +5,7 @@ class Camera {
   final double lat;
   final int type;
   final String date;
+  final String? edittime;
   final String href;
 
   Camera({
@@ -13,6 +14,7 @@ class Camera {
     required this.lat,
     required this.type,
     required this.date,
+    this.edittime,
     required this.href,
   });
 
@@ -23,6 +25,7 @@ class Camera {
       lat: (json['lat'] as num).toDouble(),
       type: json['type'] as int,
       date: json['date'] as String,
+      edittime: json['edittime'] as String?,
       href: json['href'] as String? ?? '',
     );
   }
@@ -34,6 +37,7 @@ class Camera {
       'lat': lat,
       'type': type,
       'date': date,
+      if (edittime != null) 'edittime': edittime,
       'href': href,
     };
   }

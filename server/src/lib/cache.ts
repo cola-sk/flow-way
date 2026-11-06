@@ -5,7 +5,9 @@ import { scrapeCameras } from './scraper';
 import {
   loadCameraSnapshotFromKv,
   saveCameraSnapshotToKv,
+  CameraSnapshot,
 } from './camera-storage';
+import { recordCameraDiffSafe } from './camera-changes';
 
 interface CacheData {
   cameras: Camera[];
@@ -113,6 +115,17 @@ export async function refreshCameras(): Promise<CacheData> {
     throw error;
   }
 
+  // 在入库前读取历史快照用于变动比对
+  let previousSnapshot: CameraSnapshot | null = null;
+  try {
+    previousSnapshot = await loadCameraSnapshotFromKv();
+  } catch (err) {
+    console.warn(
+      '[camera-refresh] failed to load previous snapshot for diffing:',
+      err
+    );
+  }
+
   const snapshot = await saveCameraSnapshotToKv({
     cameras: crawled.cameras,
     updatedAt: crawled.updatedAt,
@@ -131,6 +144,16 @@ export async function refreshCameras(): Promise<CacheData> {
   console.info(
     `[camera-refresh] memory cache updated: total=${cache.cameras.length}, fetchedAt=${cache.fetchedAt}`
   );
+
+  // 定时任务/刷新后置变动计算：在独立 try-catch 中执行，绝不影响入库成功状态
+  try {
+    await recordCameraDiffSafe(previousSnapshot, snapshot);
+  } catch (diffErr) {
+    console.error(
+      '[camera-refresh] diff calculation failed, but crawl/storage is unaffected:',
+      diffErr
+    );
+  }
 
   return cache;
 }

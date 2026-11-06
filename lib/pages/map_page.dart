@@ -11,6 +11,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:uuid/uuid.dart';
 import '../models/camera.dart';
 import '../models/route.dart';
 import '../services/api_service.dart';
@@ -21,6 +22,10 @@ import 'active_navigation_page.dart';
 import 'beijing_pass_page.dart';
 import 'save_route_dialog.dart';
 import 'test_tools_page.dart';
+import '../models/monitored_area.dart';
+import '../services/monitored_area_service.dart';
+import '../widgets/area_changes_summary_sheet.dart';
+import '../widgets/monitored_area_management_sheet.dart';
 
 enum _BottomTab { explore, plan, saved, recent, settings }
 
@@ -174,6 +179,23 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
   bool _updatingCameras = false;
   DateTime? _cruiseStartTime;
 
+  // 区域监控与变动提醒状态
+  final MonitoredAreaService _monitoredAreaService = MonitoredAreaService();
+  List<MonitoredArea> _monitoredAreas = [];
+  List<AreaChangeSummary> _unreadAreaChangeSummaries = [];
+  bool _monitoredBannerDismissed = false;
+  bool _isSelectingMonitoredArea = false;
+  AreaShapeType _selectionShapeType = AreaShapeType.circle;
+  LatLng _selectionCenter = const LatLng(39.9042, 116.4074);
+  double _selectionRadiusMeters = 3000;
+  LatLng? _selectionRectSW;
+  LatLng? _selectionRectNE;
+  final TextEditingController _areaNameController = TextEditingController();
+  LatLng? _highlightedCameraLocation;
+  String? _highlightedCameraName;
+  CameraChangeType? _highlightedCameraType;
+  Timer? _highlightTimer;
+
   @override
   void initState() {
     super.initState();
@@ -207,6 +229,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _loadWayPoints();
     _loadDismissedCameras();
     _loadRiskPoints();
+    _loadMonitoredAreas();
     _locateUser(forceRefresh: true);
     _apiService.checkAndReportFirstLaunch();
   }
@@ -239,6 +262,8 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     _searchController.dispose();
     _searchFocusNode.dispose();
     _userTokenController.dispose();
+    _areaNameController.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
   }
 
@@ -2637,6 +2662,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           _loading = false;
         }
       });
+      unawaited(_checkMonitoredAreaChanges());
       return true;
     } catch (e) {
       if (!mounted) return false;
@@ -2703,6 +2729,716 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
     } catch (e) {
       print('加载风险点失败: $e');
     }
+  }
+
+  Future<void> _loadMonitoredAreas() async {
+    try {
+      final areas = await _monitoredAreaService.getAreas();
+      final unread = await _monitoredAreaService.getUnreadSummaries();
+      if (!mounted) return;
+      setState(() {
+        _monitoredAreas = areas;
+        _unreadAreaChangeSummaries = unread;
+      });
+    } catch (e) {
+      print('加载监控区域失败: $e');
+    }
+  }
+
+  Future<void> _checkMonitoredAreaChanges() async {
+    if (_cameras.isEmpty) return;
+    try {
+      final newSummaries = await _monitoredAreaService.checkChanges(_cameras);
+      final unread = await _monitoredAreaService.getUnreadSummaries();
+      final areas = await _monitoredAreaService.getAreas();
+      if (!mounted) return;
+      setState(() {
+        _monitoredAreas = areas;
+        _unreadAreaChangeSummaries = unread;
+        if (newSummaries.isNotEmpty) {
+          _monitoredBannerDismissed = false;
+        }
+      });
+    } catch (e) {
+      print('检查监控区域变动失败: $e');
+    }
+  }
+
+  void _startAreaSelection({MonitoredArea? editArea}) {
+    LatLng center;
+    if (editArea != null && editArea.shapeType == AreaShapeType.circle) {
+      center = LatLng(editArea.centerLat!, editArea.centerLng!);
+      _selectionRadiusMeters = editArea.radiusMeters ?? 3000;
+      _selectionShapeType = AreaShapeType.circle;
+      _areaNameController.text = editArea.name;
+    } else if (editArea != null && editArea.shapeType == AreaShapeType.rectangle) {
+      _selectionShapeType = AreaShapeType.rectangle;
+      _selectionRectSW = LatLng(editArea.southWestLat!, editArea.southWestLng!);
+      _selectionRectNE = LatLng(editArea.northEastLat!, editArea.northEastLng!);
+      center = LatLng(
+        (editArea.southWestLat! + editArea.northEastLat!) / 2,
+        (editArea.southWestLng! + editArea.northEastLng!) / 2,
+      );
+      _areaNameController.text = editArea.name;
+    } else {
+      center = _userPosition ?? _mapController.camera.center;
+      _selectionRadiusMeters = 3000;
+      _selectionShapeType = AreaShapeType.circle;
+      _selectionRectSW = LatLng(center.latitude - 0.015, center.longitude - 0.02);
+      _selectionRectNE = LatLng(center.latitude + 0.015, center.longitude + 0.02);
+      _areaNameController.text = '监控区域 ${_monitoredAreas.length + 1}';
+    }
+
+    _selectionCenter = center;
+    setState(() {
+      _isSelectingMonitoredArea = true;
+    });
+
+    _mapController.move(center, 12.5);
+  }
+
+  void _cancelAreaSelection() {
+    setState(() {
+      _isSelectingMonitoredArea = false;
+    });
+  }
+
+  void _handleSelectionMapTap(LatLng point) {
+    if (_selectionShapeType == AreaShapeType.circle) {
+      setState(() {
+        _selectionCenter = point;
+      });
+    } else {
+      if (_selectionRectSW == null || _selectionRectNE == null) {
+        _selectionRectSW = LatLng(point.latitude - 0.015, point.longitude - 0.02);
+        _selectionRectNE = LatLng(point.latitude + 0.015, point.longitude + 0.02);
+      } else {
+        final latSpan = (_selectionRectNE!.latitude - _selectionRectSW!.latitude) / 2;
+        final lngSpan = (_selectionRectNE!.longitude - _selectionRectSW!.longitude) / 2;
+        _selectionRectSW = LatLng(point.latitude - latSpan, point.longitude - lngSpan);
+        _selectionRectNE = LatLng(point.latitude + latSpan, point.longitude + lngSpan);
+      }
+      setState(() {});
+    }
+  }
+
+  int _countCamerasInCurrentSelection() {
+    if (_selectionShapeType == AreaShapeType.circle) {
+      return _cameras.where((c) {
+        final d = _distance(_selectionCenter, LatLng(c.lat, c.lng));
+        return d <= _selectionRadiusMeters;
+      }).length;
+    } else {
+      if (_selectionRectSW == null || _selectionRectNE == null) return 0;
+      final minLat = math.min(_selectionRectSW!.latitude, _selectionRectNE!.latitude);
+      final maxLat = math.max(_selectionRectSW!.latitude, _selectionRectNE!.latitude);
+      final minLng = math.min(_selectionRectSW!.longitude, _selectionRectNE!.longitude);
+      final maxLng = math.max(_selectionRectSW!.longitude, _selectionRectNE!.longitude);
+      return _cameras.where((c) =>
+          c.lat >= minLat && c.lat <= maxLat && c.lng >= minLng && c.lng <= maxLng).length;
+    }
+  }
+
+  Future<void> _saveCurrentSelectedArea() async {
+    final name = _areaNameController.text.trim().isEmpty
+        ? '监控区域 ${_monitoredAreas.length + 1}'
+        : _areaNameController.text.trim();
+
+    MonitoredArea area;
+    if (_selectionShapeType == AreaShapeType.circle) {
+      area = MonitoredArea.circle(
+        id: const Uuid().v4(),
+        name: name,
+        centerLat: _selectionCenter.latitude,
+        centerLng: _selectionCenter.longitude,
+        radiusMeters: _selectionRadiusMeters,
+      );
+    } else {
+      final minLat = math.min(_selectionRectSW!.latitude, _selectionRectNE!.latitude);
+      final maxLat = math.max(_selectionRectSW!.latitude, _selectionRectNE!.latitude);
+      final minLng = math.min(_selectionRectSW!.longitude, _selectionRectNE!.longitude);
+      final maxLng = math.max(_selectionRectSW!.longitude, _selectionRectNE!.longitude);
+      area = MonitoredArea.rectangle(
+        id: const Uuid().v4(),
+        name: name,
+        southWestLat: minLat,
+        southWestLng: minLng,
+        northEastLat: maxLat,
+        northEastLng: maxLng,
+      );
+    }
+
+    await _monitoredAreaService.saveArea(area, initialCameras: _cameras);
+    final updated = await _monitoredAreaService.getAreas();
+    if (!mounted) return;
+    setState(() {
+      _monitoredAreas = updated;
+      _isSelectingMonitoredArea = false;
+    });
+    _showToast('监控区域【$name】已保存并开启变动监控');
+  }
+
+  void _openAreaManagement() {
+    MonitoredAreaManagementSheet.show(
+      context: context,
+      areas: _monitoredAreas,
+      onAddNewArea: () => _startAreaSelection(),
+      onLocateArea: (area) => _locateMonitoredArea(area),
+      onSimulateTest: (areaId) => _simulateTestChange(areaId),
+      onRefresh: () async => await _loadMonitoredAreas(),
+    );
+  }
+
+  void _openAreaChangesSummary() {
+    if (_unreadAreaChangeSummaries.isEmpty) {
+      _openAreaManagement();
+      return;
+    }
+    AreaChangesSummarySheet.show(
+      context: context,
+      summaries: _unreadAreaChangeSummaries,
+      onDismissAll: () async {
+        await _monitoredAreaService.markAllSummariesAsRead();
+        if (mounted) {
+          setState(() {
+            _unreadAreaChangeSummaries = [];
+            _monitoredBannerDismissed = true;
+          });
+          _showToast('已将所有变动标记为已读');
+        }
+      },
+      onLocateCamera: (lat, lng, name, type) {
+        _locateMonitoredCamera(lat, lng, name, type);
+      },
+      onSimulateTest: (areaId) async {
+        await _simulateTestChange(areaId);
+      },
+    );
+  }
+
+  void _locateMonitoredArea(MonitoredArea area) {
+    if (area.shapeType == AreaShapeType.circle) {
+      final center = LatLng(area.centerLat!, area.centerLng!);
+      double zoom = 13.0;
+      if (area.radiusMeters != null) {
+        if (area.radiusMeters! > 10000) zoom = 10.5;
+        else if (area.radiusMeters! > 5000) zoom = 11.5;
+        else if (area.radiusMeters! > 2000) zoom = 12.8;
+        else zoom = 14.0;
+      }
+      _mapController.move(center, zoom);
+    } else {
+      final center = LatLng(
+        (area.southWestLat! + area.northEastLat!) / 2,
+        (area.southWestLng! + area.northEastLng!) / 2,
+      );
+      _mapController.move(center, 12.5);
+    }
+    _showToast('已定位至监控区域【${area.name}】');
+  }
+
+  void _locateMonitoredCamera(
+    double lat,
+    double lng,
+    String name,
+    CameraChangeType type,
+  ) {
+    final pos = LatLng(lat, lng);
+    _highlightTimer?.cancel();
+    setState(() {
+      _highlightedCameraLocation = pos;
+      _highlightedCameraName = name;
+      _highlightedCameraType = type;
+    });
+
+    _mapController.move(pos, 15.5);
+
+    _highlightTimer = Timer(const Duration(seconds: 12), () {
+      if (mounted) {
+        setState(() {
+          _highlightedCameraLocation = null;
+          _highlightedCameraName = null;
+          _highlightedCameraType = null;
+        });
+      }
+    });
+
+    String typeLabel = '探头';
+    switch (type) {
+      case CameraChangeType.added: typeLabel = '新增探头'; break;
+      case CameraChangeType.removed: typeLabel = '已下线探头'; break;
+      case CameraChangeType.typeChanged: typeLabel = '规则调整探头'; break;
+      case CameraChangeType.infoChanged: typeLabel = '信息更新探头'; break;
+    }
+    _showToast('正在查看 $typeLabel: $name');
+  }
+
+  Future<void> _simulateTestChange(String areaId) async {
+    final summary = await _monitoredAreaService.simulateTestChanges(areaId, _cameras);
+    if (summary != null) {
+      await _loadMonitoredAreas();
+      if (mounted) {
+        _showToast('已向【${summary.areaName}】注入模拟变动数据，汇总提醒已生成！');
+        _openAreaChangesSummary();
+      }
+    }
+  }
+
+  Widget _buildMonitoredAreaAlertBanner() {
+    if (_unreadAreaChangeSummaries.isEmpty || _monitoredBannerDismissed) {
+      return const SizedBox.shrink();
+    }
+    final first = _unreadAreaChangeSummaries.first;
+    final totalChanges = _unreadAreaChangeSummaries.fold<int>(
+      0,
+      (sum, s) => sum + s.totalChanges,
+    );
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFDBA74), width: 1.2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F7C2D12),
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFEDD5),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.radar_rounded,
+              color: Color(0xFFEA580C),
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        '监控区域【${first.areaName}】探头变动',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF9A3412),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEA580C),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '$totalChanges 处更新',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${first.addedCount > 0 ? "新增 ${first.addedCount} · " : ""}${first.typeChangedCount > 0 ? "规则调整 ${first.typeChangedCount} · " : ""}${first.removedCount > 0 ? "下线 ${first.removedCount}" : "数据更新"}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFFC2410C),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          FilledButton(
+            onPressed: _openAreaChangesSummary,
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFEA580C),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              minimumSize: Size.zero,
+              visualDensity: VisualDensity.compact,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('查看汇总', style: TextStyle(fontSize: 12)),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 16),
+            color: const Color(0xFF9A3412),
+            padding: const EdgeInsets.all(4),
+            constraints: const BoxConstraints(),
+            tooltip: '暂不提醒',
+            onPressed: () {
+              setState(() {
+                _monitoredBannerDismissed = true;
+              });
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonitoredAreaSelectionOverlay() {
+    final cameraCount = _countCamerasInCurrentSelection();
+    final isCircle = _selectionShapeType == AreaShapeType.circle;
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 24,
+      child: _buildGlassPanel(
+        borderRadius: BorderRadius.circular(20),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.edit_location_alt_rounded,
+                  color: Color(0xFF0F766E),
+                  size: 22,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  '选定监控范围',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: cameraCount > 0
+                        ? const Color(0xFFDCFCE7)
+                        : const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: cameraCount > 0
+                          ? const Color(0xFF86EFAC)
+                          : const Color(0xFFE5E7EB),
+                    ),
+                  ),
+                  child: Text(
+                    '包含摄像头: $cameraCount 个',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: cameraCount > 0
+                          ? const Color(0xFF166534)
+                          : Colors.grey[700],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // 形状切换 Tab
+            SegmentedButton<AreaShapeType>(
+              segments: const [
+                ButtonSegment(
+                  value: AreaShapeType.circle,
+                  icon: Icon(Icons.circle_outlined, size: 16),
+                  label: Text('圆形圈选'),
+                ),
+                ButtonSegment(
+                  value: AreaShapeType.rectangle,
+                  icon: Icon(Icons.crop_square_rounded, size: 16),
+                  label: Text('矩形框选'),
+                ),
+              ],
+              selected: {_selectionShapeType},
+              onSelectionChanged: (val) {
+                setState(() {
+                  _selectionShapeType = val.first;
+                  if (_selectionShapeType == AreaShapeType.rectangle &&
+                      (_selectionRectSW == null || _selectionRectNE == null)) {
+                    _selectionRectSW = LatLng(
+                        _selectionCenter.latitude - 0.015,
+                        _selectionCenter.longitude - 0.02);
+                    _selectionRectNE = LatLng(
+                        _selectionCenter.latitude + 0.015,
+                        _selectionCenter.longitude + 0.02);
+                  }
+                });
+              },
+            ),
+
+            const SizedBox(height: 10),
+
+            // 圆形半径调节或矩形调节
+            if (isCircle) ...[
+              Row(
+                children: [
+                  const Text('范围半径:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(width: 8),
+                  Text(
+                    _selectionRadiusMeters >= 1000
+                        ? '${(_selectionRadiusMeters / 1000).toStringAsFixed(1)} km'
+                        : '${_selectionRadiusMeters.toStringAsFixed(0)} m',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF0F766E),
+                    ),
+                  ),
+                  const Spacer(),
+                  for (final r in [1000.0, 3000.0, 5000.0, 10000.0]) ...[
+                    InkWell(
+                      onTap: () => setState(() => _selectionRadiusMeters = r),
+                      child: Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: (_selectionRadiusMeters - r).abs() < 100
+                              ? const Color(0xFF0F766E)
+                              : Colors.grey.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${(r / 1000).toInt()}km',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: (_selectionRadiusMeters - r).abs() < 100
+                                ? Colors.white
+                                : Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: const Color(0xFF0F766E),
+                  thumbColor: const Color(0xFF0F766E),
+                  overlayShape: SliderComponentShape.noOverlay,
+                ),
+                child: Slider(
+                  value: _selectionRadiusMeters,
+                  min: 500,
+                  max: 15000,
+                  divisions: 29,
+                  onChanged: (val) => setState(() => _selectionRadiusMeters = val),
+                ),
+              ),
+              const Text(
+                '💡 提示：点击地图任意位置可更换圆心位置',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  const Text('框选预设:', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  for (final span in [
+                    {'name': '小 (2km)', 'lat': 0.01, 'lng': 0.012},
+                    {'name': '中 (4km)', 'lat': 0.02, 'lng': 0.025},
+                    {'name': '大 (8km)', 'lat': 0.04, 'lng': 0.05},
+                  ]) ...[
+                    InkWell(
+                      onTap: () {
+                        final latDelta = span['lat'] as double;
+                        final lngDelta = span['lng'] as double;
+                        setState(() {
+                          _selectionRectSW = LatLng(
+                              _selectionCenter.latitude - latDelta,
+                              _selectionCenter.longitude - lngDelta);
+                          _selectionRectNE = LatLng(
+                              _selectionCenter.latitude + latDelta,
+                              _selectionCenter.longitude + lngDelta);
+                        });
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE0F2FE),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFBAE6FD)),
+                        ),
+                        child: Text(
+                          span['name'] as String,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0369A1),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                '💡 提示：点击地图任意位置可移动框选中心',
+                style: TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+
+            const SizedBox(height: 10),
+
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _areaNameController,
+                    decoration: InputDecoration(
+                      labelText: '监控区域名称',
+                      hintText: '如：家周边、公司常驻区',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            Row(
+              children: [
+                OutlinedButton(
+                  onPressed: _cancelAreaSelection,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  ),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _saveCurrentSelectedArea,
+                    icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                    label: const Text('保存并开启监控'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF0F766E),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHighlightedCameraMarker() {
+    Color ringColor;
+    String badgeText;
+    switch (_highlightedCameraType) {
+      case CameraChangeType.added:
+        ringColor = const Color(0xFF16A34A);
+        badgeText = '新增';
+        break;
+      case CameraChangeType.removed:
+        ringColor = const Color(0xFFDC2626);
+        badgeText = '下线';
+        break;
+      case CameraChangeType.typeChanged:
+        ringColor = const Color(0xFFD97706);
+        badgeText = '规则变动';
+        break;
+      case CameraChangeType.infoChanged:
+      default:
+        ringColor = const Color(0xFF2563EB);
+        badgeText = '更新';
+        break;
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          decoration: BoxDecoration(
+            color: ringColor,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Text(
+            badgeText,
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            border: Border.all(color: ringColor, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: ringColor.withValues(alpha: 0.5),
+                blurRadius: 10,
+                spreadRadius: 3,
+              ),
+            ],
+          ),
+          child: Icon(
+            Icons.videocam_rounded,
+            color: ringColor,
+            size: 20,
+          ),
+        ),
+      ],
+    );
   }
 
   String _cameraCoordKey(double lat, double lng) {
@@ -5203,6 +5939,61 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                   ),
           ),
           const Divider(height: 20),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
+            ),
+            elevation: 0,
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFCCFBF1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.fence_rounded,
+                  color: Color(0xFF0F766E),
+                  size: 22,
+                ),
+              ),
+              title: const Text(
+                '区域监控与变动提醒',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              subtitle: Text(
+                '已设定 ${_monitoredAreas.length} 个区域 · 支持圈选范围与汇总提醒',
+                style: const TextStyle(fontSize: 12),
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_unreadAreaChangeSummaries.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        '${_unreadAreaChangeSummaries.fold<int>(0, (sum, s) => sum + s.totalChanges)} 变动',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  const Icon(Icons.chevron_right_rounded),
+                ],
+              ),
+              onTap: _openAreaManagement,
+            ),
+          ),
+          const Divider(height: 20),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -6285,6 +7076,10 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
               minZoom: 5,
               maxZoom: 18,
               onTap: (tapPosition, point) {
+                if (_isSelectingMonitoredArea) {
+                  _handleSelectionMapTap(point);
+                  return;
+                }
                 Future.delayed(const Duration(milliseconds: 150), () {
                   if (!mounted) return;
                   if (_lastRouteHitTime != null &&
@@ -6312,6 +7107,80 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                 tms: true,
                 userAgentPackageName: 'com.flowway.app',
                 maxZoom: 20,
+              ),
+              // 监控区域圆形图层
+              CircleLayer(
+                circles: [
+                  ..._monitoredAreas
+                      .where((a) =>
+                          a.enabled && a.shapeType == AreaShapeType.circle)
+                      .map((a) => CircleMarker(
+                            point: LatLng(a.centerLat!, a.centerLng!),
+                            radius: a.radiusMeters!,
+                            useRadiusInMeter: true,
+                            color: const Color(0x180F766E),
+                            borderColor: const Color(0xFF0F766E),
+                            borderStrokeWidth: 1.5,
+                          )),
+                  if (_isSelectingMonitoredArea &&
+                      _selectionShapeType == AreaShapeType.circle)
+                    CircleMarker(
+                      point: _selectionCenter,
+                      radius: _selectionRadiusMeters,
+                      useRadiusInMeter: true,
+                      color: const Color(0x3300897B),
+                      borderColor: const Color(0xFF00897B),
+                      borderStrokeWidth: 2.5,
+                    ),
+                ],
+              ),
+              // 监控区域矩形图层
+              PolygonLayer(
+                polygons: [
+                  ..._monitoredAreas
+                      .where((a) =>
+                          a.enabled && a.shapeType == AreaShapeType.rectangle)
+                      .map((a) {
+                    final minLat =
+                        math.min(a.southWestLat!, a.northEastLat!);
+                    final maxLat =
+                        math.max(a.southWestLat!, a.northEastLat!);
+                    final minLng =
+                        math.min(a.southWestLng!, a.northEastLng!);
+                    final maxLng =
+                        math.max(a.southWestLng!, a.northEastLng!);
+                    return Polygon(
+                      points: [
+                        LatLng(minLat, minLng),
+                        LatLng(minLat, maxLng),
+                        LatLng(maxLat, maxLng),
+                        LatLng(maxLat, minLng),
+                      ],
+                      color: const Color(0x180284C7),
+                      borderColor: const Color(0xFF0284C7),
+                      borderStrokeWidth: 1.5,
+                    );
+                  }),
+                  if (_isSelectingMonitoredArea &&
+                      _selectionShapeType == AreaShapeType.rectangle &&
+                      _selectionRectSW != null &&
+                      _selectionRectNE != null)
+                    Polygon(
+                      points: [
+                        LatLng(_selectionRectSW!.latitude,
+                            _selectionRectSW!.longitude),
+                        LatLng(_selectionRectSW!.latitude,
+                            _selectionRectNE!.longitude),
+                        LatLng(_selectionRectNE!.latitude,
+                            _selectionRectNE!.longitude),
+                        LatLng(_selectionRectNE!.latitude,
+                            _selectionRectSW!.longitude),
+                      ],
+                      color: const Color(0x330284C7),
+                      borderColor: const Color(0xFF0284C7),
+                      borderStrokeWidth: 2.5,
+                    ),
+                ],
               ),
               // 路线图层
               if (_currentRoute != null)
@@ -6558,6 +7427,107 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     ),
                   ],
                 ),
+              // 监控区域名称标牌与变动高亮标记层
+              MarkerLayer(
+                markers: [
+                  if (!_isSelectingMonitoredArea)
+                    ..._monitoredAreas.where((a) => a.enabled).map((a) {
+                      final center = a.shapeType == AreaShapeType.circle
+                          ? LatLng(a.centerLat!, a.centerLng!)
+                          : LatLng(
+                              (a.southWestLat! + a.northEastLat!) / 2,
+                              (a.southWestLng! + a.northEastLng!) / 2,
+                            );
+                      return Marker(
+                        point: center,
+                        width: 140,
+                        height: 32,
+                        child: GestureDetector(
+                          onTap: () => _openAreaManagement(),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: a.shapeType == AreaShapeType.circle
+                                    ? const Color(0xFF0F766E)
+                                    : const Color(0xFF0284C7),
+                                width: 1.2,
+                              ),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black12,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.fence_rounded,
+                                  size: 13,
+                                  color: a.shapeType == AreaShapeType.circle
+                                      ? const Color(0xFF0F766E)
+                                      : const Color(0xFF0284C7),
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    '${a.name} (${a.lastCameraCount})',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF1E293B),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  if (_isSelectingMonitoredArea)
+                    Marker(
+                      point: _selectionCenter,
+                      width: 40,
+                      height: 40,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F766E),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2.5),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 6,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.adjust_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                  if (_highlightedCameraLocation != null)
+                    Marker(
+                      point: _highlightedCameraLocation!,
+                      width: 90,
+                      height: 70,
+                      child: _buildHighlightedCameraMarker(),
+                    ),
+                ],
+              ),
             ],
           ),
 
@@ -6580,17 +7550,26 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           ),
 
           // 顶部搜索框 / 导航面板
-          SafeArea(
-            child: _activeTab == _BottomTab.saved
-                ? _buildSavedPanel()
-                : (_activeTab == _BottomTab.recent
-                      ? _buildRecentPanel()
-                      : (_activeTab == _BottomTab.settings
-                            ? _buildSettingsPanel()
-                            : (_navMode
-                                  ? _buildNavPanel()
-                                  : _buildSearchBar()))),
-          ),
+          if (!_isSelectingMonitoredArea)
+            SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _activeTab == _BottomTab.saved
+                      ? _buildSavedPanel()
+                      : (_activeTab == _BottomTab.recent
+                            ? _buildRecentPanel()
+                            : (_activeTab == _BottomTab.settings
+                                  ? _buildSettingsPanel()
+                                  : (_navMode
+                                        ? _buildNavPanel()
+                                        : _buildSearchBar()))),
+                  if (!_navMode && _activeTab == _BottomTab.explore)
+                    _buildMonitoredAreaAlertBanner(),
+                ],
+              ),
+            ),
 
           // 加载指示器
           if (_loading)
@@ -6687,7 +7666,7 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
           if (_apiService.isBeta)
             Positioned(
               right: 16,
-              bottom: navBarHeight + (canShowCruiseButton ? 116 : 60),
+              bottom: navBarHeight + (canShowCruiseButton ? 168 : 116),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -6710,6 +7689,59 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
                     letterSpacing: 1.2,
                   ),
                 ),
+              ),
+            ),
+
+          // 区域监控与变动提醒按钮
+          if (!_isSelectingMonitoredArea)
+            Positioned(
+              right: 16,
+              bottom: navBarHeight + (canShowCruiseButton ? 112 : 60),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  FloatingActionButton.small(
+                    heroTag: 'area-monitor-btn',
+                    backgroundColor: _unreadAreaChangeSummaries.isNotEmpty
+                        ? const Color(0xFFEA580C)
+                        : _primaryContainer,
+                    foregroundColor: _unreadAreaChangeSummaries.isNotEmpty
+                        ? Colors.white
+                        : _primary,
+                    elevation: 2,
+                    tooltip: '区域监控与变动提醒',
+                    onPressed: () {
+                      if (_unreadAreaChangeSummaries.isNotEmpty) {
+                        _openAreaChangesSummary();
+                      } else {
+                        _openAreaManagement();
+                      }
+                    },
+                    child: const Icon(Icons.fence_rounded),
+                  ),
+                  if (_unreadAreaChangeSummaries.isNotEmpty)
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                        child: Text(
+                          '${_unreadAreaChangeSummaries.fold<int>(0, (sum, s) => sum + s.totalChanges)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
 
@@ -6754,12 +7786,16 @@ class _MapPageState extends State<MapPage> with WidgetsBindingObserver {
             ),
           ),
 
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(top: false, child: _buildBottomNavigationBar()),
-          ),
+          if (!_isSelectingMonitoredArea)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(top: false, child: _buildBottomNavigationBar()),
+            ),
+
+          if (_isSelectingMonitoredArea)
+            _buildMonitoredAreaSelectionOverlay(),
         ],
       ),
     );
