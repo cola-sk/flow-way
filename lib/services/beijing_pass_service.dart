@@ -724,4 +724,89 @@ class BeijingPassService {
       rawJson: jsonEncode(json),
     );
   }
+
+  /// 从车辆列表中选出最优先办理的车辆：
+  /// 1. 若当前会话中用户已显式选择车辆（[selectedVehicleId]），保持该选择；
+  /// 2. 总是优先从小客车（isPassengerCar 为 true）中选择，排除摩托车、货车等；
+  /// 3. 寻找“上次办理的小客车”：
+  ///    - 从各车辆的历史办证记录（records）中，优先选择最近一次办理过进京证的车辆（按最近记录日期或当前生效中判定）；
+  ///    - 若接口记录相同或未返回记录，则优先匹配本地配置中上次保存/办理的车辆（[savedCarId] 或 [savedLicensePlate]）；
+  /// 4. 兜底返回候选池中的首辆车。
+  static BeijingPassVehicle preferredVehicle({
+    required List<BeijingPassVehicle> vehicles,
+    String? selectedVehicleId,
+    String? savedCarId,
+    String? savedLicensePlate,
+  }) {
+    if (vehicles.isEmpty) {
+      throw ArgumentError('vehicles must not be empty');
+    }
+
+    // 1. 若当前会话中用户已手动切换过车辆，保持用户的当前选择
+    if (selectedVehicleId != null && selectedVehicleId.isNotEmpty) {
+      for (final v in vehicles) {
+        if (v.id == selectedVehicleId) return v;
+      }
+    }
+
+    // 2. 优先从小客车中选择（排除摩托车、货车等）
+    final passengerCars = vehicles.where((v) => v.isPassengerCar).toList();
+    final candidates = passengerCars.isNotEmpty ? passengerCars : vehicles;
+
+    // 3. 匹配本地上次保存的车辆
+    final sCarId = savedCarId?.trim() ?? '';
+    final sPlate = savedLicensePlate?.trim().toUpperCase() ?? '';
+    BeijingPassVehicle? matchedSaved;
+    if (sCarId.isNotEmpty || sPlate.isNotEmpty) {
+      for (final v in candidates) {
+        if ((sCarId.isNotEmpty && v.id == sCarId) ||
+            (sPlate.isNotEmpty &&
+                v.licensePlate.trim().toUpperCase() == sPlate)) {
+          matchedSaved = v;
+          break;
+        }
+      }
+    }
+
+    // 4. 从交警办证记录中寻找最近办理过进京证的车辆
+    BeijingPassVehicle? latestApplied;
+    DateTime? latestDate;
+    for (final v in candidates) {
+      final date = v.latestRecordDate;
+      if (date != null) {
+        if (latestDate == null || date.isAfter(latestDate)) {
+          latestDate = date;
+          latestApplied = v;
+        }
+      }
+    }
+
+    // 5. 判定最近办理车辆：
+    if (latestApplied != null) {
+      if (matchedSaved == null ||
+          matchedSaved.id == latestApplied.id ||
+          latestApplied.activeRecord?.isValidNow == true) {
+        return latestApplied;
+      }
+      final savedDate = matchedSaved.latestRecordDate;
+      if (savedDate == null ||
+          (latestDate != null && latestDate.isAfter(savedDate))) {
+        return latestApplied;
+      }
+      return matchedSaved;
+    }
+
+    // 若无交警记录可查，但匹配到了本地上次保存的车辆，返回本地保存车辆
+    if (matchedSaved != null) {
+      return matchedSaved;
+    }
+
+    // 若有当前生效中进京证的车辆，返回该车辆
+    for (final v in candidates) {
+      if (v.activeRecord?.isValidNow == true) return v;
+    }
+
+    // 兜底返回候选池第一辆车
+    return candidates.first;
+  }
 }

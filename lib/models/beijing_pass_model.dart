@@ -468,4 +468,48 @@ class BeijingPassVehicle {
     }
     return '';
   }
+
+  /// 是否为小客车（小型客车/轿车/乘用车，排除摩托车、货车等）
+  bool get isPassengerCar {
+    final vt = vehicleType;
+    final hp = plateType;
+    // 排除摩托车 (hpzl 07: 普通摩托车, 08: 轻便摩托车)
+    if (hp == '07' || hp == '08' || vt.contains('摩托')) {
+      return false;
+    }
+    // 排除大中型汽车、货车、挂车 (hpzl 01: 大型汽车)
+    if (hp == '01' ||
+        vt.contains('货车') ||
+        vt.contains('挂车') ||
+        vt.contains('大客车') ||
+        vt.contains('中型客车') ||
+        vt.contains('大型') ||
+        vt.contains('牵引车')) {
+      return false;
+    }
+    // 符合小型客车特征 (hpzl 02: 小型汽车, 52: 小型新能源汽车)
+    if (hp == '02' ||
+        hp == '52' ||
+        vt.contains('客车') ||
+        vt.contains('轿车') ||
+        vt.contains('乘用车') ||
+        vt.contains('小型')) {
+      return true;
+    }
+    // 兜底：未显式排斥即默认为小客车
+    return true;
+  }
+
+  /// 该车辆最近一次办理进京证的日期（优先按办证结束日期或起始日期判定）
+  DateTime? get latestRecordDate {
+    DateTime? latest;
+    for (final record in records) {
+      final date = record.endDate ?? record.startDate;
+      if (date == null) continue;
+      if (latest == null || date.isAfter(latest)) {
+        latest = date;
+      }
+    }
+    return latest;
+  }
 }

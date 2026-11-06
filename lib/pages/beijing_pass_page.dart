@@ -25,6 +25,7 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
   BeijingPassFetchResult? _lastFetchResult;
   DateTime? _tokenExpiry;
   String? _selectedVehicleId;
+  String? _userSelectedVehicleId;
   String _plateType = '';
   bool _supplementExpanded = true;
   bool _preferencesExpanded = false;
@@ -124,7 +125,8 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
         ? cfg.sqdzbdwd
         : '40.237461';
     _customApiBaseController.text = cfg.customApiBase;
-    _selectedPassType = cfg.passType;
+    _selectedVehicleId = cfg.carId.isNotEmpty ? cfg.carId : null;
+    _selectedPassType = BeijingPassType.outsideSixth;
     _isInBeijing = cfg.isInBeijing;
     _vehicleSupplements.addAll(cfg.vehicleSupplements);
     _supplementExpanded = !_supplementComplete;
@@ -162,15 +164,14 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     return _preferredVehicle(vehicles);
   }
 
-  /// 初次进入页面时优先展示当前有生效进京证的车辆；用户已手动选择后保持原选择。
+  /// 优先默认选中上次办理的小客车，用户手动选择后保持当前选择。
   BeijingPassVehicle _preferredVehicle(List<BeijingPassVehicle> vehicles) {
-    for (final vehicle in vehicles) {
-      if (vehicle.id == _selectedVehicleId) return vehicle;
-    }
-    for (final vehicle in vehicles) {
-      if (vehicle.activeRecord?.isValidNow == true) return vehicle;
-    }
-    return vehicles.first;
+    return BeijingPassService.preferredVehicle(
+      vehicles: vehicles,
+      selectedVehicleId: _userSelectedVehicleId ?? _selectedVehicleId,
+      savedCarId: _config.carId,
+      savedLicensePlate: _config.licensePlate,
+    );
   }
 
   BeijingPassRecord? get _selectedActiveRecord =>
@@ -230,11 +231,19 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
     _driverLicenceController.text = driverLicence;
     _supplementExpanded = !_supplementComplete;
 
+    // 每次都是默认选中六环外
+    _selectedPassType = BeijingPassType.outsideSixth;
+
     final record = vehicle.activeRecord;
     if (record != null) {
-      _selectedPassType = record.passType;
       _selectedApplyStartDate = record.suggestedNextStartDate;
     }
+  }
+
+  Future<void> _persistSelectedVehicle(BeijingPassVehicle vehicle) async {
+    final updated = _buildCurrentConfigFromForm();
+    await _service.saveConfig(updated);
+    _config = updated;
   }
 
   /// 将 GCJ-02 (高德/腾讯) 经纬度转换为 BD-09 (百度) 经纬度
@@ -404,6 +413,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
       if (result.vehicles.isNotEmpty) {
         final target = _preferredVehicle(result.vehicles);
         _selectVehicle(target);
+        if (_config.carId != target.id) {
+          _persistSelectedVehicle(target);
+        }
       } else if (result.activeRecord != null) {
         _selectedApplyStartDate = result.activeRecord!.suggestedNextStartDate;
       }
@@ -1253,7 +1265,9 @@ class _BeijingPassPageState extends State<BeijingPassPage> {
                 onChanged: (id) {
                   if (id == null) return;
                   final vehicle = vehicles.firstWhere((item) => item.id == id);
+                  _userSelectedVehicleId = id;
                   setState(() => _selectVehicle(vehicle));
+                  _persistSelectedVehicle(vehicle);
                 },
               ),
               if (selected != null) ...[
