@@ -910,8 +910,39 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
 
   void _fitRouteOverview() {
     if (widget.route.polylinePoints.isEmpty) return;
+
+    final currentPos = _snappedMapPosition ??
+        _currentMapPosition ??
+        (_currentPosition != null
+            ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+            : null);
+
+    final points = <LatLng>[];
+    if (currentPos != null) {
+      points.add(currentPos);
+    }
+
+    // 从当前导航进度游标 _routeProgressIdx 开始截取到终点的剩余路线点，
+    // 仅展示「当前位置 -> 目的地」的剩余路段全览，无需重新规划计算路线
+    final startIdx = math.max(
+      0,
+      math.min(_routeProgressIdx, widget.route.polylinePoints.length - 1),
+    );
+    points.addAll(widget.route.polylinePoints.sublist(startIdx));
+
+    // 兜底保护：若截取为空则使用整条路线点
+    if (points.isEmpty) {
+      points.addAll(widget.route.polylinePoints);
+    }
+
     try {
-      final bounds = LatLngBounds.fromPoints(widget.route.polylinePoints);
+      final bounds = LatLngBounds.fromPoints(points);
+      if (bounds.southWest.latitude == bounds.northEast.latitude &&
+          bounds.southWest.longitude == bounds.northEast.longitude) {
+        _mapController.moveAndRotate(bounds.southWest, 16.0, 0.0);
+        return;
+      }
+
       _mapController.fitCamera(
         CameraFit.bounds(
           bounds: bounds,
@@ -926,7 +957,8 @@ class _ActiveNavigationPageState extends State<ActiveNavigationPage> {
       _mapController.rotate(0.0);
     } catch (e) {
       debugPrint('Fit route overview failed: $e');
-      _mapController.moveAndRotate(widget.route.startPoint, 12.0, 0.0);
+      final fallbackPos = currentPos ?? widget.route.startPoint;
+      _mapController.moveAndRotate(fallbackPos, 12.0, 0.0);
     }
   }
 
